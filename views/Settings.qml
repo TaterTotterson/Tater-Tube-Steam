@@ -19,10 +19,22 @@ FocusScope {
     property bool quitOverlayVisible: false
     property int quitChoiceIndex: 0
 
+    // Quit overlay choices. Under the autostart service (headless RPi) the quit menu has an
+    // "Exit to Terminal" option that drops to a tty1 login without powering off; that
+    // option is not needed on macOS/Desktop or when run by hand, so it's yes/no for that case.
+    property bool autostartSession: false
+    property var quitOptions: settingsRoot.autostartSession
+        ? [{ label: "Power Off",        action: "quit"     },
+           { label: "Exit to Terminal", action: "terminal" },
+           { label: "Cancel",           action: "cancel"   }]
+        : [{ label: "Yes", action: "quit" },
+           { label: "No",  action: "cancel" }]
+
     function buildModel() {
         var cfg = appCore.get_settings()
         appSettings = cfg.app || {}
         installedModules = appCore.get_installed_modules()
+        autostartSession = appCore.isAutostartSession()
 
         var items = []
 
@@ -276,10 +288,12 @@ FocusScope {
         visible: quitOverlayVisible
         focus: quitOverlayVisible
 
-        Keys.onUpPressed:   { quitChoiceIndex = 0 }
-        Keys.onDownPressed: { quitChoiceIndex = 1 }
+        Keys.onUpPressed:   { quitChoiceIndex = Math.max(0, quitChoiceIndex - 1) }
+        Keys.onDownPressed: { quitChoiceIndex = Math.min(quitOptions.length - 1, quitChoiceIndex + 1) }
         Keys.onReturnPressed: {
-            if (quitChoiceIndex === 0) Qt.quit()
+            var act = quitOptions[quitChoiceIndex].action
+            if (act === "quit")          Qt.quit()
+            else if (act === "terminal") Qt.exit(10)   // matches EXIT_STATUS check in 240mp-stop
             else { quitOverlayVisible = false; settingsList.forceActiveFocus() }
         }
         Keys.onPressed: function(event) {
@@ -311,7 +325,7 @@ FocusScope {
 
                 Column {
                     Repeater {
-                        model: ["Yes", "No"]
+                        model: quitOptions
                         delegate: Item {
                             width: quitDialogColumn.width
                             height: root.sh * 0.0583333 //28
@@ -326,7 +340,7 @@ FocusScope {
                                 id: quitOptionText
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: modelData
+                                text: modelData.label
                                 color: index === quitChoiceIndex ? root.surfaceColor : root.primaryColor
                                 font.family: root.globalFont
                                 font.capitalization: Font.AllUppercase
