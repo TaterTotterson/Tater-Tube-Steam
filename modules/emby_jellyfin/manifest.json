@@ -1,6 +1,7 @@
 {
   "id": "com.240mp.emby_jellyfin",
   "name": "Video on Demand",
+  "order": 20,
   "icon": "assets/images/logo.svg",
   "entry_point_qml": "views/Root.qml",
   "settings": [

@@ -74,6 +74,8 @@ signals:
     // Emitted when mpv exits with an error (code 2 — file could not be played).
     // Player.qml uses this to retry with transcoding.
     void playbackFailed();
+    // Emitted when an mpv Lua script sends a script-message back over IPC.
+    void scriptMessageReceived(const QString &message, const QString &arg);
 
 private slots:
     void onProcessFinished();

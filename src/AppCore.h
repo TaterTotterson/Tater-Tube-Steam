@@ -15,6 +15,7 @@ struct ModuleEntry {
     QString folder;      // subdirectory under modules/
     QString entryQml;    // relative to module folder, e.g. "views/Root.qml"
     QString iconRel;     // relative to module folder, e.g. "assets/images/logo.svg"
+    int order = 1000;
     QVariantList settings;
 };
 

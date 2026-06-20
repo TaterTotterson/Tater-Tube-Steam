@@ -7,12 +7,16 @@ INSTALL_PREFIX="${MP240_INSTALL_PREFIX:-/opt/240mp}"
 SERVICE_NAME="${MP240_SERVICE_NAME:-240mp.service}"
 UPDATE_FLAG="${MP240_UPDATE_FLAG:-/run/240mp-updating}"
 TMP_DIR=""
+SELF_COPY="${MP240_UPDATE_SELF_COPY_PATH:-}"
 SERVICE_STOPPED=0
 
 cleanup() {
     local status=$?
     if [ -n "$TMP_DIR" ]; then
         rm -rf "$TMP_DIR"
+    fi
+    if [ -n "$SELF_COPY" ]; then
+        rm -f "$SELF_COPY"
     fi
     rm -f "$UPDATE_FLAG"
 
@@ -64,12 +68,28 @@ run_in_transient_unit_if_needed() {
     exit $?
 }
 
+run_from_stable_copy_if_needed() {
+    if [ "${MP240_UPDATE_SELF_COPY:-0}" = "1" ]; then
+        return
+    fi
+
+    local self_copy
+    self_copy="$(mktemp "${TMPDIR:-/tmp}/240mp-update-script.XXXXXX")"
+    cp "$0" "$self_copy"
+    chmod 0755 "$self_copy"
+
+    export MP240_UPDATE_SELF_COPY=1
+    export MP240_UPDATE_SELF_COPY_PATH="$self_copy"
+    exec "$self_copy" "$MANIFEST_URL"
+}
+
 require_root
 require_cmd curl
 require_cmd python3
 require_cmd tar
 require_cmd systemctl
 run_in_transient_unit_if_needed
+run_from_stable_copy_if_needed
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/240mp-update.XXXXXX")"
 
@@ -160,6 +180,7 @@ if [ "${MP240_ENABLE_BOOT_SPLASH:-1}" = "1" ]; then
 fi
 
 systemctl daemon-reload || true
+systemctl reset-failed "$SERVICE_NAME" || true
 systemctl start "$SERVICE_NAME"
 SERVICE_STOPPED=0
 rm -f "$UPDATE_FLAG"

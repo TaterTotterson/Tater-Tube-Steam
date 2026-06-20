@@ -1,6 +1,7 @@
 {
   "id": "com.240mp.ota",
   "name": "Over The Air",
+  "order": 10,
   "icon": "assets/images/logo.svg",
   "entry_point_qml": "views/Root.qml",
   "settings": [

@@ -169,10 +169,18 @@ AppCore::AppCore(const QString &appRoot, const QString &dataRoot, QObject *paren
         m.folder   = folder;
         m.entryQml = entryQml;
         m.iconRel  = manifest["icon"].toString();
+        m.order    = manifest["order"].toInt(1000);
         m.settings = manifest["settings"].toArray().toVariantList();
         m_modules.append(m);
         qDebug("[AppCore] Loaded manifest: %s", qPrintable(id));
     }
+
+    std::stable_sort(m_modules.begin(), m_modules.end(),
+                     [](const ModuleEntry &left, const ModuleEntry &right) {
+                         if (left.order != right.order)
+                             return left.order < right.order;
+                         return QString::compare(left.name, right.name, Qt::CaseInsensitive) < 0;
+                     });
 }
 
 // ---------------------------------------------------------------------------

@@ -394,6 +394,13 @@ void MpvController::onIpcReadyRead() {
             // so onProcessFinished can distinguish a natural finish from a quit.
             if (event == "end-file")
                 m_lastEndFileReason = obj["reason"].toString();
+            else if (event == "client-message") {
+                const QJsonArray args = obj["args"].toArray();
+                const QString message = args.size() > 0 ? args.at(0).toString() : QString();
+                const QString arg = args.size() > 1 ? args.at(1).toString() : QString();
+                if (!message.isEmpty())
+                    emit scriptMessageReceived(message, arg);
+            }
             continue;
         }
 

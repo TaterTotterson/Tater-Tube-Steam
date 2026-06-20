@@ -153,6 +153,16 @@ FocusScope {
             }
             statusText = "OTA PLAYBACK FAILED"
         }
+        function onScriptMessageReceived(message, arg) {
+            if (message !== "240mp-ota-channel-step")
+                return
+
+            var delta = parseInt(arg)
+            if (isNaN(delta) || delta === 0)
+                return
+
+            tuneRelative(delta)
+        }
     }
 
     Component.onCompleted: {

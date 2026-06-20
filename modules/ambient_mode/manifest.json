@@ -1,6 +1,7 @@
 {
   "id": "com.240mp.ambient_mode",
   "name": "Ambient:Mode",
+  "order": 90,
   "icon": "assets/images/logo.svg",
   "entry_point_qml": "views/Root.qml",
   "settings": [
