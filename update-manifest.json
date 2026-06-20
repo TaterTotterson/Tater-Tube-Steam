@@ -1,13 +1,13 @@
 {
-  "version": "2026.06.20.20",
+  "version": "2026.06.20.21",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/240-MP-Emby-Jelly",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/240-MP-Emby-Jelly/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.20/240-MP-v2026.06.20.20-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.20.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.21/240-MP-v2026.06.20.21-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.21.tar.gz",
   "notes": [
-    "Adds an Off Air highlight color selector with retro VCR-style color choices.",
-    "Removes the unused Ambient Mode module and backend.",
-    "Prunes stale app directories during updates so removed modules disappear from existing installs."
+    "Shows the 240-MP boot splash style while app updates are installing.",
+    "Adds a VCR-style update message that says PLEASE WAIT, FLASHING FIRMWARE, and DO NOT POWER OFF.",
+    "Keeps the normal in-app update confirmation screen unchanged."
   ]
 }

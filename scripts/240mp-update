@@ -143,8 +143,18 @@ fi
 
 log "Installing update"
 touch "$UPDATE_FLAG"
+
+if [ "${MP240_ENABLE_BOOT_SPLASH:-1}" = "1" ]; then
+    pi240_install_boot_splash || true
+    pi240_show_update_splash || true
+fi
+
 SERVICE_STOPPED=1
 systemctl stop "$SERVICE_NAME" || true
+
+if [ "${MP240_ENABLE_BOOT_SPLASH:-1}" = "1" ]; then
+    pi240_show_update_splash || true
+fi
 
 install -d -m 0755 "$INSTALL_PREFIX"
 rm -rf "$INSTALL_PREFIX/bin" \

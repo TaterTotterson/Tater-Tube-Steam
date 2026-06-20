@@ -183,8 +183,8 @@ QT_QPA_EGLFS_DEBUG=1
 Releases are built from version tags:
 
 ```bash
-git tag v2026.06.20.20
-git push origin v2026.06.20.20
+git tag v2026.06.20.21
+git push origin v2026.06.20.21
 ```
 
 The release workflow builds and publishes:

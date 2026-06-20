@@ -311,26 +311,48 @@ Window.SetBackgroundBottomColor(0.02, 0.02, 0.02);
 screen_width = Window.GetWidth();
 screen_height = Window.GetHeight();
 
+title_y = screen_height * 0.38;
+line_y = screen_height * 0.50;
+sub_y = screen_height * 0.59;
+load_y = screen_height * 0.73;
+
 fun center_sprite(sprite, image, y) {
     sprite.SetX((screen_width - image.GetWidth()) / 2);
     sprite.SetY(y);
 }
 
+fun set_sprite_text(sprite, text, red, green, blue, y) {
+    image = Image.Text(text, red, green, blue);
+    sprite.SetImage(image);
+    center_sprite(sprite, image, y);
+}
+
 title_image = Image.Text("VIDEO ON DEMAND", 1.0, 1.0, 1.0);
 title_sprite = Sprite(title_image);
-center_sprite(title_sprite, title_image, screen_height * 0.38);
+center_sprite(title_sprite, title_image, title_y);
 
 line_image = Image.Text("////////////////////////////", 1.0, 0.42, 0.0);
 line_sprite = Sprite(line_image);
-center_sprite(line_sprite, line_image, screen_height * 0.50);
+center_sprite(line_sprite, line_image, line_y);
 
 sub_image = Image.Text("240-MP", 0.55, 0.55, 0.55);
 sub_sprite = Sprite(sub_image);
-center_sprite(sub_sprite, sub_image, screen_height * 0.59);
+center_sprite(sub_sprite, sub_image, sub_y);
 
 load_image = Image.Text("LOADING", 1.0, 0.42, 0.0);
 load_sprite = Sprite(load_image);
-center_sprite(load_sprite, load_image, screen_height * 0.73);
+center_sprite(load_sprite, load_image, load_y);
+
+fun message_callback(text) {
+    if (text == "240MP_UPDATE") {
+        set_sprite_text(title_sprite, "PLEASE WAIT", 1.0, 1.0, 1.0, title_y);
+        set_sprite_text(line_sprite, "FLASHING FIRMWARE", 1.0, 0.42, 0.0, line_y);
+        set_sprite_text(sub_sprite, "UPDATE IN PROGRESS", 0.55, 0.55, 0.55, sub_y);
+        set_sprite_text(load_sprite, "DO NOT POWER OFF", 1.0, 0.42, 0.0, load_y);
+    }
+}
+
+Plymouth.SetDisplayMessageFunction(message_callback);
 PLYMOUTH_SCRIPT
 
     pi240_install_file_from_stdin /etc/plymouth/plymouthd.conf 0644 <<'PLYMOUTH_CONF'
@@ -346,6 +368,25 @@ PLYMOUTH_CONF
     # Keep the splash visible for the appliance instead of letting the default
     # multi-user boot path clear it before the Qt kiosk service starts.
     pi240_root systemctl mask plymouth-quit.service plymouth-quit-wait.service || true
+
+    if [ -e /run/240mp-updating ]; then
+        pi240_show_update_splash || true
+    fi
+}
+
+pi240_show_update_splash() {
+    if ! command -v plymouth >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if ! plymouth --ping >/dev/null 2>&1; then
+        if command -v plymouthd >/dev/null 2>&1; then
+            pi240_root plymouthd --mode=boot --attach-to-session >/dev/null 2>&1 || true
+        fi
+    fi
+
+    pi240_root plymouth --show-splash >/dev/null 2>&1 || true
+    pi240_root plymouth message --text="240MP_UPDATE" >/dev/null 2>&1 || true
 }
 
 pi240_install_launcher() {
