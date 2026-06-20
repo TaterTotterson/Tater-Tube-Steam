@@ -1,6 +1,6 @@
 # 240-MP Architecture
 
-240-MP is a retro VCR-style media app built with **C++ Qt6 + QML**, targeting **Raspberry Pi 4** and **macOS**. and this is the reference for working on 240-MP's code (whether you're adding a new module or changing an existing one). 
+240-MP is a retro VCR-style media app built with **C++ Qt6 + QML**, targeting **Raspberry Pi 4 / Raspberry Pi OS arm64** as the production platform. The macOS path exists for quick local development and smoke testing. This is the reference for working on 240-MP's code, whether you're adding a new module or changing an existing one.
 
 If you just want to install or build the app, see [INSTALL.md](INSTALL.md) and [BUILDING.md](BUILDING.md). 
 

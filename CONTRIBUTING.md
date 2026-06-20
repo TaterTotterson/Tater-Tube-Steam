@@ -1,6 +1,6 @@
 # Contributing to 240-MP
 
-Thank you for considering contributing to 240-MP!  I originally built this as a personal project for watching video content on a CRT but I'm also stoked to see what ideas you might want to add.  So with that in mind I'll try to make contributing to this project as easy and transparent as possible.  If you have any questions on the below please create a post in [Discussions > Q&A](https://github.com/anthonycaccese/240-MP/discussions/categories/q-a).
+Thank you for considering contributing to 240-MP!  I originally built this as a personal project for watching video content on a CRT but I'm also stoked to see what ideas you might want to add.  So with that in mind I'll try to make contributing to this project as easy and transparent as possible.  If you have any questions on the below please create a post in [Discussions > Q&A](https://github.com/TaterTotterson/240-MP-Emby-Jelly/discussions/categories/q-a).
 
 ## Non-code contributions
 
@@ -13,9 +13,9 @@ The most useful community contributions are often not code, items like the follo
 
 ## Getting started
 
-1. **Set up an environment** — follow [BUILDING.md](BUILDING.md) to build and run on macOS (ARM) or Raspberry Pi OS.
+1. **Set up an environment** — follow [BUILDING.md](BUILDING.md) to build and run on Raspberry Pi OS, or to use macOS (ARM) for local testing.
 2. **Understand the codebase** — read [ARCHITECTURE.md](ARCHITECTURE.md). It's the technical reference for how the shell, modules, and views fit together.
-3. **Discuss first if it's big** — for anything beyond a small fix, a quick post in [Discussions > Q&A](https://github.com/anthonycaccese/240-MP/discussions/categories/q-a) can help make sure it fits the project's direction before you invest time.
+3. **Discuss first if it's big** — for anything beyond a small fix, a quick post in [Discussions > Q&A](https://github.com/TaterTotterson/240-MP-Emby-Jelly/discussions/categories/q-a) can help make sure it fits the project's direction before you invest time.
 4. **Branch and open a PR** — fork, work on a branch, and open a pull request against `main` with a clear description (see the [AI use](#note-on-ai-use) note below for what to disclose).
 
 ## Submitting code
@@ -64,7 +64,7 @@ A pure-QML module needs **no C++ changes** — the shell discovers it from its m
 
 Sorry I've not made time yet to work on automated tests so for now testing is manual:
 
-- **Build and run** on at least one target (macOS ARM or Raspberry Pi). See [BUILDING.md](BUILDING.md#run).
+- **Build and run** on Raspberry Pi, or on macOS ARM as a local smoke test. See [BUILDING.md](BUILDING.md#run).
 - **Navigate with a remote/keyboard only** and confirm every screen in your change is reachable and exitable.
 - **Check the layout** reads correctly on a CRT (mind overscan) and, ideally, over HDMI/LCD too.
 - **Confirm settings persist** across an app restart, and that existing settings still load.

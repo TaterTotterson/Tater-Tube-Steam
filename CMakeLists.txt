@@ -71,7 +71,7 @@ set_target_properties(240mp PROPERTIES
 # Contents/Resources → repo root so resolveAppRoot() finds the QML files.
 # Skipped in CI (ENV{CI} is set by GitHub Actions) because cmake --install
 # populates Resources with real files — a symlink in the build tree would be
-# packaged into the DMG pointing to a CI path that doesn't exist on end-user Macs.
+# captured by any packaging step pointing to a CI path that doesn't exist.
 if(APPLE AND NOT DEFINED ENV{CI})
     add_custom_command(TARGET 240mp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E remove -f
@@ -126,18 +126,14 @@ else()
 endif()
 
 # ── CPack ──────────────────────────────────────────────────────────────────────
-set(CPACK_PACKAGE_NAME "240-MP")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "240-MP Media Player")
-set(CPACK_PACKAGE_VENDOR "240-MP")
-
-if(APPLE)
-    set(CPACK_GENERATOR "DragNDrop")
-    set(CPACK_DMG_VOLUME_NAME "240-MP")
-    set(CPACK_DMG_FORMAT "UDZO")
-else()
+# Releases are Linux arm64 tarballs for Raspberry Pi. macOS builds remain a local
+# development smoke-test path and are not packaged by CPack.
+if(NOT APPLE)
+    set(CPACK_PACKAGE_NAME "240-MP")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "240-MP Media Player")
+    set(CPACK_PACKAGE_VENDOR "240-MP")
     set(CPACK_GENERATOR "TGZ")
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+    include(CPack)
 endif()
-
-include(CPack)

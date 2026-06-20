@@ -269,11 +269,16 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         if (m_qtDrmFd < 0) {
             qWarning("[MpvController] Could not find Qt DRM fd");
         } else {
-            qDebug("[MpvController] DRM master dropped (fd %d)", m_qtDrmFd);
             // Save the current CRTC state so we can restore it exactly after
             // mpv exits. mpv's atomic cleanup disables the CRTC (CRTC_ACTIVE=0);
             // without this restore, Qt EGLFS gets EINVAL on its next page flip.
             saveDrmCrtcState(m_qtDrmFd);
+            if (::ioctl(m_qtDrmFd, DRM_IOCTL_DROP_MASTER, 0) < 0) {
+                qWarning("[MpvController] drmDropMaster failed: %s", strerror(errno));
+            } else {
+                m_qtDrmMasterDropped = true;
+                qDebug("[MpvController] DRM master dropped (fd %d)", m_qtDrmFd);
+            }
         }
 #endif
 
@@ -431,10 +436,11 @@ void MpvController::onProcessFinished() {
 void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof, bool playbackError) {
 #ifdef Q_OS_LINUX
     if (m_qtDrmFd >= 0) {
-        if (::ioctl(m_qtDrmFd, DRM_IOCTL_SET_MASTER, 0) < 0) {
+        if (m_qtDrmMasterDropped && ::ioctl(m_qtDrmFd, DRM_IOCTL_SET_MASTER, 0) < 0) {
             qWarning("[MpvController] drmSetMaster failed: %s", strerror(errno));
         } else {
-            qDebug("[MpvController] DRM master restored (fd %d)", m_qtDrmFd);
+            if (m_qtDrmMasterDropped)
+                qDebug("[MpvController] DRM master restored (fd %d)", m_qtDrmFd);
             // Restore CRTC to its pre-mpv state using legacy drmModeSetCrtc.
             // This re-enables the CRTC with the original mode and Qt's last
             // framebuffer, so EGLFS's first atomic page flip succeeds instead
@@ -442,6 +448,7 @@ void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof, bool pl
             restoreDrmCrtcState(m_qtDrmFd);
         }
         m_qtDrmFd = -1;
+        m_qtDrmMasterDropped = false;
     }
 #endif
     if (m_previousVt > 0) {

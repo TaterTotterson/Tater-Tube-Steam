@@ -108,6 +108,7 @@ private:
     bool          m_headlessMode = false;
     int           m_previousVt   = -1;
     int           m_qtDrmFd      = -1;
+    bool          m_qtDrmMasterDropped = false;
 #ifdef Q_OS_LINUX
     DrmSavedState m_savedDrm     = {};
 #endif

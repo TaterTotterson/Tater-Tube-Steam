@@ -12,7 +12,7 @@ body:
     attributes:
       label: Before you file
       options:
-        - label: I checked the [Wiki](https://github.com/anthonycaccese/240-MP/wiki) and existing [issues](https://github.com/anthonycaccese/240-MP/issues) and didn't find this.
+        - label: I checked the docs and existing [issues](https://github.com/TaterTotterson/240-MP-Emby-Jelly/issues) and didn't find this.
           required: true
   - type: dropdown
     id: module
@@ -21,11 +21,11 @@ body:
       description: Which part of 240-MP does this affect?
       options:
         - Local Files module
-        - Plex module
+        - Video on Demand module (Emby/Jellyfin)
         - Ambient Mode module
         - App shell (browsing, settings, navigation)
         - Build (compiling from source)
-        - Install (install.sh / DMG / setup)
+        - Install / update / Pi image
         - Not sure
     validations:
       required: true
@@ -38,7 +38,7 @@ body:
         - Raspberry Pi 3B+
         - Raspberry Pi 3B
         - Other Raspberry Pi model
-        - macOS (Apple Silicon)
+        - Local development machine
     validations:
       required: true
   - type: dropdown
@@ -58,8 +58,8 @@ body:
     attributes:
       label: Install method
       options:
+        - Ready-to-flash Raspberry Pi image
         - Release install.sh (Raspberry Pi)
-        - macOS DMG
         - Built from source
     validations:
       required: true
@@ -75,7 +75,7 @@ body:
       label: Steps to reproduce
       description: What did you do, step by step?
       placeholder: |
-        1. Open the Plex module
+        1. Open the Video on Demand module
         2. Select a movie
         3. ...
     validations:

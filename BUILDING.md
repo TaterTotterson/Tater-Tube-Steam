@@ -1,8 +1,10 @@
 # Building 240-MP
 
-If you are interested in building your own version of 240-MP and adding things to it then this page should hopefully cover what you would need to get an environment set up.  I've included details for macOS on ARM (where I primarily build) and Raspberry Pi OS.  And if you create a feature you would like to contribute back to this repo please open a PR, I'd be glad to talk through it.
+If you are interested in building your own version of 240-MP and adding things to it then this page should cover what you need to get an environment set up. Raspberry Pi OS arm64 is the real target. macOS on Apple Silicon is kept as a quick local testing path for development only; release builds are Linux arm64 for Raspberry Pi.
 
-## macOS (ARM)
+## macOS (ARM, local testing only)
+
+The macOS build is useful for quick UI and backend checks while developing. It is not packaged, signed, notarized, or published by the release workflow.
 
 ### Prerequisites (one-time)
 
@@ -36,8 +38,8 @@ SDL2 is a build-time dependency — `InputManager` links against it for USB game
 ### Get the source
 
 ```bash
-git clone https://github.com/anthonycaccese/240-mp.git
-cd 240-mp
+git clone https://github.com/TaterTotterson/240-MP-Emby-Jelly.git
+cd 240-MP-Emby-Jelly
 ```
 
 ### Build
@@ -99,8 +101,8 @@ sudo apt-get install -y \
 ### Get the source
 
 ```bash
-git clone https://github.com/anthonycaccese/240-mp.git
-cd 240-mp
+git clone https://github.com/TaterTotterson/240-MP-Emby-Jelly.git
+cd 240-MP-Emby-Jelly
 ```
 
 ### Build
@@ -308,18 +310,15 @@ Tags containing `-rc`, `-beta`, or `-alpha` are published as GitHub pre-releases
 
 ### What the workflow does
 
-These build jobs run in parallel:
+The release workflow builds one artifact:
 
 | Job | Runner | Output |
 |---|---|---|
-| `build-macos-arm64` | `macos-latest` (Apple Silicon) | `240-MP-<tag>-macOS-arm64.dmg` |
 | `build-linux-arm64` | `ubuntu-24.04-arm` (native arm64) | `240-MP-<tag>-linux-arm64.tar.gz` |
 
-macOS jobs: installs Qt via the Qt CDN, builds, runs `macdeployqt` to embed Qt frameworks (including `libSDL2.dylib`), ad-hoc codesign, package as `.dmg`. mpv is not bundled — users install it via `brew install mpv`.
+Linux arm64 job: installs Qt from apt, builds, and packages the install tree as `.tar.gz`. mpv and SDL2 are not bundled; the Raspberry Pi installer installs runtime dependencies as part of its dependency list.
 
-Linux arm64 job: installs Qt from apt, builds, package as `.tar.gz`. mpv and SDL2 are not bundled — end users install them via `apt install mpv libsdl2-2.0-0` or by running the `install.sh` that is bundled with each release where they are installed as part of the dependency list.
-
-A final `release` job waits for all three builds, then creates a GitHub Release with all artifacts attached (including `install.sh`).
+A final `release` job waits for the Linux build, then creates a GitHub Release with the tarball and `install.sh` attached.
 
 ### Output
 
@@ -329,4 +328,4 @@ Go to **Actions** → select the workflow run → each build job has an **Artifa
 
 **After the workflow completes:**
 
-Go to the repository on GitHub → **Releases** → select the release for the tag you set. All three artifacts are listed under Assets.
+Go to the repository on GitHub → **Releases** → select the release for the tag you set. The Linux arm64 tarball and installer are listed under Assets.

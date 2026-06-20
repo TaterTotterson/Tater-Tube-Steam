@@ -106,9 +106,9 @@ However, if you already have Raspberry Pi OS set up and working on your TV then 
 - A [RaspberryPi 4](https://www.raspberrypi.com/products/raspberry-pi-4-model-b/)
     - The Pi 4 fits in a nice sweet spot of performance + composite out and its the model I use daily so its the model I am most familiar with. It supports 1080p H264/HEVC playback well on both a CRT and over HDMI.
     - AV1 media should be served through Emby/Jellyfin transcoding. 240-MP's Video on Demand module auto-transcodes AV1/AV01 sources to H.264/AAC HLS in `AUTO` quality, and the `Video Quality` setting can force 480p, 720p, or 1080p transcodes.
-    - The [Pi 3B and 3B+](https://www.raspberrypi.com/products/raspberry-pi-3-model-b/) work well too with some caveats...  The default configuration for Pi 3 supports smooth 1080p H264 playback at the expense of inconsistent crop functionality during playback (cropping will display a black screen on some videos).  If crop is important for your use case on a Pi 3 then you can change the video decode settings with the caveat that 1080p H264 playback will no longer be smooth (720p and below  will still work well). The [hardware testing](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing#raspberry-pi-3b) page has details on how to make that change.
+    - The [Pi 3B and 3B+](https://www.raspberrypi.com/products/raspberry-pi-3-model-b/) work well too with some caveats...  The default configuration for Pi 3 supports smooth 1080p H264 playback at the expense of inconsistent crop functionality during playback (cropping will display a black screen on some videos).  If crop is important for your use case on a Pi 3 then you can change the video decode settings with the caveat that 1080p H264 playback will no longer be smooth (720p and below will still work well). See [BUILDING.md](BUILDING.md#video-decode-tuning-mpv_video_args) for the override.
     - The [Pi 5](https://www.raspberrypi.com/products/raspberry-pi-5/) also works but I've only tested over HDMI to a modern TV. The Pi 5 doesn't have a direct composite output port, one can be added through a mod but I don't have the hardware to test that.
-    - Full details on all models can be found on the [hardware testing](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing) page on the wiki.  If you have a setup that is working for you and would like to help out others please add a comment to [this discussion](https://github.com/anthonycaccese/240-MP/discussions/44) so we can add it to the wiki.
+    - If you have a setup that is working for you and would like to help out others, please open a hardware validation issue with the Pi model, display path, OS version, and any config changes.
 - SD Card (minimum of 4GB) with RaspberryPi OS already set up
     - Note: 240-MP is only an application, it's not an OS so you will need to make sure you have an OS setup and working with the display you'd like to use. 
     - In the below steps I provide an example using Raspberry Pi OS Lite that you can use to create a fresh SD card along with configs I've tested for CRT and HDMI output.
@@ -245,14 +245,14 @@ However, if you already have Raspberry Pi OS set up and working on your TV then 
 5) After that completes SSH in again and run the following to install the latest version of 240-MP
 
     ```bash
-    bash <(curl -fsSL https://github.com/anthonycaccese/240-mp/releases/latest/download/install.sh)
+    bash <(curl -fsSL https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/latest/download/install.sh)
     ```
 
     This will install all of the needed dependencies (note: over WiFi it will take about 20 mins to complete) 
 
     **Optional** 
     - You will get an option at the end of the install script that asks: `Install systemd autostart service? [y/N]` 
-    - If you type `Y` and press enter it will set up 240-MP to autostart when your Raspberry Pi boots which creates a nice appliance experience (bascially a dedicated 240-MP device).
+    - If you type `Y` and press enter it will set up 240-MP to autostart when your Raspberry Pi boots which creates a nice appliance experience (basically a dedicated 240-MP device).
     - If you choose that option please make sure to enter your primary user for the pi at the next prompt.  If you don't provide one it will set it up for the `Pi` user.
 
 At this point you can type `240mp` at any time to start up the app.  And if you installed the autostart service then the next time you boot your Pi it will boot directly into 240-MP.
@@ -272,7 +272,7 @@ To update to the latest release on Raspberry Pi please follow these steps (your 
 1) SSH into your Raspberry Pi
 2) Re-run the install script
     ```bash
-    bash <(curl -fsSL https://github.com/anthonycaccese/240-mp/releases/latest/download/install.sh)
+    bash <(curl -fsSL https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/latest/download/install.sh)
     ```
 3) When it asks to "`Install systemd autostart service? [y/N]`"
     - If you already have autostart set up you can press either Y or N, it will keep your current autostart
@@ -298,29 +298,6 @@ To update to the latest release on Raspberry Pi please follow these steps (your 
     sudo systemctl daemon-reload
     ```
 
-## On macOS (ARM)
+## macOS
 
-If you don't have a Raspberry Pi and would like to try 240-MP, I also provide a build for macOS on Apple Silicon.  You can download a DMG archive from the latest release and run it on your mac following these steps...
-
-### Requirements
-
-- An Apple Silicon Mac running the latest version of macOS (it will not work on Intel based devices)
-- Internet Access (either WiFi or network cable will work)
-
-### Steps
-
-1. Download the DMG archive from the latest release
-2. Mount it and move the 240mp.app into your Applications folder
-3. Make sure you have mpv installed (240-MP requires MPV for playback): `brew install mpv`
-4. Double click 240-MP and it should open full screen
-
-### Update
-
-To update to the latest release on MacOS please follow these steps (your settings will be retained):
-1. Download the DMG archive from the latest release
-2. Mount it and move the 240mp.app into your Applications folder to overwrite your existing version. *Your existing configuration settings will be retained and it's safe to overwrite*
-
-### Uninstall
-
-- Remove it just like you would any application on macOS
-- Remove the configuration files in `~/Library/Application Support/240-MP/`
+macOS is not a release target for this fork. The macOS build path is kept only for quick local testing while developing the QML/C++ app. See [BUILDING.md](BUILDING.md#macos-arm-local-testing-only).

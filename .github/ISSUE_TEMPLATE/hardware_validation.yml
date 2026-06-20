@@ -16,7 +16,6 @@ body:
         - Raspberry Pi 3B+
         - Raspberry Pi 3B
         - Other Raspberry Pi model
-        - macOS (Apple Silicon)
     validations:
       required: true
   - type: dropdown
@@ -34,7 +33,7 @@ body:
     id: os_version
     attributes:
       label: OS version
-      description: e.g. Raspberry Pi OS Lite (Trixie / Debian 13), or your macOS version
+      description: e.g. Raspberry Pi OS Lite (Trixie / Debian 13)
     validations:
       required: true
   - type: dropdown

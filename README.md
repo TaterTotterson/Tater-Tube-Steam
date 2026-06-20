@@ -2,11 +2,11 @@
 
 # 240-MP
 
-240-MP is a retro VCR style frontend to play content on [Raspberry Pi](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing) (preferably hooked up to a CRT TV). 
+240-MP is a retro VCR-style media frontend for Raspberry Pi, preferably hooked up to a CRT TV over composite video.
 
-Playback experiences are handled via modules to enable new integrations without requiring major changes to the overall frontend. There are 3 currently included playback modules; one for [Local Files](https://github.com/anthonycaccese/240-MP/wiki/Module:-Local-Files), one called Video on Demand for local Emby/Jellyfin servers, and a module similar to art/wallpaper modes on modern tvs called ([Ambient:Mode](https://github.com/anthonycaccese/240-MP/wiki/Module:-Ambient-Mode))
+Playback experiences are handled via modules so new integrations can be added without reshaping the shell. This fork includes Local Files, Video on Demand for local Emby/Jellyfin servers, and Ambient Mode for looping video/audio ambience.
 
-It's built to work in conjuction with MPV which will be installed (or updated) as a dependency during the [install](#Install) steps outlined below.
+It launches [mpv](https://mpv.io/) as the playback engine. The ready-to-flash image and Raspberry Pi installer install the required runtime dependencies for you.
 
 ## Video Overview
 
@@ -24,7 +24,7 @@ Watch on YouTube: https://youtu.be/r-gylGDoELY
 
 ## Current Features
 
-### Local Files Module ([Wiki](https://github.com/anthonycaccese/240-MP/wiki/Module:-Local-Files))
+### Local Files Module
 - Supported file types: `"mp4", "mkv", "avi", "mov", "m4v", "webm", "wmv", "flv", "f4v", "mpg", "mpeg", "vob"`
 - Playlist support using `m3u` and `m3u8` files
 - Folder browsing
@@ -46,34 +46,34 @@ Watch on YouTube: https://youtu.be/r-gylGDoELY
 - Show/Season browsing
 - Video quality selection: Auto direct play with AV1-to-H.264 fallback, plus forced transcode options
 
-### Ambient:Mode Module ([Wiki](https://github.com/anthonycaccese/240-MP/wiki/Module:-Ambient-Mode))
+### Ambient Mode Module
 - Supported video file types: `"mp4", "mkv", "avi", "mov", "m4v", "webm", "wmv", "flv", "f4v", "mpg", "mpeg", "vob"`
 - Playlist support for audio tracks using `m3u` and `m3u8` files
 - Mix video with a different audio track
 - Loops forever until you stop it
 
 ### Global
-- [Color Schemes](https://github.com/anthonycaccese/240-MP/wiki/Customizations)
-- [Keyboard & Controller](https://github.com/anthonycaccese/240-MP/wiki/Input) input support
+- Color schemes, including the Off Air CRT/static theme
+- Keyboard, USB remote, and controller input support
 - Media Keys during video playback (volume +/-, mute, play/pause, stop, seek, next chapter, previous chapter)
 
 ## Install 
 - [Ready-to-flash Raspberry Pi image](INSTALL.md#option-1-build-a-ready-to-flash-appliance-image)
 - [On a Raspberry Pi](INSTALL.md#on-a-raspberry-pi)
-- [On macOS (ARM)](INSTALL.md#on-macos-arm)
+- [Build from source / local macOS testing](BUILDING.md)
 
 ## Hardware Testing
-- [Raspberry Pi 3B](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing#raspberry-pi-3b)
-- [Raspberry Pi 3B+](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing#raspberry-pi-3b-1)
-- [Raspberry Pi 4B](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing#raspberry-pi-4b)
-- [Raspberry Pi 5](https://github.com/anthonycaccese/240-MP/wiki/Hardware-Testing#raspberry-pi-5)
+- Primary target: Raspberry Pi 4 with composite output to a CRT
+- Also expected to work on Raspberry Pi OS Lite arm64 over HDMI
+- Raspberry Pi 3/3B+ can work with lower playback headroom; see [BUILDING.md](BUILDING.md#video-decode-tuning-mpv_video_args)
+- Raspberry Pi 5 is best treated as HDMI-first unless your composite hardware path is known-good
 
 ## FAQs
 
 - Why didn't you use Kodi/LibreELEC/OSMC?
     - I've used all of those distros and they are all excellent but I also like making things and wanted something simpler without as many options.  Something that felt like a VCR from my youth.
 - Should I use 240-MP instead of Kodi/LibreELEC/OSMC?
-    - Nope 😄
+    - No.
     - All of those distros are amazing, feature rich, work across a ton of devices and have awesome supportive teams behind them.
     - I on the other hand am just one person making nostalgic things for my own niche use cases.  If those use cases match with what you're looking for, then 240-MP is a bunch of fun and I'd be happy for you to try it.  Otherwise, the well known distros are spectacular and you should likely open those doors instead.
 - Will this work on other Raspberry Pi models? (like the 5, 2 zero, etc...)
@@ -93,7 +93,7 @@ Watch on YouTube: https://youtu.be/r-gylGDoELY
 - Because this is a hobby project (and a fairly niche use case), I am using [Claude Code](https://www.anthropic.com/product/claude-code) to build a large part of the backend C++ code and structure the modules.  If you have concerns with that, I am glad to talk through it.  Also, please feel free to fork this repo, update any aspects and tailor things to your own use case; that's why the source is fully open and available.
 - Thank you to Emby and Jellyfin for local media-server APIs that make custom clients possible
 - Thank you to [the MPV team](https://mpv.io/) for a simple, extensible and cross platform media player
-- And thank you to the [Raspberry Pi Foundation](https://www.raspberrypi.org/) for helping me fill a drawer with SBCs to tinker with and inspire fun ideas like this project ❤️
+- And thank you to the [Raspberry Pi Foundation](https://www.raspberrypi.org/) for helping me fill a drawer with SBCs to tinker with and inspire fun ideas like this project.
 
 ## License
 
