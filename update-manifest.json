@@ -1,12 +1,12 @@
 {
-  "version": "2026.06.20.12",
+  "version": "2026.06.20.13",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/240-MP-Emby-Jelly",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/240-MP-Emby-Jelly/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.12/240-MP-v2026.06.20.12-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.12.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.13/240-MP-v2026.06.20.13-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.13.tar.gz",
   "notes": [
-    "Adds automated ready-to-flash Raspberry Pi image builds to GitHub releases.",
-    "Publishes image checksums alongside the normal Raspberry Pi app update tarball."
+    "Adds separate ready-to-flash Raspberry Pi images for NTSC and PAL composite CRTs.",
+    "Documents the local playback-control API for companion apps and voice-assistant bridges."
   ]
 }
