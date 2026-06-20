@@ -14,11 +14,11 @@ PI240_RUNTIME_PACKAGES=(
     qml6-module-qtquick-window
     qml6-module-qtquick-effects
     libsdl2-2.0-0
+    ir-keytable
     mpv
     openssh-server
     plymouth
     plymouth-themes
-    v4l-utils
 )
 
 pi240_is_root() {
@@ -53,6 +53,27 @@ pi240_install_file_from_stdin() {
 pi240_install_runtime_dependencies() {
     pi240_root apt-get update -qq
     pi240_root apt-get install -y "${PI240_RUNTIME_PACKAGES[@]}"
+}
+
+pi240_install_missing_runtime_dependencies() {
+    if ! command -v dpkg-query >/dev/null 2>&1 || ! command -v apt-get >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local missing=()
+    local pkg
+    for pkg in "${PI240_RUNTIME_PACKAGES[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+            missing+=("$pkg")
+        fi
+    done
+
+    if [ "${#missing[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    pi240_root env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    pi240_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
 }
 
 pi240_install_tty_rule() {
@@ -492,6 +513,9 @@ fi
 
 for device in "${devices[@]}"; do
     name="$(basename "$device")"
+    if [ -r "$device/protocols" ] && ! tr '[]' '  ' < "$device/protocols" | grep -qw "$PROTOCOL"; then
+        continue
+    fi
     ir-keytable -s "$name" -c -p "$PROTOCOL" -w "$KEYMAP" || true
 done
 IR_SETUP

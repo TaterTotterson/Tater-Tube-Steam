@@ -1,11 +1,22 @@
 #include "InputManager.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QQuickWindow>
 #include <QKeyEvent>
 #include <QFile>
 #include <QFileInfo>
+#include <QSocketNotifier>
 #include <QTextStream>
+
+#ifdef Q_OS_LINUX
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
 
 namespace {
 // Planted in nativeScanCode of synthesized events so the keyboard detector in
@@ -48,6 +59,9 @@ InputManager::InputManager(const QString &dataRoot, QObject *parent)
 
     rebuildMapping();
     initSdl();
+#ifdef Q_OS_LINUX
+    initIrReceiver();
+#endif
 
     // Watch the data dir (not the file) so input.cfg can appear later and so
     // replace-on-save editors are caught; mtime check filters unrelated writes
@@ -62,6 +76,9 @@ InputManager::InputManager(const QString &dataRoot, QObject *parent)
 }
 
 InputManager::~InputManager() {
+#ifdef Q_OS_LINUX
+    closeIrDevice();
+#endif
     for (SDL_GameController *gc : std::as_const(m_controllers))
         SDL_GameControllerClose(gc);
     m_controllers.clear();
@@ -318,6 +335,163 @@ void InputManager::onDataDirChanged(const QString &) {
     rebuildMapping();
 }
 
+#ifdef Q_OS_LINUX
+// ── GPIO IR receiver ──────────────────────────────────────────────────────────
+
+void InputManager::initIrReceiver() {
+    m_irScanTimer.setInterval(2000);
+    connect(&m_irScanTimer, &QTimer::timeout, this, &InputManager::scanIrReceiver);
+    scanIrReceiver();
+    if (m_irFd < 0)
+        m_irScanTimer.start();
+}
+
+void InputManager::scanIrReceiver() {
+    if (m_irFd >= 0)
+        return;
+
+    QDir inputDir(QStringLiteral("/dev/input"));
+    const QStringList entries = inputDir.entryList(QStringList{QStringLiteral("event*")},
+                                                   QDir::System | QDir::Files,
+                                                   QDir::Name);
+    for (const QString &entry : entries) {
+        if (openIrDevice(inputDir.absoluteFilePath(entry))) {
+            m_irScanTimer.stop();
+            return;
+        }
+    }
+
+    if (!m_irScanTimer.isActive())
+        m_irScanTimer.start();
+}
+
+bool InputManager::openIrDevice(const QString &path) {
+    const int fd = ::open(path.toLocal8Bit().constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0)
+        return false;
+
+    char name[256] = {};
+    if (::ioctl(fd, EVIOCGNAME(sizeof(name)), name) < 0) {
+        ::close(fd);
+        return false;
+    }
+
+    const QString deviceName = QString::fromLocal8Bit(name);
+    if (deviceName != QStringLiteral("gpio_ir_recv")) {
+        ::close(fd);
+        return false;
+    }
+
+    if (::ioctl(fd, EVIOCGRAB, 1) < 0) {
+        qWarning("[input] IR receiver found at %s, but exclusive grab failed: %s",
+                 qPrintable(path), strerror(errno));
+    }
+
+    m_irFd = fd;
+    m_irDevicePath = path;
+    m_irNotifier = new QSocketNotifier(m_irFd, QSocketNotifier::Read, this);
+    connect(m_irNotifier, &QSocketNotifier::activated,
+            this, [this] { onIrDeviceReady(); });
+
+    qInfo("[input] IR receiver ready: %s (%s)", qPrintable(path), qPrintable(deviceName));
+    return true;
+}
+
+void InputManager::closeIrDevice() {
+    if (m_irNotifier) {
+        m_irNotifier->setEnabled(false);
+        m_irNotifier->deleteLater();
+        m_irNotifier = nullptr;
+    }
+
+    if (m_irFd >= 0) {
+        ::ioctl(m_irFd, EVIOCGRAB, 0);
+        ::close(m_irFd);
+        m_irFd = -1;
+    }
+    m_irDevicePath.clear();
+}
+
+void InputManager::onIrDeviceReady() {
+    if (m_irFd < 0)
+        return;
+
+    while (true) {
+        input_event ev = {};
+        const ssize_t bytes = ::read(m_irFd, &ev, sizeof(ev));
+        if (bytes == sizeof(ev)) {
+            if (ev.type == EV_KEY)
+                handleIrKey(static_cast<quint16>(ev.code), ev.value);
+            continue;
+        }
+
+        if (bytes < 0 && errno == EINTR)
+            continue;
+        if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            return;
+
+        qWarning("[input] IR receiver disconnected: %s", qPrintable(m_irDevicePath));
+        closeIrDevice();
+        m_irScanTimer.start();
+        return;
+    }
+}
+
+void InputManager::handleIrKey(quint16 code, int value) {
+    const Action action = actionForLinuxKey(code);
+    if (action != Action::None) {
+        if (value == 1) {
+            pressAction(action, QStringLiteral("remote"));
+        } else if (value == 0) {
+            releaseAction(action);
+        }
+        return;
+    }
+
+    const QString mediaKey = mpvKeyForLinuxKey(code);
+    if (!mediaKey.isEmpty() && (value == 1 || value == 2)) {
+        setLastInputDevice(QStringLiteral("remote"));
+        emit mpvKeyRequested(mediaKey);
+    }
+}
+
+InputManager::Action InputManager::actionForLinuxKey(quint16 code) {
+    switch (code) {
+    case KEY_UP:        return Action::Up;
+    case KEY_DOWN:      return Action::Down;
+    case KEY_LEFT:      return Action::Left;
+    case KEY_RIGHT:     return Action::Right;
+    case KEY_OK:
+    case KEY_SELECT:
+    case KEY_ENTER:
+    case KEY_KPENTER:   return Action::Select;
+    case KEY_ESC:
+    case KEY_BACK:
+    case KEY_EXIT:
+    case KEY_MENU:      return Action::Back;
+    case KEY_PLAY:
+    case KEY_PAUSE:
+    case KEY_PLAYPAUSE:
+    case KEY_SPACE:     return Action::PlayPause;
+    default:            return Action::None;
+    }
+}
+
+QString InputManager::mpvKeyForLinuxKey(quint16 code) {
+    switch (code) {
+    case KEY_VOLUMEUP:     return QStringLiteral("VOLUME_UP");
+    case KEY_VOLUMEDOWN:   return QStringLiteral("VOLUME_DOWN");
+    case KEY_MUTE:         return QStringLiteral("MUTE");
+    case KEY_STOP:         return QStringLiteral("STOP");
+    case KEY_NEXT:         return QStringLiteral("NEXT");
+    case KEY_PREVIOUS:     return QStringLiteral("PREV");
+    case KEY_FASTFORWARD:  return QStringLiteral("FORWARD");
+    case KEY_REWIND:       return QStringLiteral("REWIND");
+    default:               return QString();
+    }
+}
+#endif
+
 // ── Input → action → synthesized key event ───────────────────────────────────
 
 // Footer labels follow the controller last touched, so swapping between e.g.
@@ -335,7 +509,7 @@ void InputManager::handleButton(SDL_JoystickID which, Uint8 button, bool pressed
         return;
     noteActiveController(which);
     if (pressed)
-        pressAction(a);
+        pressAction(a, QStringLiteral("gamepad"));
     else
         releaseAction(a);
 }
@@ -365,13 +539,13 @@ void InputManager::handleAxis(SDL_JoystickID which, Uint8 axis, Sint16 value) {
     if (old != 0)
         releaseAction(old < 0 ? it->first : it->second);
     if (now != 0)
-        pressAction(now < 0 ? it->first : it->second);
+        pressAction(now < 0 ? it->first : it->second, QStringLiteral("gamepad"));
 }
 
-void InputManager::pressAction(Action a) {
+void InputManager::pressAction(Action a, const QString &device) {
     if (a == Action::None)
         return;
-    setLastInputDevice(QStringLiteral("gamepad"));
+    setLastInputDevice(device);
     deliverPress(a, false);
 
     if (isDirectional(a)) {

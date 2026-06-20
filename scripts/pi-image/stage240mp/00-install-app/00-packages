@@ -8,6 +8,7 @@ libqt6svg6
 libxkbcommon-dev
 libsdl2-2.0-0
 libsdl2-dev
+ir-keytable
 mpv
 openssh-server
 plymouth
@@ -24,4 +25,3 @@ qt6-svg-dev
 qt6-svg-plugins
 qt6-wayland
 sudo
-v4l-utils

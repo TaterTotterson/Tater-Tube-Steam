@@ -11,6 +11,9 @@
 
 class QQuickWindow;
 class QKeyEvent;
+#ifdef Q_OS_LINUX
+class QSocketNotifier;
+#endif
 
 // Centralized gamepad input. SDL controller buttons/axes are mapped to a small
 // set of named actions (up/down/left/right/select/back/play_pause), and each
@@ -64,7 +67,7 @@ private:
     void noteActiveController(SDL_JoystickID which);
     void handleButton(SDL_JoystickID which, Uint8 button, bool pressed);
     void handleAxis(SDL_JoystickID which, Uint8 axis, Sint16 value);
-    void pressAction(Action a);
+    void pressAction(Action a, const QString &device);
     void releaseAction(Action a);
     void deliverPress(Action a, bool autoRepeat);
     void postKey(int qtKey, QEvent::Type type, bool autoRepeat);
@@ -82,6 +85,17 @@ private:
     static int buttonFromToken(const QString &token);
     static bool isDirectional(Action a);
 
+#ifdef Q_OS_LINUX
+    void initIrReceiver();
+    void scanIrReceiver();
+    bool openIrDevice(const QString &path);
+    void closeIrDevice();
+    void onIrDeviceReady();
+    void handleIrKey(quint16 code, int value);
+    static Action actionForLinuxKey(quint16 code);
+    static QString mpvKeyForLinuxKey(quint16 code);
+#endif
+
     QQuickWindow *m_window = nullptr;
     QString m_dataRoot;
     bool m_sdlReady = false;
@@ -91,6 +105,13 @@ private:
     QTimer m_repeatTimer;
     QFileSystemWatcher m_watcher;
     QDateTime m_cfgLastModified;
+
+#ifdef Q_OS_LINUX
+    QTimer m_irScanTimer;
+    QSocketNotifier *m_irNotifier = nullptr;
+    int m_irFd = -1;
+    QString m_irDevicePath;
+#endif
 
     QHash<SDL_JoystickID, SDL_GameController*> m_controllers;
     QHash<int, Action> m_buttonMap;                  // SDL_GameControllerButton → Action

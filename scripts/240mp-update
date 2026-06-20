@@ -78,6 +78,20 @@ curl -fsSL "$BINARY_ARCHIVE" -o "$TMP_DIR/update.tar.gz"
 mkdir -p "$TMP_DIR/install"
 tar -xzf "$TMP_DIR/update.tar.gz" -C "$TMP_DIR/install" --strip-components=3
 
+SETUP_HELPER="$TMP_DIR/install/share/240mp/scripts/lib/pi-setup.sh"
+if [ ! -f "$SETUP_HELPER" ]; then
+    log "Downloaded archive is missing Raspberry Pi service setup helper: $SETUP_HELPER"
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$SETUP_HELPER"
+
+log "Installing missing runtime dependencies"
+if ! pi240_install_missing_runtime_dependencies; then
+    log "Warning: could not install every missing runtime package; continuing with app update."
+fi
+
 log "Installing update"
 touch "$UPDATE_FLAG"
 SERVICE_STOPPED=1
@@ -95,8 +109,6 @@ if [ ! -f "$SETUP_HELPER" ]; then
 fi
 
 log "Refreshing Raspberry Pi service setup"
-# shellcheck source=/dev/null
-source "$SETUP_HELPER"
 
 SERVICE_USER="$(systemctl show "$SERVICE_NAME" -p User --value 2>/dev/null || true)"
 SERVICE_USER="${SERVICE_USER:-mp240}"

@@ -1,11 +1,12 @@
 {
-  "version": "2026.06.20.7",
+  "version": "2026.06.20.8",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/240-MP-Emby-Jelly",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/240-MP-Emby-Jelly/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.7/240-MP-v2026.06.20.7-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.7.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.8/240-MP-v2026.06.20.8-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.8.tar.gz",
   "notes": [
-    "Fixes Raspberry Pi composite playback audio launch order so mpv receives the analog Headphones ALSA device automatically."
+    "Fixes GPIO IR remote setup on Raspberry Pi images and updates by installing the correct ir-keytable package.",
+    "Adds direct gpio_ir_recv input handling so IR remote navigation and playback controls are routed by the app."
   ]
 }
