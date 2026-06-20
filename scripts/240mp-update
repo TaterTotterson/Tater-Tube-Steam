@@ -42,7 +42,6 @@ require_root
 require_cmd curl
 require_cmd python3
 require_cmd tar
-require_cmd cmake
 require_cmd systemctl
 
 log "Fetching manifest: $MANIFEST_URL"
@@ -56,66 +55,65 @@ with open(sys.argv[1], "r", encoding="utf-8") as handle:
     manifest = json.load(handle)
 
 repo = manifest.get("repo", "").rstrip("/")
-channel = manifest.get("channel", "main")
-source_archive = manifest.get("source_archive") or f"{repo}/archive/refs/heads/{channel}.tar.gz"
+binary_archive = manifest.get("binary_archive", "")
 
 print(manifest.get("version", ""))
-print(source_archive)
+print(binary_archive)
 print(repo)
 PY
 )
 
 VERSION="${manifest_values[0]:-}"
-SOURCE_ARCHIVE="${manifest_values[1]:-}"
+BINARY_ARCHIVE="${manifest_values[1]:-}"
 REPO_URL="${manifest_values[2]:-}"
 
-if [ -z "$VERSION" ] || [ -z "$SOURCE_ARCHIVE" ]; then
-    log "Manifest is missing version or source_archive."
+if [ -z "$VERSION" ] || [ -z "$BINARY_ARCHIVE" ]; then
+    log "Manifest is missing version or binary_archive."
     exit 1
 fi
 
-log "Preparing version $VERSION from ${REPO_URL:-source archive}"
-curl -fsSL "$SOURCE_ARCHIVE" -o "$TMP_DIR/source.tar.gz"
+log "Preparing version $VERSION from ${REPO_URL:-prebuilt archive}"
+curl -fsSL "$BINARY_ARCHIVE" -o "$TMP_DIR/update.tar.gz"
 
-mkdir -p "$TMP_DIR/source"
-tar -xzf "$TMP_DIR/source.tar.gz" -C "$TMP_DIR/source" --strip-components=1
-
-log "Building update"
-cmake -S "$TMP_DIR/source" -B "$TMP_DIR/build" -DCMAKE_BUILD_TYPE=Release
-BUILD_JOBS="$(nproc 2>/dev/null || printf '2')"
-cmake --build "$TMP_DIR/build" --parallel "$BUILD_JOBS"
+mkdir -p "$TMP_DIR/install"
+tar -xzf "$TMP_DIR/update.tar.gz" -C "$TMP_DIR/install" --strip-components=3
 
 log "Installing update"
 touch "$UPDATE_FLAG"
 SERVICE_STOPPED=1
 systemctl stop "$SERVICE_NAME" || true
 
-cmake --install "$TMP_DIR/build" --prefix "$INSTALL_PREFIX"
+install -d -m 0755 "$INSTALL_PREFIX"
+cp -a "$TMP_DIR/install/." "$INSTALL_PREFIX/"
 install -d -m 0755 "$INSTALL_PREFIX/share/240mp"
 install -m 0644 "$TMP_DIR/manifest.json" "$INSTALL_PREFIX/share/240mp/update-manifest.json"
 
-if [ -f "$TMP_DIR/source/scripts/lib/pi-setup.sh" ]; then
-    log "Refreshing Raspberry Pi service setup"
-    # shellcheck source=/dev/null
-    source "$TMP_DIR/source/scripts/lib/pi-setup.sh"
+SETUP_HELPER="$INSTALL_PREFIX/share/240mp/scripts/lib/pi-setup.sh"
+if [ ! -f "$SETUP_HELPER" ]; then
+    log "Installed archive is missing Raspberry Pi service setup helper: $SETUP_HELPER"
+    exit 1
+fi
 
-    SERVICE_USER="$(systemctl show "$SERVICE_NAME" -p User --value 2>/dev/null || true)"
-    SERVICE_USER="${SERVICE_USER:-mp240}"
-    SERVICE_HOME="$(getent passwd "$SERVICE_USER" 2>/dev/null | cut -d: -f6 || true)"
-    SERVICE_HOME="${SERVICE_HOME:-/var/lib/240mp}"
+log "Refreshing Raspberry Pi service setup"
+# shellcheck source=/dev/null
+source "$SETUP_HELPER"
 
-    pi240_create_service_user "$SERVICE_USER" "$SERVICE_HOME"
-    pi240_install_tty_rule
-    pi240_install_launcher "$INSTALL_PREFIX" /usr/local/bin/240mp
-    pi240_install_autostart "$SERVICE_USER" /usr/local/bin/240mp "/etc/systemd/system/${SERVICE_NAME}" "$SERVICE_HOME"
-    pi240_install_update_helper "$SERVICE_USER" /usr/local/sbin/240mp-update "$INSTALL_PREFIX/share/240mp/scripts/240mp-update"
-    if [ "${MP240_ENABLE_IR:-1}" = "1" ]; then
-        pi240_install_ir_support "${MP240_IR_PROTOCOL:-nec}" /etc/rc_keymaps/240mp.toml "${MP240_IR_GPIO_PIN:-17}"
-        pi240_enable_ir_overlay "${MP240_IR_GPIO_PIN:-17}"
-    fi
-    if [ "${MP240_ENABLE_BOOT_SPLASH:-1}" = "1" ]; then
-        pi240_install_boot_splash
-    fi
+SERVICE_USER="$(systemctl show "$SERVICE_NAME" -p User --value 2>/dev/null || true)"
+SERVICE_USER="${SERVICE_USER:-mp240}"
+SERVICE_HOME="$(getent passwd "$SERVICE_USER" 2>/dev/null | cut -d: -f6 || true)"
+SERVICE_HOME="${SERVICE_HOME:-/var/lib/240mp}"
+
+pi240_create_service_user "$SERVICE_USER" "$SERVICE_HOME"
+pi240_install_tty_rule
+pi240_install_launcher "$INSTALL_PREFIX" /usr/local/bin/240mp
+pi240_install_autostart "$SERVICE_USER" /usr/local/bin/240mp "/etc/systemd/system/${SERVICE_NAME}" "$SERVICE_HOME"
+pi240_install_update_helper "$SERVICE_USER" /usr/local/sbin/240mp-update "$INSTALL_PREFIX/share/240mp/scripts/240mp-update"
+if [ "${MP240_ENABLE_IR:-1}" = "1" ]; then
+    pi240_install_ir_support "${MP240_IR_PROTOCOL:-nec}" /etc/rc_keymaps/240mp.toml "${MP240_IR_GPIO_PIN:-17}"
+    pi240_enable_ir_overlay "${MP240_IR_GPIO_PIN:-17}"
+fi
+if [ "${MP240_ENABLE_BOOT_SPLASH:-1}" = "1" ]; then
+    pi240_install_boot_splash
 fi
 
 systemctl daemon-reload || true

@@ -370,14 +370,16 @@ void AppCore::checkForUpdates() {
         const QJsonObject manifest = doc.object();
         const QString latestVersion = manifest.value("version").toString();
         const QString sourceArchive = manifest.value("source_archive").toString();
+        const QString binaryArchive = manifest.value("binary_archive").toString();
         const QString repo = manifest.value("repo").toString(result.value("repo").toString());
 
         result["latestVersion"] = latestVersion;
         result["sourceArchive"] = sourceArchive;
+        result["binaryArchive"] = binaryArchive;
         result["repo"] = repo;
 
-        if (latestVersion.isEmpty() || sourceArchive.isEmpty()) {
-            result["message"] = "UPDATE MANIFEST IS MISSING VERSION OR SOURCE.";
+        if (latestVersion.isEmpty() || (sourceArchive.isEmpty() && binaryArchive.isEmpty())) {
+            result["message"] = "UPDATE MANIFEST IS MISSING VERSION OR ARCHIVE.";
             emit updateCheckFinished(result);
             return;
         }
