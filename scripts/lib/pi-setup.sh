@@ -149,6 +149,36 @@ pi240_append_boot_cmdline_args() {
     printf '%s\n' "$current" | pi240_root tee "$cmdline_txt" >/dev/null
 }
 
+pi240_set_boot_cmdline_arg() {
+    local prefix="$1"
+    local replacement="$2"
+    local cmdline_txt
+    cmdline_txt="$(pi240_boot_cmdline_path)"
+
+    pi240_root install -d -m 0755 "$(dirname "$cmdline_txt")"
+    pi240_root touch "$cmdline_txt"
+
+    local current=""
+    if [ -f "$cmdline_txt" ]; then
+        current="$(tr '\n' ' ' < "$cmdline_txt" | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')"
+    fi
+
+    local updated=""
+    local arg
+    for arg in $current; do
+        case "$arg" in
+            "$prefix"*) ;;
+            *) updated="${updated:+$updated }$arg" ;;
+        esac
+    done
+
+    if [ -n "$replacement" ]; then
+        updated="${updated:+$updated }$replacement"
+    fi
+
+    printf '%s\n' "$updated" | pi240_root tee "$cmdline_txt" >/dev/null
+}
+
 pi240_add_boot_cmdline_args() {
     pi240_append_boot_cmdline_args \
         quiet \
@@ -162,15 +192,67 @@ pi240_add_boot_cmdline_args() {
         plymouth.ignore-serial-consoles
 }
 
+pi240_detect_composite_standard() {
+    local requested="${1:-auto}"
+    requested="$(printf '%s' "$requested" | tr '[:upper:]' '[:lower:]')"
+
+    case "$requested" in
+        pal|crt-pal)
+            printf '%s\n' pal
+            return 0
+            ;;
+        ntsc|crt-ntsc)
+            printf '%s\n' ntsc
+            return 0
+            ;;
+    esac
+
+    local config_txt
+    config_txt="$(pi240_boot_config_path)"
+    if [ -f "$config_txt" ]; then
+        if grep -Eq '^[[:space:]]*sdtv_mode[[:space:]]*=[[:space:]]*2([[:space:]]|$)' "$config_txt"; then
+            printf '%s\n' pal
+            return 0
+        fi
+        if grep -Eq '^[[:space:]]*sdtv_mode[[:space:]]*=[[:space:]]*[01]([[:space:]]|$)' "$config_txt"; then
+            printf '%s\n' ntsc
+            return 0
+        fi
+    fi
+
+    local cmdline_txt
+    cmdline_txt="$(pi240_boot_cmdline_path)"
+    if [ -f "$cmdline_txt" ]; then
+        if grep -Eq '(^|[[:space:]])video=Composite-1:720x576' "$cmdline_txt"; then
+            printf '%s\n' pal
+            return 0
+        fi
+        if grep -Eq '(^|[[:space:]])video=Composite-1:720x480' "$cmdline_txt"; then
+            printf '%s\n' ntsc
+            return 0
+        fi
+    fi
+
+    printf '%s\n' ntsc
+}
+
 pi240_force_composite_video() {
+    local standard
+    standard="$(pi240_detect_composite_standard "${1:-auto}")"
+
+    local mode="720x480ie"
+    if [ "$standard" = "pal" ]; then
+        mode="720x576ie"
+    fi
+
     # The Pi composite KMS connector reports "unknown" unless it is force-enabled.
     # mpv rejects that as disconnected, even though Qt can render through vc4drmfb.
-    pi240_append_boot_cmdline_args "video=Composite-1:720x480ie"
+    pi240_set_boot_cmdline_arg "video=Composite-1:" "video=Composite-1:${mode}"
 }
 
 pi240_auto_force_composite_video() {
     if compgen -G "/sys/class/drm/*-Composite-1" >/dev/null; then
-        pi240_force_composite_video
+        pi240_force_composite_video "${1:-auto}"
     fi
 }
 

@@ -2,10 +2,10 @@
 
 240-MP is meant to be used as a ready-to-flash Raspberry Pi 4 appliance image for a CRT over composite video.
 
-The release image is built for:
+The release images are built for:
 
 - Raspberry Pi 4
-- Composite video output to a CRT
+- Composite video output to a CRT, with separate NTSC and PAL image assets
 - Emby/Jellyfin media servers
 - Argon IR remote support
 - GPIO IR receiver on GPIO23, physical pin 16
@@ -17,7 +17,7 @@ There is no Plex support in this fork.
 ## Flash the ready-to-flash image
 
 1. Open the [latest release](https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/latest).
-2. Download the `image_...img.xz` asset.
+2. Download the `image_...crt-ntsc...img.xz` asset for an NTSC CRT, or the `image_...crt-pal...img.xz` asset for a PAL CRT.
 3. Flash it to an SD card with Raspberry Pi Imager, Balena Etcher, or `dd`.
 4. Put the SD card in a Raspberry Pi 4.
 5. Connect the Pi to the CRT using composite video.
@@ -31,7 +31,9 @@ If this image will leave your own network, build a custom image with a stronger 
 
 ### Composite Video
 
-The image defaults to CRT/composite NTSC output through the Raspberry Pi 4 3.5mm AV jack.
+The release page has separate ready-to-flash images for NTSC and PAL composite output through the Raspberry Pi 4 3.5mm AV jack. Pick the image that matches your CRT video standard.
+
+Custom local image builds default to `PI_IMAGE_PROFILE=crt-ntsc`. Use `PI_IMAGE_PROFILE=crt-pal` for PAL.
 
 Use a known-good Raspberry Pi compatible composite cable. The 3.5mm AV cable pinout matters; some camcorder-style cables swap video and audio.
 
@@ -119,6 +121,12 @@ Build the default Raspberry Pi 4 composite/Argon IR image:
 ./scripts/build-pi-image.sh
 ```
 
+Build a PAL composite image:
+
+```bash
+PI_IMAGE_PROFILE=crt-pal PI_IMAGE_NAME=240mp-pal ./scripts/build-pi-image.sh
+```
+
 Build with a stronger login password:
 
 ```bash
@@ -135,7 +143,7 @@ Useful image build options:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `PI_IMAGE_PROFILE` | `crt-ntsc` | Composite CRT profile used by the release image |
+| `PI_IMAGE_PROFILE` | `crt-ntsc` | Composite CRT profile. Use `crt-ntsc` or `crt-pal`; `hdmi` and `none` are developer options |
 | `PI_IMAGE_NAME` | `240mp` | Output image name prefix |
 | `PI_FIRST_USER_NAME` | `tater` | Normal login user |
 | `PI_FIRST_USER_PASS` | `pi` | Password for the normal login user |

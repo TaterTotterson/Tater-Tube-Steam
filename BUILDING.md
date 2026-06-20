@@ -1,6 +1,6 @@
 # Building 240-MP
 
-Most users should use the ready-to-flash Raspberry Pi image from the latest GitHub release.
+Most users should use the ready-to-flash Raspberry Pi image for their CRT standard from the latest GitHub release.
 
 This fork is built around one production target: Raspberry Pi 4, composite video to a CRT, Argon IR remote support, and Emby/Jellyfin playback. There is no Plex support.
 
@@ -77,7 +77,7 @@ Pi settings are stored in:
 
 ## Build A Custom Pi Image
 
-The image builder wraps Raspberry Pi's `pi-gen` arm64 branch, builds 240-MP inside the rootfs, installs it under `/opt/240mp`, enables `240mp.service`, enables the boot screen, and applies the CRT/composite NTSC + Argon IR defaults.
+The image builder wraps Raspberry Pi's `pi-gen` arm64 branch, builds 240-MP inside the rootfs, installs it under `/opt/240mp`, enables `240mp.service`, enables the boot screen, and applies the CRT/composite + Argon IR defaults.
 
 Requirements on your build machine:
 
@@ -89,6 +89,12 @@ Build the default Raspberry Pi 4 composite/Argon IR image:
 
 ```bash
 ./scripts/build-pi-image.sh
+```
+
+Build a PAL composite image:
+
+```bash
+PI_IMAGE_PROFILE=crt-pal PI_IMAGE_NAME=240mp-pal ./scripts/build-pi-image.sh
 ```
 
 Build with a stronger login password:
@@ -111,7 +117,7 @@ Output images are written to:
 
 ## Playback Tuning
 
-The release image defaults to Pi 4 composite playback. The app launches `mpv` as a subprocess and chooses Pi 4-safe video and audio flags automatically.
+The release images default to Pi 4 composite playback. The NTSC image forces `720x480i`; the PAL image forces `720x576i`. The app launches `mpv` as a subprocess and chooses Pi 4-safe video and audio flags automatically.
 
 If you need to override mpv video output for debugging, add `mpv_video_args` under `"app"` in `config.json`:
 
@@ -184,8 +190,8 @@ git push origin v2026.06.20.13
 The release workflow builds and publishes:
 
 - Linux arm64 app update tarball
-- Ready-to-flash Raspberry Pi image
+- Ready-to-flash Raspberry Pi images for NTSC and PAL composite CRTs
 - Image checksum
 - Installer script
 
-The ready-to-flash image is the primary release artifact.
+The ready-to-flash images are the primary release artifacts.

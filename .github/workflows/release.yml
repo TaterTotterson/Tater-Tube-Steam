@@ -63,9 +63,15 @@ jobs:
   # Ready-to-flash Raspberry Pi image — built with pi-gen on the arm64 runner.
   # ──────────────────────────────────────────────────────────────────────────────
   build-pi-image:
-    name: Raspberry Pi image
+    name: Raspberry Pi image (${{ matrix.image_profile }})
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        image_profile:
+          - crt-ntsc
+          - crt-pal
 
     steps:
       - name: Checkout
@@ -73,8 +79,8 @@ jobs:
 
       - name: Build image
         env:
-          PI_IMAGE_NAME: 240mp-${{ github.ref_name }}
-          PI_IMAGE_PROFILE: crt-ntsc
+          PI_IMAGE_NAME: 240mp-${{ github.ref_name }}-${{ matrix.image_profile }}
+          PI_IMAGE_PROFILE: ${{ matrix.image_profile }}
           PI_ENABLE_SSH: "1"
           PI_FIRST_USER_NAME: tater
           PI_FIRST_USER_PASS: pi
@@ -95,7 +101,7 @@ jobs:
       - name: Upload image artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: pi-image
+          name: pi-image-${{ matrix.image_profile }}
           path: pi-image-artifacts/*
           if-no-files-found: error
           compression-level: 0
@@ -128,19 +134,36 @@ jobs:
 
           previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
           app_assets=(artifacts/tarball-linux-arm64/240-MP-*-linux-arm64.tar.gz)
-          image_assets=(artifacts/pi-image/image_*.img.xz)
+          image_assets=(artifacts/pi-image-*/image_*.img.xz)
 
           app_asset_name="$(basename "${app_assets[0]}")"
-          image_asset_name="$(basename "${image_assets[0]}")"
           download_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+
+          if [ "${#image_assets[@]}" -eq 0 ]; then
+            echo "No Raspberry Pi image assets found." >&2
+            exit 1
+          fi
+
+          : > SHA256SUMS.txt
+          for image_asset in "${image_assets[@]}"; do
+            sha256sum "$image_asset" | awk -v name="$(basename "$image_asset")" '{ print $1 "  " name }' >> SHA256SUMS.txt
+          done
 
           {
             echo "### Downloads"
             echo
             echo "| Platform | File |"
             echo "|---|---|"
-            echo "| Ready-to-flash Raspberry Pi OS image | [\`${image_asset_name}\`](${download_base}/${image_asset_name}) |"
-            echo "| Image checksum | [\`SHA256SUMS.txt\`](${download_base}/SHA256SUMS.txt) |"
+            for image_asset in "${image_assets[@]}"; do
+              image_asset_name="$(basename "$image_asset")"
+              image_label="Ready-to-flash Raspberry Pi OS image"
+              case "$image_asset_name" in
+                *crt-ntsc*) image_label="Ready-to-flash Raspberry Pi OS image (NTSC composite)" ;;
+                *crt-pal*) image_label="Ready-to-flash Raspberry Pi OS image (PAL composite)" ;;
+              esac
+              echo "| ${image_label} | [\`${image_asset_name}\`](${download_base}/${image_asset_name}) |"
+            done
+            echo "| Image checksums | [\`SHA256SUMS.txt\`](${download_base}/SHA256SUMS.txt) |"
             echo "| Raspberry Pi OS Trixie app update (arm64) | [\`${app_asset_name}\`](${download_base}/${app_asset_name}) |"
             echo "| Installer | [\`install.sh\`](${download_base}/install.sh) |"
             echo
@@ -158,8 +181,8 @@ jobs:
             echo
             echo "### Install Instructions"
             echo
-            echo "- Ready-to-flash image: download the image asset, flash it with Raspberry Pi Imager or Balena Etcher, then boot the Pi."
-            echo "- Raspberry Pi OS Trixie app update: [Instructions](INSTALL.md#update)"
+            echo "- Ready-to-flash image: download the NTSC or PAL image asset for your CRT, flash it with Raspberry Pi Imager or Balena Etcher, then boot the Pi."
+            echo "- Raspberry Pi OS Trixie app update: [Instructions](INSTALL.md#update-an-existing-240-mp-image)"
           } > release-notes.md
 
       - name: Publish
@@ -171,8 +194,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           files: |
             artifacts/tarball-linux-arm64/*.tar.gz
-            artifacts/pi-image/*.img.xz
-            artifacts/pi-image/*.info
-            artifacts/pi-image/SHA256SUMS.txt
+            artifacts/pi-image-*/*.img.xz
+            artifacts/pi-image-*/*.info
+            SHA256SUMS.txt
             scripts/install.sh
           body_path: release-notes.md

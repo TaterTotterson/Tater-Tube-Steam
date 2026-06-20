@@ -21,6 +21,7 @@ body:
       label: Display & output
       options:
         - CRT via composite (NTSC)
+        - CRT via composite (PAL)
     validations:
       required: true
   - type: input

@@ -45,6 +45,7 @@ body:
       description: The supported image target is composite output to a CRT.
       options:
         - CRT via composite (NTSC)
+        - CRT via composite (PAL)
     validations:
       required: true
   - type: dropdown

@@ -86,10 +86,10 @@ patch_pi_gen_disable_apt_listchanges() {
 }
 
 case "$PI_IMAGE_PROFILE" in
-    hdmi|crt-ntsc|none) ;;
+    hdmi|crt-ntsc|crt-pal|none) ;;
     *)
         echo "Unknown PI_IMAGE_PROFILE: $PI_IMAGE_PROFILE" >&2
-        echo "Use one of: hdmi, crt-ntsc, none" >&2
+        echo "Use one of: hdmi, crt-ntsc, crt-pal, none" >&2
         exit 1
         ;;
 esac

@@ -41,7 +41,7 @@ if [ "$PROFILE" != "none" ]; then
     SNIPPET="${SUBSTAGE_DIR}/files/config-${PROFILE}.txt"
     if [ ! -f "$SNIPPET" ]; then
         echo "Unknown 240-MP display profile: $PROFILE" >&2
-        echo "Expected one of: hdmi, crt-ntsc, none" >&2
+        echo "Expected one of: hdmi, crt-ntsc, crt-pal, none" >&2
         exit 1
     fi
 
