@@ -1,12 +1,12 @@
 {
-  "version": "2026.06.20.11",
+  "version": "2026.06.20.12",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/240-MP-Emby-Jelly",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/240-MP-Emby-Jelly/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.11/240-MP-v2026.06.20.11-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.11.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.12/240-MP-v2026.06.20.12-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.12.tar.gz",
   "notes": [
-    "Adds a local HTTP playback-control API on port 24024 for companion apps and voice-assistant bridges.",
-    "Exposes playback status, pause/resume, stop, seek, volume, mute, and whitelisted mpv key controls."
+    "Adds automated ready-to-flash Raspberry Pi image builds to GitHub releases.",
+    "Publishes image checksums alongside the normal Raspberry Pi app update tarball."
   ]
 }

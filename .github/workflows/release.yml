@@ -8,8 +8,7 @@ on:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────────
-  # Linux arm64 — targets Raspberry Pi OS Trixie (Debian 13). This is the only
-  # release artifact; macOS builds are local smoke tests only.
+  # Linux arm64 app tarball — targets Raspberry Pi OS Trixie (Debian 13).
   # ──────────────────────────────────────────────────────────────────────────────
   build-linux-arm64:
     name: Linux arm64
@@ -61,11 +60,52 @@ jobs:
           if-no-files-found: error
 
   # ──────────────────────────────────────────────────────────────────────────────
+  # Ready-to-flash Raspberry Pi image — built with pi-gen on the arm64 runner.
+  # ──────────────────────────────────────────────────────────────────────────────
+  build-pi-image:
+    name: Raspberry Pi image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Build image
+        env:
+          PI_IMAGE_NAME: 240mp-${{ github.ref_name }}
+          PI_IMAGE_PROFILE: crt-ntsc
+          PI_ENABLE_SSH: "1"
+          PI_FIRST_USER_NAME: tater
+          PI_FIRST_USER_PASS: pi
+        run: ./scripts/build-pi-image.sh
+
+      - name: Prepare image artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p pi-image-artifacts
+          cp .cache/pi-gen-arm64/deploy/image_*.img.xz pi-image-artifacts/
+          cp .cache/pi-gen-arm64/deploy/*.info pi-image-artifacts/ || true
+          (
+            cd pi-image-artifacts
+            sha256sum image_*.img.xz > SHA256SUMS.txt
+            ls -lh
+          )
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: pi-image
+          path: pi-image-artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+
+  # ──────────────────────────────────────────────────────────────────────────────
   # Publish GitHub Release
   # ──────────────────────────────────────────────────────────────────────────────
   release:
     name: Publish Release
-    needs: [build-linux-arm64]
+    needs: [build-linux-arm64, build-pi-image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -73,11 +113,53 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Download artifacts
         uses: actions/download-artifact@v4.3.0
         with:
           path: artifacts
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          app_assets=(artifacts/tarball-linux-arm64/240-MP-*-linux-arm64.tar.gz)
+          image_assets=(artifacts/pi-image/image_*.img.xz)
+
+          app_asset_name="$(basename "${app_assets[0]}")"
+          image_asset_name="$(basename "${image_assets[0]}")"
+
+          {
+            echo "### Downloads"
+            echo
+            echo "| Platform | File |"
+            echo "|---|---|"
+            echo "| Raspberry Pi OS Trixie app update (arm64) | \`${app_asset_name}\` |"
+            echo "| Ready-to-flash Raspberry Pi OS image | \`${image_asset_name}\` |"
+            echo "| Image checksum | \`SHA256SUMS.txt\` |"
+            echo "| Installer | \`install.sh\` |"
+            echo
+            if [ -n "$previous_tag" ]; then
+              echo "### Changes since ${previous_tag}"
+              echo
+              git log --pretty=format:'- %s (`%h`)' "${previous_tag}..${GITHUB_REF_NAME}"
+              echo
+            else
+              echo "### Changes"
+              echo
+              git log --pretty=format:'- %s (`%h`)' "${GITHUB_REF_NAME}"
+              echo
+            fi
+            echo
+            echo "### Install Instructions"
+            echo
+            echo "- Ready-to-flash image: download the image asset, flash it with Raspberry Pi Imager or Balena Etcher, then boot the Pi."
+            echo "- Raspberry Pi OS Trixie app update: [Instructions](INSTALL.md#update)"
+          } > release-notes.md
 
       - name: Publish
         uses: softprops/action-gh-release@v2
@@ -88,18 +170,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           files: |
             artifacts/tarball-linux-arm64/*.tar.gz
+            artifacts/pi-image/*.img.xz
+            artifacts/pi-image/*.info
+            artifacts/pi-image/SHA256SUMS.txt
             scripts/install.sh
-          body: |
-            ### Downloads:
-
-            | Platform | File |
-            |---|---|
-            | Raspberry Pi OS Trixie (arm64) | `240-MP-${{ github.ref_name }}-linux-arm64.tar.gz` |
-
-            ### Install Instructions:
-
-            - Raspberry Pi OS Trixie (arm64): [Instructions](INSTALL.md#on-a-raspberry-pi)
-
-            ### Update Instructions:
-
-            - Raspberry Pi OS Trixie (arm64): [Instructions](INSTALL.md#update)
+          body_path: release-notes.md

@@ -10,6 +10,8 @@ If you are building from source, you can now skip the manual OS setup and build 
 
 The repo includes a [pi-gen](https://github.com/RPi-Distro/pi-gen) wrapper that builds a Raspberry Pi OS Lite (64-bit) image and enables 240-MP on boot.
 
+Published GitHub releases include a ready-to-flash `.img.xz` image for the default CRT/composite NTSC profile. Use the build steps below only when you want to customize the image locally.
+
 Requirements on your build machine:
 
 - Docker
