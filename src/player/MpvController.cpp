@@ -149,7 +149,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         return;
     }
 
-    const QString oscScriptName = (oscMode == "ota") ? "ota-osc.lua"
+    const bool isOtaMode = (oscMode == "ota");
+    const QString oscScriptName = isOtaMode ? "ota-osc.lua"
         : "mpv-osc.lua";
     const QString oscScript = m_appRoot + "/scripts/" + oscScriptName;
     const bool hasOscScript = QFile::exists(oscScript);
@@ -182,7 +183,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         args << QString("--script=%1").arg(mediaKeysScript);
 
     const QString vcrOsdScript = m_appRoot + "/scripts/vcr-osd.lua";
-    if (QFile::exists(vcrOsdScript))
+    if (!isOtaMode && QFile::exists(vcrOsdScript))
         args << QString("--script=%1").arg(vcrOsdScript);
 
     if (playlistStart >= 0)

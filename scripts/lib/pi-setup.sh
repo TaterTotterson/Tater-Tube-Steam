@@ -379,9 +379,9 @@ pi240_show_update_splash() {
         return 0
     fi
 
-    # Hide whatever agetty or the kernel last left on tty1 before Plymouth
-    # takes over. On composite output the handoff can otherwise expose the
-    # login console behind the update message for a moment.
+    # Hide whatever agetty or the kernel last left on the active console before
+    # Plymouth takes over. On composite output the handoff can otherwise expose
+    # the login prompt behind the update message for a moment.
     pi240_blank_update_console || true
 
     if ! plymouth --ping >/dev/null 2>&1; then
@@ -399,8 +399,8 @@ pi240_show_update_splash() {
     pi240_root plymouth display-message --text="240MP_UPDATE" >/dev/null 2>&1 || true
 }
 
-pi240_blank_update_console() {
-    local tty="${1:-/dev/tty1}"
+pi240_blank_one_console() {
+    local tty="$1"
     [ -e "$tty" ] || return 0
 
     # Clear stale login text from the underlying VT before the EGL app releases
@@ -409,11 +409,31 @@ pi240_blank_update_console() {
 
     if command -v setterm >/dev/null 2>&1; then
         if pi240_is_root; then
-            TERM=linux setterm --cursor off --clear all > "$tty" 2>/dev/null || true
+            TERM=linux setterm --cursor off --clear all --blank force > "$tty" 2>/dev/null || true
         else
-            sudo sh -c "TERM=linux setterm --cursor off --clear all > '$tty'" 2>/dev/null || true
+            sudo sh -c "TERM=linux setterm --cursor off --clear all --blank force > '$tty'" 2>/dev/null || true
         fi
     fi
+}
+
+pi240_blank_update_console() {
+    local ttys=("$@")
+    local active_tty=""
+    local tty
+
+    if [ "${#ttys[@]}" -eq 0 ]; then
+        ttys=(/dev/tty1 /dev/tty0 /dev/tty12)
+        if [ -r /sys/class/tty/tty0/active ]; then
+            active_tty="$(cat /sys/class/tty/tty0/active 2>/dev/null || true)"
+            case "$active_tty" in
+                tty[0-9]*) ttys+=("/dev/$active_tty") ;;
+            esac
+        fi
+    fi
+
+    for tty in "${ttys[@]}"; do
+        pi240_blank_one_console "$tty"
+    done
 }
 
 pi240_install_launcher() {
@@ -803,18 +823,35 @@ UNIT
 pi240_install_file_from_stdin /usr/local/bin/240mp-stop 0755 <<'STOP_HELPER'
 #!/usr/bin/env bash
 # Called by 240mp.service ExecStopPost. systemd sets $EXIT_STATUS to the app's exit code.
-blank_tty1() {
-    if [ -e /dev/tty1 ]; then
-        printf '\033c\033[?25l\033[2J\033[H' > /dev/tty1 2>/dev/null || true
+blank_update_console() {
+    local ttys=(/dev/tty1 /dev/tty0 /dev/tty12)
+    local active_tty=""
+    local tty
+
+    if [ -r /sys/class/tty/tty0/active ]; then
+        active_tty="$(cat /sys/class/tty/tty0/active 2>/dev/null || true)"
+        case "$active_tty" in
+            tty[0-9]*) ttys+=("/dev/$active_tty") ;;
+        esac
     fi
+
+    for tty in "${ttys[@]}"; do
+        [ -e "$tty" ] || continue
+        printf '\033c\033[?25l\033[0m\033[40m\033[37m\033[2J\033[3J\033[H' > "$tty" 2>/dev/null || true
+        if command -v setterm >/dev/null 2>&1; then
+            TERM=linux setterm --cursor off --clear all --blank force > "$tty" 2>/dev/null || true
+        fi
+    done
 }
 
 if [ -e /run/240mp-updating ]; then
-    blank_tty1
+    systemctl stop 240mp-terminal.service >/dev/null 2>&1 || true
+    blank_update_console
     exit 0
 fi
 if systemctl list-units --no-legend --type=service --state=activating,running '240mp-update-*.service' 2>/dev/null | grep -q '^240mp-update-'; then
-    blank_tty1
+    systemctl stop 240mp-terminal.service >/dev/null 2>&1 || true
+    blank_update_console
     exit 0
 fi
 
