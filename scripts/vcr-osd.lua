@@ -3,12 +3,15 @@ local assdraw = require 'mp.assdraw'
 local overlay = mp.create_osd_overlay("ass-events")
 local hide_timer = nil
 local loaded = false
+local latest_label = ""
+local latest_detail = ""
 
 local C_WHITE = "&HFFFFFF&"
 local C_BLACK = "&H000000&"
 local C_BLUE  = "&HA81E00&"
 local A_OPAQUE = "&H00&"
 local A_BOX = "&H55&"
+local DISPLAY_SECONDS = 7.0
 
 local function ass_escape(text)
     return tostring(text or ""):gsub("\\", "\\\\"):gsub("{", "\\{"):gsub("}", "\\}")
@@ -69,7 +72,22 @@ local function show_status(label, detail, seconds)
     overlay:update()
 
     if hide_timer then hide_timer:kill() end
-    hide_timer = mp.add_timeout(seconds or 1.8, hide)
+    hide_timer = mp.add_timeout(seconds or DISPLAY_SECONDS, hide)
+end
+
+local function show_status_retried(label, detail, seconds)
+    if not label or label == "" then return end
+    latest_label = label
+    latest_detail = detail or ""
+
+    show_status(label, detail or "", seconds or DISPLAY_SECONDS)
+    for _, delay in ipairs({0.2, 0.7, 1.4}) do
+        mp.add_timeout(delay, function()
+            if latest_label == label and latest_detail == (detail or "") then
+                show_status(label, detail or "", seconds or DISPLAY_SECONDS)
+            end
+        end)
+    end
 end
 
 mp.register_script_message("240mp-vcr-status", function(label, detail)
@@ -80,7 +98,7 @@ mp.register_event("file-loaded", function()
     loaded = true
     local input = (mp.get_opt("vcr-input") or "VIDEO 1"):upper()
     local title = (mp.get_property("media-title", "") or ""):upper()
-    show_status(input, title, 2.4)
+    show_status_retried(input, title, DISPLAY_SECONDS)
 end)
 
 mp.register_event("end-file", function()

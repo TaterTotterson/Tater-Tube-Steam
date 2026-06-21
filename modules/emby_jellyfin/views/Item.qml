@@ -92,6 +92,7 @@ FocusScope {
                 partKey: d.partKey,
                 partId: d.partId,
                 title: d.title,
+                grandparentTitle: d.grandparentTitle || "",
                 viewOffset: d.viewOffset || 0,
                 duration: d.duration || 0,
                 audioStreams: d.audioStreams || [],

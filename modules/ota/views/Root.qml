@@ -426,17 +426,6 @@ FocusScope {
         z: 4
     }
 
-    AppBar {
-        iconSource: otaRoot.moduleIcon
-        title: otaRoot.moduleName
-        subtitle: otaRoot.serverName
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.topMargin: root.sh * 0.125
-        anchors.leftMargin: root.sw * 0.125
-        visible: !otaRoot.noSignalVisible && (otaRoot.tuningStaticVisible || !hasStartedPlayback)
-    }
-
     Column {
         visible: otaRoot.hdhomerunSetupVisible
         anchors.left: parent.left
@@ -485,17 +474,30 @@ FocusScope {
 
     }
 
-    Text {
-        text: statusText
-        color: root.primaryColor
-        font.family: root.globalFont
-        font.capitalization: Font.AllUppercase
-        anchors.centerIn: parent
-        horizontalAlignment: Text.AlignHCenter
-        width: root.sw * 0.8
-        wrapMode: Text.WordWrap
-        font.pixelSize: root.sh * 0.05
+    Rectangle {
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: root.sh * 0.11
+        anchors.rightMargin: root.sw * 0.08
+        width: Math.min(root.sw * 0.72, otaStatusText.implicitWidth + root.sw * 0.036)
+        height: otaStatusText.implicitHeight + root.sh * 0.024
+        color: Qt.rgba(0, 0, 0, 0.65)
         visible: !otaRoot.noSignalVisible && !otaRoot.hdhomerunSetupVisible && (otaRoot.tuningStaticVisible || !hasStartedPlayback)
+
+        Text {
+            id: otaStatusText
+            text: otaRoot.statusText
+            color: "white"
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            anchors.right: parent.right
+            anchors.rightMargin: root.sw * 0.018
+            anchors.verticalCenter: parent.verticalCenter
+            horizontalAlignment: Text.AlignRight
+            width: parent.width - root.sw * 0.036
+            elide: Text.ElideRight
+            font.pixelSize: Math.max(18, root.sh * 0.065)
+        }
     }
 
 }

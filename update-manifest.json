@@ -1,13 +1,13 @@
 {
-  "version": "2026.06.20.26",
+  "version": "2026.06.20.27",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/240-MP-Emby-Jelly",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/240-MP-Emby-Jelly/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.26/240-MP-v2026.06.20.26-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.26.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.27/240-MP-v2026.06.20.27-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.27.tar.gz",
   "notes": [
-    "Keeps the OTA channel label on screen longer and retries it after playback starts so it appears reliably.",
-    "Removes remaining control-hint footer text from OTA, VOD, and local video screens.",
-    "Includes the retro VCR clock, playback OSD, sleep timer, no-signal screens, OTA last-channel recall, and updater splash polish from v2026.06.20.25."
+    "Removes the Over The Air header during tuning and moves the channel label to the top-right VCR OSD position.",
+    "Keeps the VOD input overlay on screen longer and retries it after playback starts so it appears reliably.",
+    "Uses the show name instead of the episode name for VOD episode playback overlays."
   ]
 }

@@ -20,6 +20,7 @@ FocusScope {
     property string sessionId:    navParams.sessionId    || ""
     property int    viewOffset:   navParams.viewOffset   || 0
     property string itemTitle:    navParams.title        || ""
+    property string overlayTitle: navParams.grandparentTitle || navParams.title || ""
     property var    audioStreams:     navParams.audioStreams     || []
     property var    subtitleStreams:  navParams.subtitleStreams  || []
     property int    audioIdx:    0
@@ -210,12 +211,12 @@ FocusScope {
             // to the resume point. This keeps everything before offsetMs seekable, so
             // the user can rewind past the resume point.
             mpvController.loadAndPlay(streamUrl, offsetMs / 1000.0, 0, -1, [], false, -1, 0.0,
-                                      httpHeaderFields, false, "", false, itemTitle)
+                                      httpHeaderFields, false, "", false, overlayTitle)
         } else {
             var sub = buildSubArgs()
             mpvController.loadAndPlay(streamUrl, offsetMs / 1000.0,
                                        audioIdx + 1, sub.track, sub.urls, false, -1, 0.0,
-                                       httpHeaderFields, false, "", false, itemTitle)
+                                       httpHeaderFields, false, "", false, overlayTitle)
         }
     }
 
@@ -265,7 +266,7 @@ FocusScope {
                 // mpv to the resume point — keeps everything before it seekable.
                 var sub = buildSubArgs()
                 mpvController.loadAndPlay(url, viewOffset / 1000.0, audioIdx + 1, sub.track, sub.urls, false, -1, 0.0,
-                                          httpHeaderFields, false, "", false, itemTitle)
+                                          httpHeaderFields, false, "", false, overlayTitle)
                 return
             }
         }
@@ -290,6 +291,7 @@ FocusScope {
         partKey     = detail.partKey      || ""
         partId      = detail.partId       || ""
         itemTitle   = detail.title        || ""
+        overlayTitle = detail.grandparentTitle || detail.title || ""
         audioStreams    = detail.audioStreams    || []
         subtitleStreams = detail.subtitleStreams || []
         isTranscoding   = detail.forceTranscode  || false
