@@ -10,6 +10,19 @@
       "label": "ENABLED",
       "type": "toggle",
       "default": "ON"
+    },
+    {
+      "key": "source",
+      "label": "SOURCE",
+      "type": "list_single",
+      "options": ["Emby/Jellyfin", "HDHomeRun Direct"],
+      "default": "Emby/Jellyfin"
+    },
+    {
+      "key": "hdhomerun_host",
+      "label": "HDHOMERUN ADDRESS",
+      "type": "text",
+      "default": ""
     }
   ]
 }

@@ -394,6 +394,15 @@ pi240_show_update_splash() {
     pi240_root plymouth display-message --text="240MP_UPDATE" >/dev/null 2>&1 || true
 }
 
+pi240_blank_update_console() {
+    local tty="${1:-/dev/tty1}"
+    [ -e "$tty" ] || return 0
+
+    # Clear stale login text from the underlying VT before the EGL app releases
+    # the display. Plymouth may not be able to draw until KMS is free.
+    printf '\033c\033[?25l\033[2J\033[H' | pi240_root tee "$tty" >/dev/null 2>&1 || true
+}
+
 pi240_install_launcher() {
     local install_dir="${1:-/opt/240mp}"
     local launcher="${2:-/usr/local/bin/240mp}"
@@ -781,10 +790,18 @@ UNIT
 pi240_install_file_from_stdin /usr/local/bin/240mp-stop 0755 <<'STOP_HELPER'
 #!/usr/bin/env bash
 # Called by 240mp.service ExecStopPost. systemd sets $EXIT_STATUS to the app's exit code.
+blank_tty1() {
+    if [ -e /dev/tty1 ]; then
+        printf '\033c\033[?25l\033[2J\033[H' > /dev/tty1 2>/dev/null || true
+    fi
+}
+
 if [ -e /run/240mp-updating ]; then
+    blank_tty1
     exit 0
 fi
 if systemctl list-units --no-legend --type=service --state=activating,running '240mp-update-*.service' 2>/dev/null | grep -q '^240mp-update-'; then
+    blank_tty1
     exit 0
 fi
 

@@ -1064,6 +1064,9 @@ void EmbyJellyfinBackend::request_live_tv_stream(const QString &channelId,
         return;
     }
 
+    closeActiveLiveTvStream(false);
+    const int requestSerial = ++m_liveTvRequestSerial;
+
     const QString liveTvQuality = forceTranscode ? kOtaVideoQuality : QString{};
     QJsonObject payload = playbackInfoPayload({}, {}, {}, 0,
                                               forceTranscode, liveTvQuality);
@@ -1071,7 +1074,7 @@ void EmbyJellyfinBackend::request_live_tv_stream(const QString &channelId,
                               QJsonDocument(payload).toJson(QJsonDocument::Compact));
 
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, channelId, sessionId, forceTranscode, liveTvQuality]() {
+            [this, reply, channelId, sessionId, forceTranscode, liveTvQuality, requestSerial]() {
         reply->deleteLater();
         const QByteArray bytes = reply->readAll();
         if (reply->error() != QNetworkReply::NoError) {
@@ -1101,10 +1104,29 @@ void EmbyJellyfinBackend::request_live_tv_stream(const QString &channelId,
         const QString url = playbackUrlFromInfo(info, channelId, {}, sessionId,
                                                 {}, {}, forceTranscode, &mediaSource,
                                                 liveTvQuality);
+        QString playSessionId = info["PlaySessionId"].toString();
+        if (playSessionId.isEmpty())
+            playSessionId = sessionId;
+        QString mediaSourceId = mediaSource["Id"].toString();
+        if (mediaSourceId.isEmpty())
+            mediaSourceId = channelId;
+        const QString liveStreamId = mediaSource["LiveStreamId"].toString();
+
         if (url.isEmpty()) {
+            closeLiveTvStream(channelId, mediaSourceId, liveStreamId, playSessionId, true);
             emit errorOccurred("OTA PLAYBACK FAILED: NO PLAYABLE STREAM");
             return;
         }
+
+        if (requestSerial != m_liveTvRequestSerial) {
+            closeLiveTvStream(channelId, mediaSourceId, liveStreamId, playSessionId, true);
+            return;
+        }
+
+        m_liveTvItemId = channelId;
+        m_liveTvMediaSourceId = mediaSourceId;
+        m_liveTvLiveStreamId = liveStreamId;
+        m_liveTvPlaySessionId = playSessionId;
 
         const QString method = mediaSource["TranscodingUrl"].toString().isEmpty()
             ? QStringLiteral("direct")
@@ -1115,6 +1137,93 @@ void EmbyJellyfinBackend::request_live_tv_stream(const QString &channelId,
 
         emit liveTvStreamReady(channelId, url, httpHeaderFieldsFor(mediaSource));
     });
+}
+
+void EmbyJellyfinBackend::stop_live_tv_stream(bool failed) {
+    ++m_liveTvRequestSerial;
+    closeActiveLiveTvStream(failed);
+}
+
+void EmbyJellyfinBackend::closeActiveLiveTvStream(bool failed) {
+    if (m_liveTvItemId.isEmpty() &&
+        m_liveTvMediaSourceId.isEmpty() &&
+        m_liveTvLiveStreamId.isEmpty() &&
+        m_liveTvPlaySessionId.isEmpty()) {
+        return;
+    }
+
+    const QString itemId = m_liveTvItemId;
+    const QString mediaSourceId = m_liveTvMediaSourceId;
+    const QString liveStreamId = m_liveTvLiveStreamId;
+    const QString playSessionId = m_liveTvPlaySessionId;
+
+    m_liveTvItemId.clear();
+    m_liveTvMediaSourceId.clear();
+    m_liveTvLiveStreamId.clear();
+    m_liveTvPlaySessionId.clear();
+
+    closeLiveTvStream(itemId, mediaSourceId, liveStreamId, playSessionId, failed);
+}
+
+void EmbyJellyfinBackend::closeLiveTvStream(const QString &itemId,
+                                            const QString &mediaSourceId,
+                                            const QString &liveStreamId,
+                                            const QString &playSessionId,
+                                            bool failed) {
+    if (itemId.isEmpty() &&
+        mediaSourceId.isEmpty() &&
+        liveStreamId.isEmpty() &&
+        playSessionId.isEmpty()) {
+        return;
+    }
+
+    if (!itemId.isEmpty()) {
+        QJsonObject body{
+            {"ItemId", itemId},
+            {"PositionTicks", 0},
+            {"Failed", failed}
+        };
+        if (!mediaSourceId.isEmpty())
+            body["MediaSourceId"] = mediaSourceId;
+        if (!liveStreamId.isEmpty())
+            body["LiveStreamId"] = liveStreamId;
+        if (!playSessionId.isEmpty())
+            body["PlaySessionId"] = playSessionId;
+
+        auto *reply = apiPostJson(apiUrl("/Sessions/Playing/Stopped"),
+                                  QJsonDocument(body).toJson(QJsonDocument::Compact));
+        connect(reply, &QNetworkReply::finished, this, [reply]() {
+            const QByteArray bytes = reply->readAll();
+            if (reply->error() != QNetworkReply::NoError) {
+                qWarning("[EmbyJellyfinBackend] Live TV playback stop failed: %s %s",
+                         qPrintable(reply->errorString()),
+                         qPrintable(abbreviatedNetworkBody(bytes)));
+            }
+            reply->deleteLater();
+        });
+    }
+
+    if (!liveStreamId.isEmpty()) {
+        QUrl closeUrl = apiUrl("/LiveStreams/Close");
+        QUrlQuery q;
+        q.addQueryItem("liveStreamId", liveStreamId);
+        closeUrl.setQuery(q);
+
+        auto *reply = apiPostJson(closeUrl, QByteArray("{}"));
+        connect(reply, &QNetworkReply::finished, this, [reply, liveStreamId]() {
+            const QByteArray bytes = reply->readAll();
+            if (reply->error() != QNetworkReply::NoError) {
+                qWarning("[EmbyJellyfinBackend] Live TV stream close failed for %s: %s %s",
+                         qPrintable(liveStreamId),
+                         qPrintable(reply->errorString()),
+                         qPrintable(abbreviatedNetworkBody(bytes)));
+            } else {
+                qInfo("[EmbyJellyfinBackend] Closed Live TV stream %s",
+                      qPrintable(liveStreamId));
+            }
+            reply->deleteLater();
+        });
+    }
 }
 
 void EmbyJellyfinBackend::requestPlaybackInfo(const QString &ratingKey,

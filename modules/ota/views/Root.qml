@@ -17,14 +17,24 @@ FocusScope {
     property string pendingChannelId: ""
     property string statusText: "LOADING CHANNELS..."
     property string serverName: ""
+    property string otaSource: "Emby/Jellyfin"
+    property string hdhomerunHost: ""
+    property string hdhomerunInputText: ""
+    property bool hdhomerunSetupVisible: false
     property bool leaving: false
     property bool hasStartedPlayback: false
     property bool tuningStaticVisible: true
     property bool stoppingForTune: false
     property bool streamRequestActive: false
+    property int lineupRequestSerial: 0
     property int tuneDelayMs: 1200
 
     focus: true
+
+    onHdhomerunSetupVisibleChanged: {
+        if (hdhomerunSetupVisible)
+            hdhomerunFocusTimer.restart()
+    }
 
     function newSessionId() {
         var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -43,6 +53,42 @@ FocusScope {
         return "CHANNEL"
     }
 
+    function settingValue(key, fallback) {
+        var value = appCore.get_setting(moduleId, key)
+        if (value === undefined || value === null || value === "") return fallback
+        return value
+    }
+
+    function loadOtaSettings() {
+        otaSource = settingValue("source", "Emby/Jellyfin")
+        hdhomerunHost = settingValue("hdhomerun_host", "")
+    }
+
+    function isHdhomerunSource() {
+        return otaSource === "HDHomeRun Direct"
+    }
+
+    function normalizeHdhomerunBase(raw) {
+        var host = (raw || "").trim()
+        if (host === "") return ""
+
+        var lineupIndex = host.toLowerCase().indexOf("/lineup.json")
+        if (lineupIndex >= 0)
+            host = host.slice(0, lineupIndex)
+
+        if (!/^https?:\/\//i.test(host))
+            host = "http://" + host
+
+        while (host.length > 0 && host.charAt(host.length - 1) === "/")
+            host = host.slice(0, -1)
+        return host
+    }
+
+    function hdhomerunLineupUrl() {
+        var base = normalizeHdhomerunBase(hdhomerunHost)
+        return base === "" ? "" : base + "/lineup.json"
+    }
+
     function selectedChannel() {
         if (currentIndex < 0 || currentIndex >= channels.length) return null
         return channels[currentIndex]
@@ -50,6 +96,9 @@ FocusScope {
 
     function showStaticForChannel(channel) {
         if (!channel || !channel.id) return
+
+        if (!isHdhomerunSource())
+            embyBackend.stop_live_tv_stream(false)
 
         tuningStaticVisible = true
         hasStartedPlayback = false
@@ -71,8 +120,35 @@ FocusScope {
         pendingChannelId = channel.id
         streamRequestActive = true
         statusText = "TUNING " + channelLabel(channel)
-        appCore.save_setting(moduleId, "last_channel_id", channel.id)
+
+        if (isHdhomerunSource()) {
+            var streamUrl = channel.url || channel.id
+            if (!streamUrl) {
+                statusText = "HDHOMERUN CHANNEL HAS NO STREAM URL"
+                streamRequestActive = false
+                tuningStaticVisible = true
+                return
+            }
+            appCore.save_setting(moduleId, "last_hdhomerun_channel_id", channel.id)
+            playStream(channel.id, streamUrl, "")
+            return
+        }
+
+        appCore.save_setting(moduleId, "last_emby_channel_id", channel.id)
         embyBackend.request_live_tv_stream(channel.id, newSessionId(), false)
+    }
+
+    function playStream(channelId, url, httpHeaderFields) {
+        if (channelId !== pendingChannelId) return
+
+        var channel = channels[currentIndex]
+        var label = channelLabel(channel)
+        statusText = label
+        hasStartedPlayback = true
+        tuningStaticVisible = false
+        streamRequestActive = false
+        mpvController.loadAndPlay(url, 0.0, 0, -1, [], false, -1, 0.0,
+                                  httpHeaderFields || "", false, "ota", false, label)
     }
 
     function tuneIndex(index, immediate) {
@@ -103,18 +179,155 @@ FocusScope {
             requestSelectedStream()
     }
 
+    function showHdhomerunSetup(message) {
+        tuneTimer.stop()
+        channels = []
+        currentIndex = -1
+        pendingChannelId = ""
+        streamRequestActive = false
+        hasStartedPlayback = false
+        tuningStaticVisible = true
+        hdhomerunSetupVisible = true
+        hdhomerunInputText = hdhomerunHost !== "" ? hdhomerunHost : "hdhomerun.local"
+        hdhomerunHostField.text = hdhomerunInputText
+        statusText = message || "ENTER HDHOMERUN ADDRESS"
+        if (mpvController.running)
+            mpvController.stop()
+    }
+
+    function saveHdhomerunSetup() {
+        var value = (hdhomerunHostField.text || "").trim()
+        if (value === "") {
+            statusText = "ENTER HDHOMERUN ADDRESS"
+            hdhomerunHostField.forceActiveFocus()
+            return
+        }
+
+        hdhomerunHost = value
+        hdhomerunSetupVisible = false
+        appCore.save_setting(moduleId, "hdhomerun_host", value)
+    }
+
+    function loadHdhomerunChannels() {
+        var lineupUrl = hdhomerunLineupUrl()
+        if (lineupUrl === "") {
+            showHdhomerunSetup("ENTER HDHOMERUN ADDRESS")
+            return
+        }
+
+        channels = []
+        currentIndex = -1
+        pendingChannelId = ""
+        streamRequestActive = false
+        hasStartedPlayback = false
+        tuningStaticVisible = true
+        hdhomerunSetupVisible = false
+        statusText = "LOADING HDHOMERUN CHANNELS..."
+
+        var requestSerial = ++lineupRequestSerial
+        var request = new XMLHttpRequest()
+        request.onreadystatechange = function() {
+            if (request.readyState !== 4) return
+            if (requestSerial !== lineupRequestSerial || !otaRoot.isHdhomerunSource() || otaRoot.leaving)
+                return
+
+            if (request.status < 200 || request.status >= 300) {
+                showHdhomerunSetup("HDHOMERUN LINEUP FAILED")
+                return
+            }
+
+            var lineup
+            try {
+                lineup = JSON.parse(request.responseText)
+            } catch (e) {
+                showHdhomerunSetup("HDHOMERUN LINEUP IS INVALID")
+                return
+            }
+            if (!Array.isArray(lineup)) {
+                showHdhomerunSetup("HDHOMERUN LINEUP IS INVALID")
+                return
+            }
+
+            var parsedChannels = []
+            for (var i = 0; i < lineup.length; i++) {
+                var item = lineup[i] || {}
+                var tags = (item.Tags || "").toString().toLowerCase()
+                var streamUrl = item.URL || ""
+                if (streamUrl === "" || tags.indexOf("drm") >= 0)
+                    continue
+
+                parsedChannels.push({
+                    id: streamUrl,
+                    url: streamUrl,
+                    number: item.GuideNumber || "",
+                    name: item.GuideName || ""
+                })
+            }
+
+            channels = parsedChannels
+            if (channels.length === 0) {
+                statusText = "NO HDHOMERUN CHANNELS"
+                return
+            }
+
+            var restoreId = appCore.get_setting(moduleId, "last_hdhomerun_channel_id") || ""
+            var restoreIndex = 0
+            for (var j = 0; j < channels.length; j++) {
+                if (channels[j].id === restoreId) {
+                    restoreIndex = j
+                    break
+                }
+            }
+            tuneIndex(restoreIndex, false)
+        }
+        request.open("GET", lineupUrl)
+        request.send()
+    }
+
+    function loadSelectedSource() {
+        embyBackend.stop_live_tv_stream(false)
+        loadOtaSettings()
+        hdhomerunSetupVisible = false
+        lineupRequestSerial++
+        serverName = isHdhomerunSource()
+            ? "HDHOMERUN"
+            : embyBackend.get_active_server_name()
+
+        if (isHdhomerunSource()) {
+            loadHdhomerunChannels()
+            return
+        }
+
+        if (embyBackend.get_auth_state() !== "authed") {
+            statusText = "SIGN IN TO VIDEO ON DEMAND"
+            return
+        }
+        statusText = "LOADING CHANNELS..."
+        embyBackend.load_live_tv_channels()
+    }
+
     function exitOta() {
         leaving = true
+        lineupRequestSerial++
         tuneTimer.stop()
+        embyBackend.stop_live_tv_stream(false)
         mpvController.stop()
         goBack()
     }
 
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Up) {
+            if (hdhomerunSetupVisible) {
+                event.accepted = true
+                return
+            }
             tuneRelative(1, false)
             event.accepted = true
         } else if (event.key === Qt.Key_Down) {
+            if (hdhomerunSetupVisible) {
+                event.accepted = true
+                return
+            }
             tuneRelative(-1, false)
             event.accepted = true
         } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
@@ -130,7 +343,10 @@ FocusScope {
             mpvController.sendKey("RIGHT")
             event.accepted = true
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            tuneNow()
+            if (hdhomerunSetupVisible)
+                saveHdhomerunSetup()
+            else
+                tuneNow()
             event.accepted = true
         }
     }
@@ -142,17 +358,29 @@ FocusScope {
         onTriggered: otaRoot.requestSelectedStream()
     }
 
+    Timer {
+        id: hdhomerunFocusTimer
+        interval: 1
+        repeat: false
+        onTriggered: {
+            hdhomerunHostField.forceActiveFocus()
+            hdhomerunHostField.selectAll()
+        }
+    }
+
     Connections {
         target: embyBackend
 
         function onLiveTvChannelsLoaded(items) {
+            if (otaRoot.isHdhomerunSource()) return
+
             channels = items || []
             if (channels.length === 0) {
                 statusText = "NO OTA CHANNELS"
                 return
             }
 
-            var restoreId = appCore.get_setting(moduleId, "last_channel_id") || ""
+            var restoreId = appCore.get_setting(moduleId, "last_emby_channel_id") || ""
             var restoreIndex = 0
             for (var i = 0; i < channels.length; i++) {
                 if (channels[i].id === restoreId) {
@@ -164,22 +392,24 @@ FocusScope {
         }
 
         function onLiveTvStreamReady(channelId, url, httpHeaderFields) {
-            if (channelId !== pendingChannelId) return
-
-            var channel = channels[currentIndex]
-            var label = channelLabel(channel)
-            statusText = label
-            hasStartedPlayback = true
-            tuningStaticVisible = false
-            streamRequestActive = false
-            mpvController.loadAndPlay(url, 0.0, 0, -1, [], false, -1, 0.0,
-                                      httpHeaderFields, false, "ota", false, label)
+            if (otaRoot.isHdhomerunSource()) return
+            playStream(channelId, url, httpHeaderFields)
         }
 
         function onErrorOccurred(msg) {
+            if (otaRoot.isHdhomerunSource()) return
             statusText = msg || "OTA ERROR"
             streamRequestActive = false
             tuningStaticVisible = true
+        }
+    }
+
+    Connections {
+        target: appCore
+        function onModuleSettingChanged(mid, key, value) {
+            if (mid !== moduleId) return
+            if (key !== "source" && key !== "hdhomerun_host") return
+            loadSelectedSource()
         }
     }
 
@@ -190,6 +420,8 @@ FocusScope {
                 stoppingForTune = false
                 return
             }
+            if (!otaRoot.isHdhomerunSource())
+                embyBackend.stop_live_tv_stream(false)
             if (!leaving && hasStartedPlayback)
                 goBack()
         }
@@ -198,6 +430,8 @@ FocusScope {
                 stoppingForTune = false
                 return
             }
+            if (!otaRoot.isHdhomerunSource())
+                embyBackend.stop_live_tv_stream(true)
             statusText = "OTA PLAYBACK FAILED"
             streamRequestActive = false
             tuningStaticVisible = true
@@ -220,15 +454,11 @@ FocusScope {
     }
 
     Component.onCompleted: {
-        serverName = embyBackend.get_active_server_name()
-        if (embyBackend.get_auth_state() !== "authed") {
-            statusText = "SIGN IN TO VIDEO ON DEMAND"
-            return
-        }
-        embyBackend.load_live_tv_channels()
+        loadSelectedSource()
     }
 
     Component.onDestruction: {
+        embyBackend.stop_live_tv_stream(false)
         if (!leaving)
             mpvController.stop()
     }
@@ -255,6 +485,60 @@ FocusScope {
         visible: otaRoot.tuningStaticVisible || !hasStartedPlayback
     }
 
+    Column {
+        visible: otaRoot.hdhomerunSetupVisible
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: root.sw * 0.115625
+        anchors.rightMargin: root.sw * 0.115625
+        spacing: root.sh * 0.025
+
+        Text {
+            text: otaRoot.statusText
+            color: root.secondaryColor
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            font.pixelSize: root.sh * 0.0333333
+        }
+
+        Rectangle {
+            width: parent.width
+            height: root.sh * 0.075
+            color: root.accentColor
+
+            TextInput {
+                id: hdhomerunHostField
+                anchors.fill: parent
+                anchors.leftMargin: root.sw * 0.009375
+                anchors.rightMargin: root.sw * 0.009375
+                verticalAlignment: TextInput.AlignVCenter
+                color: root.surfaceColor
+                selectedTextColor: root.surfaceColor
+                selectionColor: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.05
+                clip: true
+
+                Keys.onReturnPressed: otaRoot.saveHdhomerunSetup()
+                Keys.onEnterPressed: otaRoot.saveHdhomerunSetup()
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                        otaRoot.exitOta()
+                        event.accepted = true
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: "IP OR HOSTNAME  ENTER:SAVE  " + root.hints.back + ":BACK"
+            color: root.tertiaryColor
+            font.family: root.globalFont
+            font.pixelSize: root.sh * 0.0333333
+        }
+    }
+
     Text {
         text: statusText
         color: root.primaryColor
@@ -265,7 +549,7 @@ FocusScope {
         width: root.sw * 0.8
         wrapMode: Text.WordWrap
         font.pixelSize: root.sh * 0.05
-        visible: otaRoot.tuningStaticVisible || !hasStartedPlayback
+        visible: !otaRoot.hdhomerunSetupVisible && (otaRoot.tuningStaticVisible || !hasStartedPlayback)
     }
 
     Text {
@@ -277,6 +561,6 @@ FocusScope {
         anchors.bottomMargin: root.sh * 0.1041667
         anchors.leftMargin: root.sw * 0.125
         font.pixelSize: root.sh * 0.0333333
-        visible: otaRoot.tuningStaticVisible || !hasStartedPlayback
+        visible: !otaRoot.hdhomerunSetupVisible && (otaRoot.tuningStaticVisible || !hasStartedPlayback)
     }
 }

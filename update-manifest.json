@@ -1,13 +1,13 @@
 {
-  "version": "2026.06.20.22",
+  "version": "2026.06.20.23",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/240-MP-Emby-Jelly",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/240-MP-Emby-Jelly/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.22/240-MP-v2026.06.20.22-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.22.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/releases/download/v2026.06.20.23/240-MP-v2026.06.20.23-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/240-MP-Emby-Jelly/archive/refs/tags/v2026.06.20.23.tar.gz",
   "notes": [
-    "Direct-plays Over The Air channels by default instead of forcing live TV transcoding.",
-    "Keeps the update flag active until the detached updater finishes so updates do not drop to the console login.",
-    "Uses the Plymouth update display path on tty1 for the VCR-style firmware update splash."
+    "Adds HDHomeRun Direct as an Over The Air source with saved tuner address setup.",
+    "Closes Emby/Jellyfin live TV streams when changing channels or leaving OTA so HDHomeRun tuners are released.",
+    "Keeps the update handoff from showing the console login by clearing tty1 during app restart."
   ]
 }

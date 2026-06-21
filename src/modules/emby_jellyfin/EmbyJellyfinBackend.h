@@ -45,6 +45,7 @@ public:
     Q_INVOKABLE void request_live_tv_stream(const QString &channelId,
                                             const QString &sessionId,
                                             bool forceTranscode);
+    Q_INVOKABLE void stop_live_tv_stream(bool failed = false);
 
     Q_INVOKABLE void load_item_detail(const QString &ratingKey);
     Q_INVOKABLE void build_stream_url(const QString &ratingKey, const QString &partKey,
@@ -155,9 +156,18 @@ private:
     void fetchServerInfoThenFinishLogin(QJsonObject auth);
     void fetchEpisodesForSeries(const QString &seriesId,
                                 std::function<void(QJsonArray)> callback);
+    void closeLiveTvStream(const QString &itemId, const QString &mediaSourceId,
+                           const QString &liveStreamId, const QString &playSessionId,
+                           bool failed);
+    void closeActiveLiveTvStream(bool failed);
 
     QString m_appRoot;
     QString m_dataRoot;
     QNetworkAccessManager *m_nam = nullptr;
     mutable QString m_clientId;
+    int m_liveTvRequestSerial = 0;
+    QString m_liveTvItemId;
+    QString m_liveTvMediaSourceId;
+    QString m_liveTvLiveStreamId;
+    QString m_liveTvPlaySessionId;
 };

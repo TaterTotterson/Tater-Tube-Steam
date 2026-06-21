@@ -16,6 +16,10 @@ FocusScope {
     property var currentValues: ({}) // config.modules[moduleId]
     property var dynamicOptions: ({}) // key -> [{id, label}] loaded from backend
     property string authState: ""
+    property bool textOverlayVisible: false
+    property int textOverlayIndex: -1
+    property string textOverlayLabel: ""
+    property string textOverlayValue: ""
 
     function loadSettings() {
         var allSettings = appCore.get_settings()
@@ -74,7 +78,44 @@ FocusScope {
             return saved !== "" ? saved : "Default"
         }
 
+        if (type === "text") {
+            var text = currentValues[key] || item.default || ""
+            return text !== "" ? text : "---"
+        }
+
         return ""
+    }
+
+    function beginTextEdit(index, item) {
+        if (!item || item.type !== "text") return
+        textOverlayIndex = index
+        textOverlayLabel = item.label || ""
+        textOverlayValue = currentValues[item.key] || item.default || ""
+        textOverlayVisible = true
+        textEditField.text = textOverlayValue
+        textEditFocusTimer.restart()
+    }
+
+    function closeTextEdit() {
+        textEditFocusTimer.stop()
+        textOverlayVisible = false
+        textOverlayIndex = -1
+        settingsList.forceActiveFocus()
+    }
+
+    function saveTextEdit() {
+        var item = schemaItems[textOverlayIndex]
+        if (!item || item.type !== "text") {
+            closeTextEdit()
+            return
+        }
+
+        var updated = Object.assign({}, currentValues)
+        updated[item.key] = textEditField.text
+        currentValues = updated
+        appCore.save_setting(moduleId, item.key, textEditField.text)
+        settingsList.forceLayout()
+        closeTextEdit()
     }
 
     function cycleValue(index, direction) {
@@ -214,6 +255,8 @@ FocusScope {
                     settingKey: item.key,
                     currentPath: savedPath !== "" ? savedPath : appCore.homePath()
                 }, { currentIndex: settingsList.currentIndex })
+            } else if (item.type === "text") {
+                moduleSettingsRoot.beginTextEdit(currentIndex, item)
             }
         }
 
@@ -269,7 +312,7 @@ FocusScope {
                     // Current value text (cycled types + directory_browser) with marquee scroll
                     Item {
                         id: valueClip
-                        visible: modelData.type === "toggle" || modelData.type === "list_single" || modelData.type === "directory_browser"
+                        visible: modelData.type === "toggle" || modelData.type === "list_single" || modelData.type === "directory_browser" || modelData.type === "text"
                         width: Math.min(valueText.implicitWidth, root.sw * 0.35)
                         height: parent.height
                         clip: true
@@ -332,5 +375,82 @@ FocusScope {
         anchors.bottomMargin: root.sh * 0.1041667 //50
         anchors.leftMargin: root.sw * 0.125 //80
         font.pixelSize: root.sh * 0.0333333 //16
+    }
+
+    Timer {
+        id: textEditFocusTimer
+        interval: 1
+        repeat: false
+        onTriggered: {
+            textEditField.forceActiveFocus()
+            textEditField.selectAll()
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: root.staticBackgroundEnabled ? "transparent" : root.surfaceColor
+        visible: textOverlayVisible
+        focus: textOverlayVisible
+
+        StaticBackground {
+            anchors.fill: parent
+            visible: root.staticBackgroundEnabled
+            running: visible
+        }
+
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                moduleSettingsRoot.closeTextEdit()
+                event.accepted = true
+            }
+        }
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: root.sw * 0.115625
+            anchors.rightMargin: root.sw * 0.115625
+            spacing: root.sh * 0.025
+
+            Text {
+                text: textOverlayLabel
+                color: root.secondaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                font.pixelSize: root.sh * 0.0333333
+            }
+
+            Rectangle {
+                width: parent.width
+                height: root.sh * 0.075
+                color: root.accentColor
+
+                TextInput {
+                    id: textEditField
+                    anchors.fill: parent
+                    anchors.leftMargin: root.sw * 0.009375
+                    anchors.rightMargin: root.sw * 0.009375
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: root.surfaceColor
+                    selectedTextColor: root.surfaceColor
+                    selectionColor: root.tertiaryColor
+                    font.family: root.globalFont
+                    font.pixelSize: root.sh * 0.05
+                    clip: true
+
+                    Keys.onReturnPressed: moduleSettingsRoot.saveTextEdit()
+                    Keys.onEnterPressed: moduleSettingsRoot.saveTextEdit()
+                }
+            }
+
+            Text {
+                text: "ENTER:SAVE  " + root.hints.back + ":CANCEL"
+                color: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.0333333
+            }
+        }
     }
 }
