@@ -331,10 +331,7 @@ mp.register_script_message("240mp-osd-menu-show", function()
     end
 end)
 
--- Forced bindings so UP/DOWN take priority over mpv's default seek bindings
--- on desktop (macOS/Linux with native keyboard input).
-mp.add_forced_key_binding("UP",   "open_menu_up",   toggle_menu)
-mp.add_forced_key_binding("DOWN", "open_menu_down", toggle_menu)
+mp.add_forced_key_binding("MENU", "open_menu", toggle_menu)
 
 -- ESC / BS quit when the menu is not visible. When the menu opens it adds
 -- forced bindings for these keys that take priority automatically; when it

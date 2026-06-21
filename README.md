@@ -10,7 +10,7 @@ This fork is focused on one appliance-style setup:
 - Boot screen and automatic launch straight into 240-MP
 - Argon IR remote support through a GPIO IR receiver on GPIO23
 - Local Emby/Jellyfin browsing and playback
-- Emby/Jellyfin Live TV / HDHomeRun OTA playback
+- HDHomeRun Over The Air playback
 - NTSC and PAL composite image builds
 - No Plex support
 
@@ -21,7 +21,6 @@ The easiest way to use it is to download the ready-to-flash NTSC or PAL `.img.xz
 ### Emby/Jellyfin
 - Local Emby/Jellyfin server sign in
 - Movies, TV Shows, and Other Videos library browsing
-- Over The Air module for Emby/Jellyfin Live TV channels
 - Continue Watching and Resume
 - Autoplay next episode
 - Playlist and Collection support
@@ -30,12 +29,10 @@ The easiest way to use it is to download the ready-to-flash NTSC or PAL `.img.xz
 - Forced transcode quality options
 
 ### Over The Air
-- Uses Live TV channels already configured in Emby or Jellyfin
-- Works with HDHomeRun through the media server
+- Connects directly to HDHomeRun tuners
 - Opens directly into TV playback, no guide screen
 - Up/down changes channels while video is playing
 - Old-TV channel overlay inside mpv
-- Uses the same Auto / forced transcode quality setting as Video on Demand
 
 ### Local Files
 - Browse folders on the Pi

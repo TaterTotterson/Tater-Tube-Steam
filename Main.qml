@@ -279,6 +279,14 @@ Window {
     property var appNavStack: []
     property var appCurrentParams: ({})
 
+    function goHome() {
+        if (mpvController && mpvController.running)
+            mpvController.stop()
+        root.appNavStack = []
+        root.appCurrentParams = {}
+        moduleLoader.setSource("views/ModuleList.qml", { "navParams": {}, "navListState": {} })
+    }
+
     // --- MODULE LOADER ---
     StaticBackground {
         anchors.fill: parent
@@ -295,6 +303,9 @@ Window {
         Keys.onPressed: (event) => {
             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Q) {
                 Qt.quit()
+            } else if (event.key === Qt.Key_Home) {
+                root.goHome()
+                event.accepted = true
             }
         }
 

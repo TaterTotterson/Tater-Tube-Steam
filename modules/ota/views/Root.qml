@@ -311,6 +311,9 @@ FocusScope {
         } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
             exitOta()
             event.accepted = true
+        } else if (event.key === Qt.Key_Menu) {
+            mpvController.sendKey("MENU")
+            event.accepted = true
         } else if (event.key === Qt.Key_Space) {
             mpvController.sendKey("SPACE")
             event.accepted = true

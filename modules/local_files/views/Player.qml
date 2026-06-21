@@ -68,6 +68,9 @@ FocusScope {
             } else if (event.key === Qt.Key_Backspace) {
                 mpvController.sendKey("BS")
                 event.accepted = true
+            } else if (event.key === Qt.Key_Menu) {
+                mpvController.sendKey("MENU")
+                event.accepted = true
             } else if (event.key === Qt.Key_Up) {
                 mpvController.sendKey("UP")
                 event.accepted = true

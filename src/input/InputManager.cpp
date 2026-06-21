@@ -207,6 +207,7 @@ InputManager::Action InputManager::actionFromString(const QString &name, bool *o
     if (name == "right")      return Action::Right;
     if (name == "select")     return Action::Select;
     if (name == "back")       return Action::Back;
+    if (name == "menu")       return Action::Menu;
     if (name == "play_pause" || name == "playpause") return Action::PlayPause;
     if (name == "none")       return Action::None;
     *ok = false;
@@ -438,6 +439,22 @@ void InputManager::onIrDeviceReady() {
 }
 
 void InputManager::handleIrKey(quint16 code, int value) {
+    if (code == KEY_HOME) {
+        if (value == 1) {
+            setLastInputDevice(QStringLiteral("remote"));
+            emit homeRequested();
+        }
+        return;
+    }
+
+    if (code == KEY_POWER) {
+        if (value == 1) {
+            setLastInputDevice(QStringLiteral("remote"));
+            emit powerRequested();
+        }
+        return;
+    }
+
     const Action action = actionForLinuxKey(code);
     if (action != Action::None) {
         if (value == 1) {
@@ -467,8 +484,8 @@ InputManager::Action InputManager::actionForLinuxKey(quint16 code) {
     case KEY_KPENTER:   return Action::Select;
     case KEY_ESC:
     case KEY_BACK:
-    case KEY_EXIT:
-    case KEY_MENU:      return Action::Back;
+    case KEY_EXIT:      return Action::Back;
+    case KEY_MENU:      return Action::Menu;
     case KEY_PLAY:
     case KEY_PAUSE:
     case KEY_PLAYPAUSE:
@@ -628,6 +645,7 @@ int InputManager::qtKeyForAction(Action a) {
     case Action::Right:     return Qt::Key_Right;
     case Action::Select:    return Qt::Key_Return;
     case Action::Back:      return Qt::Key_Escape;
+    case Action::Menu:      return Qt::Key_Menu;
     case Action::PlayPause: return Qt::Key_Space;
     case Action::None:      break;
     }
@@ -643,6 +661,7 @@ QString InputManager::mpvKeyForAction(Action a) {
     case Action::Right:     return QStringLiteral("RIGHT");
     case Action::Select:    return QStringLiteral("ENTER");
     case Action::Back:      return QStringLiteral("ESC");
+    case Action::Menu:      return QStringLiteral("MENU");
     case Action::PlayPause: return QStringLiteral("SPACE");
     case Action::None:      break;
     }
@@ -677,7 +696,8 @@ InputManager::Action InputManager::remoteActionForKey(const QKeyEvent *ke) {
     switch (ke->key()) {
     case Qt::Key_Select: return Action::Select;
     case Qt::Key_Back:
-    case Qt::Key_Menu:   return Action::Back;
+        return Action::Back;
+    case Qt::Key_Menu:   return Action::Menu;
     default:             return Action::None;
     }
 }
@@ -692,6 +712,14 @@ bool InputManager::eventFilter(QObject *obj, QEvent *event) {
     const auto *ke = static_cast<QKeyEvent *>(event);
 
     const bool synthetic = (ke->nativeScanCode() == kSyntheticScanCode);
+    if (!synthetic && ke->key() == Qt::Key_Home) {
+        if (type == QEvent::KeyPress && !ke->isAutoRepeat()) {
+            setLastInputDevice(QStringLiteral("remote"));
+            emit homeRequested();
+        }
+        return true;
+    }
+
     const Action remoteAction = synthetic ? Action::None : remoteActionForKey(ke);
     if (remoteAction != Action::None) {
         setLastInputDevice(QStringLiteral("remote"));

@@ -8,6 +8,7 @@
 #include <QDebug>
 #include <QWindow>
 #include <QQuickWindow>
+#include <QMetaObject>
 #include <locale.h>
 
 #include "AppCore.h"
@@ -50,7 +51,7 @@ static QString resolveDataRoot() {
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("240-MP");
-    app.setApplicationVersion("2026.06.20.28");
+    app.setApplicationVersion("2026.06.21.1");
 
     // Hide cursor — 240-MP is keyboard-only so the cursor serves no purpose.
     // On Linux, only hide on headless EGLFS (not desktop X11/Wayland sessions).
@@ -116,12 +117,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    QObject *rootObject = engine.rootObjects().first();
+
+    QObject::connect(&inputManager, &InputManager::homeRequested,
+                     rootObject, [rootObject]() {
+        QMetaObject::invokeMethod(rootObject, "goHome", Qt::QueuedConnection);
+    });
+    QObject::connect(&inputManager, &InputManager::powerRequested,
+                     &app, &QCoreApplication::quit, Qt::QueuedConnection);
+
     // Gamepad key events are posted straight to the root window so they reach
     // the QML focus item even when another window (mpv) holds OS focus.
-    inputManager.setTargetWindow(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));
+    inputManager.setTargetWindow(qobject_cast<QQuickWindow *>(rootObject));
 
 #ifdef Q_OS_MAC
-    if (QWindow *win = qobject_cast<QWindow *>(engine.rootObjects().first())) {
+    if (QWindow *win = qobject_cast<QWindow *>(rootObject)) {
         win->winId(); // ensure native NSWindow is created
         forceWindowFullScreen(reinterpret_cast<void *>(win->winId()));
     }

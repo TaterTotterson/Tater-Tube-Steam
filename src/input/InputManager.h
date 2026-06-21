@@ -41,6 +41,8 @@ signals:
     void gamepadConnectedChanged();
     void lastInputDeviceChanged();
     void hintsChanged();
+    void homeRequested();
+    void powerRequested();
     // Emitted instead of posting a key event when the Qt window is inactive
     // (fullscreen mpv holds OS focus on macOS, which clears QML active focus).
     // main.cpp connects this to MpvController::sendKey.
@@ -56,7 +58,7 @@ private slots:
     void onDataDirChanged(const QString &path);
 
 private:
-    enum class Action { None, Up, Down, Left, Right, Select, Back, PlayPause };
+    enum class Action { None, Up, Down, Left, Right, Select, Back, Menu, PlayPause };
 
     void initSdl();
     void openController(int deviceIndex);
