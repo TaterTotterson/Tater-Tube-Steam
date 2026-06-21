@@ -370,7 +370,7 @@ PLYMOUTH_CONF
     pi240_root systemctl mask plymouth-quit.service plymouth-quit-wait.service || true
 
     if [ -e /run/240mp-updating ]; then
-        pi240_show_update_splash || true
+        pi240_blank_update_console || true
     fi
 }
 
