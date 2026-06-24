@@ -245,7 +245,11 @@ pi240_install_retro_core_dependencies() {
             printf '[240mp-setup] Optional RetroArch core package unavailable: %s\n' "$pkg" >&2
         fi
     done
-    pi240_install_retro_core_fallbacks
+    if [ "${PI240_INSTALL_ALL_RETRO_CORE_FALLBACKS:-0}" = "1" ]; then
+        pi240_install_retro_core_fallbacks
+    else
+        pi240_install_psx_core_fallback
+    fi
 }
 
 pi240_install_missing_retro_core_dependencies() {
@@ -321,11 +325,11 @@ pi240_install_retro_core_download() {
     local tmp target
     tmp="$(mktemp -d "${TMPDIR:-/tmp}/240mp-retro-core.XXXXXX")"
     target="/usr/local/lib/libretro/${core_name}"
-    trap 'rm -rf "$tmp"' RETURN
 
     printf '[240mp-setup] Installing RetroArch core from Libretro buildbot: %s\n' "$core_name" >&2
-    if ! curl -fsSL "$url" -o "$tmp/core.zip"; then
+    if ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 120 "$url" -o "$tmp/core.zip"; then
         printf '[240mp-setup] Warning: could not download RetroArch core: %s\n' "$url" >&2
+        rm -rf "$tmp"
         return 1
     fi
 
@@ -350,11 +354,13 @@ raise SystemExit(1)
 PY
     then
         printf '[240mp-setup] Warning: downloaded RetroArch core archive was not usable: %s\n' "$core_name" >&2
+        rm -rf "$tmp"
         return 1
     fi
 
     pi240_root install -d -m 0755 /usr/local/lib/libretro
     pi240_root install -m 0644 "$tmp/$core_name" "$target"
+    rm -rf "$tmp"
 }
 
 pi240_install_retro_core_fallbacks() {
