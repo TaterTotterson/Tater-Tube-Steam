@@ -28,15 +28,15 @@
       "key": "fps",
       "label": "FPS",
       "type": "list_single",
-      "options": ["30", "50", "60"],
-      "default": "60"
+      "options": ["15", "30", "50", "60"],
+      "default": "15"
     },
     {
       "key": "bitrate",
       "label": "BITRATE",
       "type": "list_single",
-      "options": ["3000 Kbps", "5000 Kbps", "8000 Kbps", "12000 Kbps"],
-      "default": "5000 Kbps"
+      "options": ["1000 Kbps", "3000 Kbps", "5000 Kbps", "8000 Kbps", "12000 Kbps"],
+      "default": "1000 Kbps"
     },
     {
       "key": "codec",

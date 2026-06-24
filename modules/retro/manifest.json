@@ -36,6 +36,19 @@
       "default": ""
     },
     {
+      "key": "core_install_status",
+      "label": "CORE INSTALL",
+      "type": "list_single",
+      "options_source": "dynamic",
+      "options_slot": "load_core_install_status_options"
+    },
+    {
+      "key": "install_game_cores",
+      "label": "INSTALL / REFRESH CORES",
+      "type": "action",
+      "action_slot": "install_game_cores"
+    },
+    {
       "key": "refresh_game_cache",
       "label": "REFRESH GAME LIST",
       "type": "action",

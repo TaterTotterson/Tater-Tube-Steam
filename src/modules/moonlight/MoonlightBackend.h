@@ -70,7 +70,10 @@ private:
     void clearAppCache() const;
     void startAppList(bool forceRefresh);
     QVariantList parseAppList(const QString &output) const;
-    QStringList streamArguments(const QString &appName) const;
+    QString bundledMoonlightPath() const;
+    QString moonlightLaunchHelperPath() const;
+    bool canUseMoonlightLaunchHelper() const;
+    QStringList streamArguments(const QString &appName, bool forceSdl = false) const;
     void prepareMoonlightEnvironment(QProcess *process) const;
     QString processOutput(QProcess *process) const;
     QString processErrorMessage(QProcess *process, const QString &fallback) const;

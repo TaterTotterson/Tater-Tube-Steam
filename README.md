@@ -14,6 +14,7 @@ This fork is focused on one appliance-style setup:
 - HDHomeRun Over The Air playback
 - YouTube playlist playback through Public Access
 - Game Center ROM browsing from RetroNAS/MiSTer shares with clean RetroArch game launch
+- PC Link game streaming from Sunshine/Moonlight hosts
 - Bluetooth controller pairing from Settings
 - NTSC and PAL composite image builds
 
@@ -46,8 +47,9 @@ The easiest way to use it is to download the ready-to-flash NTSC or PAL `.img.xz
 - Old-TV channel overlay inside mpv
 
 ### Public Access
-- Plays a single saved public YouTube playlist
+- Plays saved public YouTube playlists
 - Accepts a full playlist URL or just the playlist `list` code
+- Looks up playlist names when available
 - Shows each video in the VHS-style list
 - Uses mpv with yt-dlp streaming, defaulting to CRT-friendly 360p
 - Optional autoplay next video
@@ -60,6 +62,14 @@ The easiest way to use it is to download the ready-to-flash NTSC or PAL `.img.xz
 - Remote Home stops RetroArch and returns to the CRT Station menu
 - Bluetooth controllers can be paired from Settings and then used by SDL/RetroArch
 - VHS-style controller mapper saves one global RetroPad layout for all cores
+
+### PC Link
+- Pairs with Sunshine hosts through Moonlight PIN setup
+- Lists Sunshine apps from the host and caches them for faster launch
+- Defaults to a CRT-friendly `640x480`, `15 FPS`, `1000 Kbps`, H.264 stream
+- Includes stream presets for `640x480`, `720x480`, `768x576`, and `800x600`
+- The stream resolution is requested by CRT Station; the host desktop or game should also be set to a matching 4:3 resolution in Sunshine or the game settings
+- Controller streaming needs host-side virtual gamepad support. Sunshine on Windows requires ViGEmBus; Sunshine on macOS currently does not support gamepads
 
 ### Local Files
 - Browse folders on the Pi

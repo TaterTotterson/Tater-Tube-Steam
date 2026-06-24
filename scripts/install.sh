@@ -87,7 +87,11 @@ if [[ "${REPLY}" =~ ^[Yy]$ ]]; then
     pi240_install_ssh_control "${SERVICE_USER}" /usr/local/sbin/240mp-ssh-control
     pi240_install_bluetooth_control "${SERVICE_USER}" /usr/local/sbin/240mp-bluetooth-control
     pi240_install_retro_mount_helper "${SERVICE_USER}" /usr/local/sbin/240mp-retro-mount
+    pi240_install_retro_core_control "${SERVICE_USER}" /usr/local/sbin/240mp-retro-core-control
     pi240_install_argon_fan_control "${SERVICE_USER}" /usr/local/sbin/240mp-argon-fan-control
+    pi240_install_moonlight_sdl_bundle "${INSTALL_DIR}"
+    pi240_install_moonlight_control "${SERVICE_USER}" /usr/local/sbin/240mp-moonlight-control
+    pi240_enable_moonlight_composite_display_stack
     pi240_auto_force_composite_video
     pi240_install_boot_splash
     echo "Service installed and enabled."

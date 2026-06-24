@@ -33,6 +33,7 @@ namespace {
 constexpr const char *kModuleId = "com.240mp.moonlight";
 constexpr const char *kAppCacheFile = "moonlight-app-cache.json";
 constexpr int kAppCacheVersion = 1;
+constexpr const char *kMoonlightLaunchHelper = "/usr/local/sbin/240mp-moonlight-control";
 
 QString stripAnsi(QString value)
 {
@@ -110,10 +111,43 @@ QStringList MoonlightBackend::executableSearchPaths() const
 
 QString MoonlightBackend::moonlightPath() const
 {
+    const QString bundled = bundledMoonlightPath();
+    if (!bundled.isEmpty())
+        return bundled;
+
     QString path = QStandardPaths::findExecutable(QStringLiteral("moonlight"), executableSearchPaths());
     if (!path.isEmpty())
         return path;
     return QStandardPaths::findExecutable(QStringLiteral("moonlight-embedded"), executableSearchPaths());
+}
+
+QString MoonlightBackend::bundledMoonlightPath() const
+{
+    const QString path = QDir(m_appRoot).absoluteFilePath(
+        QStringLiteral("vendor/moonlight-sdl/bin/moonlight"));
+    return QFileInfo(path).isExecutable() ? path : QString();
+}
+
+QString MoonlightBackend::moonlightLaunchHelperPath() const
+{
+#ifdef Q_OS_LINUX
+    return QFileInfo(QString::fromUtf8(kMoonlightLaunchHelper)).isExecutable()
+        ? QString::fromUtf8(kMoonlightLaunchHelper)
+        : QString();
+#else
+    return QString();
+#endif
+}
+
+bool MoonlightBackend::canUseMoonlightLaunchHelper() const
+{
+#ifdef Q_OS_LINUX
+    return detectHeadlessMode()
+        && !moonlightLaunchHelperPath().isEmpty()
+        && !QStandardPaths::findExecutable(QStringLiteral("sudo"), executableSearchPaths()).isEmpty();
+#else
+    return false;
+#endif
 }
 
 QString MoonlightBackend::moonlightRoot() const
@@ -414,7 +448,7 @@ void MoonlightBackend::onListProcessFinished(int exitCode, QProcess::ExitStatus 
     emit appsLoaded(apps);
 }
 
-QStringList MoonlightBackend::streamArguments(const QString &appName) const
+QStringList MoonlightBackend::streamArguments(const QString &appName, bool forceSdl) const
 {
     QString width = QStringLiteral("640");
     QString height = QStringLiteral("480");
@@ -430,34 +464,43 @@ QStringList MoonlightBackend::streamArguments(const QString &appName) const
         height = QStringLiteral("600");
     }
 
-    QString bitrate = setting(QStringLiteral("bitrate"), QStringLiteral("5000 Kbps"));
+    QString bitrate = setting(QStringLiteral("bitrate"), QStringLiteral("1000 Kbps"));
     bitrate.remove(QStringLiteral("Kbps"), Qt::CaseInsensitive);
     bitrate.remove(QStringLiteral(" "));
     if (bitrate.isEmpty())
-        bitrate = QStringLiteral("5000");
+        bitrate = QStringLiteral("1000");
 
     QStringList args{
         QStringLiteral("stream"),
         QStringLiteral("-width"), width,
         QStringLiteral("-height"), height,
-        QStringLiteral("-fps"), optionValue(setting(QStringLiteral("fps")), QStringLiteral("60")),
+        QStringLiteral("-fps"), optionValue(setting(QStringLiteral("fps")), QStringLiteral("15")),
         QStringLiteral("-bitrate"), bitrate,
         QStringLiteral("-codec"), setting(QStringLiteral("codec"), QStringLiteral("h264")).toLower(),
+        QStringLiteral("-remote"), QStringLiteral("no"),
         QStringLiteral("-quitappafter"),
         QStringLiteral("-app"), appName
     };
 
     const QString renderer = setting(QStringLiteral("renderer"), QStringLiteral("Auto"));
-    if (renderer == QStringLiteral("Pi"))
+    if (forceSdl)
+        args << QStringLiteral("-platform") << QStringLiteral("sdl");
+    else if (renderer == QStringLiteral("Pi"))
         args << QStringLiteral("-platform") << QStringLiteral("pi");
     else if (renderer == QStringLiteral("SDL"))
         args << QStringLiteral("-platform") << QStringLiteral("sdl");
 
-    const QString mappingFile = QDir(moonlightRoot()).absoluteFilePath(QStringLiteral("gamepad.map"));
+    QString mappingFile = QDir(moonlightRoot()).absoluteFilePath(QStringLiteral("gamepad.map"));
+    if (!QFileInfo(mappingFile).exists() && forceSdl) {
+        const QString bundledMapping = QDir(m_appRoot).absoluteFilePath(
+            QStringLiteral("vendor/moonlight-sdl/share/moonlight/gamecontrollerdb.txt"));
+        if (QFileInfo(bundledMapping).exists())
+            mappingFile = bundledMapping;
+    }
     if (QFileInfo(mappingFile).exists())
         args << QStringLiteral("-mapping") << mappingFile;
 
-    if (detectHeadlessMode() && hasPiHeadphonesAudioDevice())
+    if (!forceSdl && detectHeadlessMode() && hasPiHeadphonesAudioDevice())
         args << QStringLiteral("-audio") << QStringLiteral("sysdefault:CARD=Headphones");
 
     args << host();
@@ -504,27 +547,41 @@ void MoonlightBackend::launch_app(const QString &appName)
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MoonlightBackend::onStreamProcessFinished);
 
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.insert(QStringLiteral("HOME"), m_dataRoot);
-    env.insert(QStringLiteral("XDG_CONFIG_HOME"), QDir(moonlightRoot()).absoluteFilePath("config"));
-    env.insert(QStringLiteral("XDG_DATA_HOME"), QDir(moonlightRoot()).absoluteFilePath("data"));
-    env.insert(QStringLiteral("XDG_CACHE_HOME"), QDir(moonlightRoot()).absoluteFilePath("cache"));
-    env.insert(QStringLiteral("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD"), QStringLiteral("1"));
-
     m_headlessMode = detectHeadlessMode();
-    if (m_headlessMode) {
-        env.remove(QStringLiteral("DISPLAY"));
-        env.remove(QStringLiteral("WAYLAND_DISPLAY"));
-        prepareHeadlessLaunch();
-    } else {
-        env.remove(QStringLiteral("WAYLAND_DISPLAY"));
-    }
-    m_streamProcess->setProcessEnvironment(env);
 
-    const QStringList args = streamArguments(cleanApp);
-    qInfo("[MoonlightBackend] launching Moonlight: %s %s",
-          qPrintable(bin), qPrintable(args.join(' ')));
-    m_streamProcess->start(bin, args);
+    const bool useLaunchHelper = canUseMoonlightLaunchHelper();
+    if (useLaunchHelper) {
+        const QString helper = moonlightLaunchHelperPath();
+        QStringList args{QStringLiteral("-n"), helper, QStringLiteral("launch")};
+        args << streamArguments(cleanApp, true);
+        if (!bundledMoonlightPath().isEmpty())
+            args << QStringLiteral("--moonlight-bin") << bundledMoonlightPath();
+
+        qInfo("[MoonlightBackend] launching Moonlight through helper: sudo %s",
+              qPrintable(args.join(' ')));
+        m_streamProcess->start(QStringLiteral("sudo"), args);
+    } else {
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert(QStringLiteral("HOME"), m_dataRoot);
+        env.insert(QStringLiteral("XDG_CONFIG_HOME"), QDir(moonlightRoot()).absoluteFilePath("config"));
+        env.insert(QStringLiteral("XDG_DATA_HOME"), QDir(moonlightRoot()).absoluteFilePath("data"));
+        env.insert(QStringLiteral("XDG_CACHE_HOME"), QDir(moonlightRoot()).absoluteFilePath("cache"));
+        env.insert(QStringLiteral("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD"), QStringLiteral("1"));
+
+        if (m_headlessMode) {
+            env.remove(QStringLiteral("DISPLAY"));
+            env.remove(QStringLiteral("WAYLAND_DISPLAY"));
+            prepareHeadlessLaunch();
+        } else {
+            env.remove(QStringLiteral("WAYLAND_DISPLAY"));
+        }
+        m_streamProcess->setProcessEnvironment(env);
+
+        const QStringList args = streamArguments(cleanApp);
+        qInfo("[MoonlightBackend] launching Moonlight: %s %s",
+              qPrintable(bin), qPrintable(args.join(' ')));
+        m_streamProcess->start(bin, args);
+    }
 }
 
 void MoonlightBackend::stop_stream()

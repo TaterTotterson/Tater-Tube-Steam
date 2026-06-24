@@ -6,7 +6,7 @@ dtparam=audio=on
 # Composite 3.5mm / TV output
 enable_tvout=1
 sdtv_mode=0
-dtoverlay=vc4-kms-v3d,composite
+dtoverlay=vc4-fkms-v3d
 
 [pi3]
 over_voltage=4

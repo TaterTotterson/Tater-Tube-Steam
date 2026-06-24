@@ -59,6 +59,13 @@ if [ "$PROFILE" != "none" ]; then
     install -d "$(dirname "$CONFIG_TXT")"
     touch "$CONFIG_TXT"
 
+    if [ "$PROFILE" = "crt-ntsc" ] || [ "$PROFILE" = "crt-pal" ]; then
+        sed -i -E \
+            -e 's|^[[:space:]]*dtoverlay=vc4-kms-v3d([[:space:]]*)$|# dtoverlay=vc4-kms-v3d|' \
+            -e 's|^[[:space:]]*dtoverlay=vc4-kms-v3d,composite([[:space:]]*)$|# dtoverlay=vc4-kms-v3d,composite|' \
+            "$CONFIG_TXT"
+    fi
+
     {
         printf '\n# --- CRT Station display profile: %s ---\n' "$PROFILE"
         cat "$SNIPPET"

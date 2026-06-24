@@ -45,6 +45,8 @@ public:
     Q_INVOKABLE void stop_game();
     Q_INVOKABLE void get_retro_system_options();
     Q_INVOKABLE void refresh_game_cache();
+    Q_INVOKABLE void load_core_install_status_options();
+    Q_INVOKABLE void install_game_cores();
     Q_INVOKABLE QVariantList api_search_games(const QString &query, int limit);
 
 signals:
@@ -63,6 +65,7 @@ public slots:
 
 private slots:
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void onCoreInstallFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
 private:
     struct SystemDef {
@@ -81,6 +84,8 @@ private:
     QString retroarchPath() const;
     QString systemDirectory(const SystemDef &def) const;
     QString corePath(const SystemDef &def) const;
+    QVariantList coreInstallStatusOptions() const;
+    void emitCoreInstallStatus();
     QVariantList availableSystems() const;
     QVariantList gamesForSystem(const SystemDef &def) const;
     QString gameCachePath() const;
@@ -116,7 +121,9 @@ private:
     QString m_appRoot;
     QString m_dataRoot;
     QProcess *m_process = nullptr;
+    QProcess *m_coreInstallProcess = nullptr;
     QString m_currentTitle;
+    QString m_coreInstallStatus;
     bool m_headlessMode = false;
     int m_previousVt = -1;
     int m_qtDrmFd = -1;

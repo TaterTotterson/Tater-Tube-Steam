@@ -28,6 +28,30 @@ PI240_RUNTIME_PACKAGES=(
     plymouth-themes
     retroarch
     yt-dlp
+    libavcodec61
+    libavutil59
+    libasound2t64
+    libevdev2
+    libopus0
+    libcurl4t64
+    libexpat1
+    libavahi-client3
+)
+
+PI240_MOONLIGHT_BUILD_PACKAGES=(
+    git
+    build-essential
+    cmake
+    pkg-config
+    libsdl2-dev
+    libopus-dev
+    libssl-dev
+    libevdev-dev
+    libavcodec-dev
+    libavutil-dev
+    libcurl4-openssl-dev
+    libexpat1-dev
+    libavahi-client-dev
 )
 
 PI240_RETRO_CORE_PACKAGES=(
@@ -204,6 +228,10 @@ pi240_install_latest_ytdlp() {
 }
 
 pi240_install_moonlight_streaming() {
+    if [ -x /opt/240mp/share/240mp/vendor/moonlight-sdl/bin/moonlight ]; then
+        return 0
+    fi
+
     if command -v moonlight >/dev/null 2>&1; then
         return 0
     fi
@@ -233,6 +261,39 @@ pi240_install_moonlight_streaming() {
         pi240_root env DEBIAN_FRONTEND=noninteractive apt-get install -y moonlight-embedded || true
     else
         printf '[240mp-setup] Moonlight Embedded package is unavailable; PC Link will show N/A until installed.\n' >&2
+    fi
+}
+
+pi240_install_moonlight_sdl_bundle() {
+    local install_dir="${1:-/opt/240mp}"
+    local bundle_dir="${2:-${install_dir}/share/240mp/vendor/moonlight-sdl}"
+    local build_script="${3:-${install_dir}/share/240mp/scripts/build-moonlight-sdl.sh}"
+
+    if [ -x "${bundle_dir}/bin/moonlight" ]; then
+        return 0
+    fi
+
+    if [ ! -x "$build_script" ]; then
+        printf '[240mp-setup] Moonlight SDL build script not found: %s\n' "$build_script" >&2
+        return 0
+    fi
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        printf '[240mp-setup] Cannot build bundled Moonlight SDL runtime; apt-get is unavailable.\n' >&2
+        return 0
+    fi
+
+    pi240_root env DEBIAN_FRONTEND=noninteractive apt-get update -qq || true
+    pi240_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${PI240_MOONLIGHT_BUILD_PACKAGES[@]}" || {
+        printf '[240mp-setup] Warning: could not install Moonlight SDL build dependencies.\n' >&2
+        return 0
+    }
+
+    printf '[240mp-setup] Building bundled Moonlight SDL runtime...\n' >&2
+    if pi240_root "$build_script" "$bundle_dir"; then
+        pi240_root chmod 0755 "${bundle_dir}/bin/moonlight" || true
+    else
+        printf '[240mp-setup] Warning: bundled Moonlight SDL runtime build failed.\n' >&2
     fi
 }
 
@@ -554,6 +615,54 @@ pi240_force_composite_video() {
     pi240_set_boot_cmdline_arg "video=Composite-1:" "video=Composite-1:${mode}"
 }
 
+pi240_enable_moonlight_composite_display_stack() {
+    local config_txt
+    config_txt="$(pi240_boot_config_path)"
+
+    [ -f "$config_txt" ] || return 0
+
+    if ! pi240_root grep -Eq \
+        '^[[:space:]]*(enable_tvout[[:space:]]*=[[:space:]]*1|sdtv_mode[[:space:]]*=|dtoverlay=vc4-kms-v3d,composite)([[:space:]]|$)' \
+        "$config_txt"; then
+        return 0
+    fi
+
+    if ! pi240_root grep -Eq '^[[:space:]]*#?[[:space:]]*dtoverlay=vc4-kms-v3d' "$config_txt"; then
+        return 0
+    fi
+
+    local backup="${config_txt}.crtstation-kms-backup"
+    if [ ! -f "$backup" ]; then
+        pi240_root cp -a "$config_txt" "$backup" || true
+    fi
+
+    if pi240_is_root; then
+        sed -i -E \
+            -e 's|^[[:space:]]*dtoverlay=vc4-kms-v3d([[:space:]]*)$|# dtoverlay=vc4-kms-v3d|' \
+            -e 's|^[[:space:]]*dtoverlay=vc4-kms-v3d,composite([[:space:]]*)$|# dtoverlay=vc4-kms-v3d,composite|' \
+            "$config_txt"
+    else
+        sudo sed -i -E \
+            -e 's|^[[:space:]]*dtoverlay=vc4-kms-v3d([[:space:]]*)$|# dtoverlay=vc4-kms-v3d|' \
+            -e 's|^[[:space:]]*dtoverlay=vc4-kms-v3d,composite([[:space:]]*)$|# dtoverlay=vc4-kms-v3d,composite|' \
+            "$config_txt"
+    fi
+
+    if ! pi240_root grep -Eq '^[[:space:]]*dtoverlay=vc4-fkms-v3d([,[:space:]]|$)' "$config_txt"; then
+        if pi240_is_root; then
+            {
+                printf '\n# --- CRT Station PC Link display compatibility ---\n'
+                printf 'dtoverlay=vc4-fkms-v3d\n'
+            } >> "$config_txt"
+        else
+            {
+                printf '\n# --- CRT Station PC Link display compatibility ---\n'
+                printf 'dtoverlay=vc4-fkms-v3d\n'
+            } | sudo tee -a "$config_txt" >/dev/null
+        fi
+    fi
+}
+
 pi240_auto_force_composite_video() {
     if compgen -G "/sys/class/drm/*-Composite-1" >/dev/null; then
         pi240_force_composite_video "${1:-auto}"
@@ -865,7 +974,386 @@ SUDOERS
     # during OTA, but they do not know about newer system helpers yet.
     pi240_install_bluetooth_control "$service_user" /usr/local/sbin/240mp-bluetooth-control
     pi240_install_retro_mount_helper "$service_user" /usr/local/sbin/240mp-retro-mount
+    pi240_install_retro_core_control "$service_user" /usr/local/sbin/240mp-retro-core-control
     pi240_install_argon_fan_control "$service_user" /usr/local/sbin/240mp-argon-fan-control
+    pi240_install_moonlight_control "$service_user" /usr/local/sbin/240mp-moonlight-control
+}
+
+pi240_install_moonlight_control() {
+    local service_user="${1:-mp240}"
+    local helper="${2:-/usr/local/sbin/240mp-moonlight-control}"
+
+    pi240_install_file_from_stdin "$helper" 0755 <<'HELPER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+action="${1:-}"
+if [ "$#" -gt 0 ]; then
+    shift
+fi
+
+service_name="${MP240_SERVICE_NAME:-240mp.service}"
+vt="${MP240_MOONLIGHT_VT:-12}"
+default_bundle="/opt/240mp/share/240mp/vendor/moonlight-sdl"
+
+find_service_user() {
+    local user
+    user="$(systemctl show "$service_name" -p User --value 2>/dev/null || true)"
+    printf '%s\n' "${user:-mp240}"
+}
+
+find_service_home() {
+    local user="$1"
+    local home
+    home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6 || true)"
+    printf '%s\n' "${home:-/var/lib/240mp}"
+}
+
+find_moonlight_bin() {
+    if [ -n "${MP240_MOONLIGHT_BIN:-}" ] && [ -x "$MP240_MOONLIGHT_BIN" ]; then
+        printf '%s\n' "$MP240_MOONLIGHT_BIN"
+        return 0
+    fi
+    if [ -x "${default_bundle}/bin/moonlight" ]; then
+        printf '%s\n' "${default_bundle}/bin/moonlight"
+        return 0
+    fi
+    command -v moonlight 2>/dev/null || command -v moonlight-embedded 2>/dev/null || true
+}
+
+find_drm_device() {
+    if [ -n "${MP240_MOONLIGHT_DRM_DEVICE:-}" ] && [ -e "$MP240_MOONLIGHT_DRM_DEVICE" ]; then
+        printf '%s\n' "$MP240_MOONLIGHT_DRM_DEVICE"
+        return 0
+    fi
+
+    local status node card
+    for status in /sys/class/drm/card*-Composite-1/status; do
+        [ -e "$status" ] || continue
+        node="$(basename "$(dirname "$status")")"
+        card="${node%%-*}"
+        if [ -e "/dev/dri/${card}" ]; then
+            printf '/dev/dri/%s\n' "$card"
+            return 0
+        fi
+    done
+
+    for status in /sys/class/drm/card*-*/status; do
+        [ -e "$status" ] || continue
+        [ "$(cat "$status" 2>/dev/null || true)" = "connected" ] || continue
+        node="$(basename "$(dirname "$status")")"
+        card="${node%%-*}"
+        if [ -e "/dev/dri/${card}" ]; then
+            printf '/dev/dri/%s\n' "$card"
+            return 0
+        fi
+    done
+
+    for card in /dev/dri/card*; do
+        [ -e "$card" ] || continue
+        printf '%s\n' "$card"
+        return 0
+    done
+}
+
+blank_tty() {
+    local tty_path="$1"
+    [ -w "$tty_path" ] || return 0
+    printf '\033c\033[?25l\033[2J\033[3J\033[H' > "$tty_path" || true
+}
+
+start_exit_watcher() {
+    watcher_pid=""
+    if ! command -v python3 >/dev/null 2>&1; then
+        return 0
+    fi
+
+    MP240_MOONLIGHT_STOP_UNIT="${MP240_MOONLIGHT_STOP_UNIT:-240mp-moonlight.service}" python3 - <<'PY' >/dev/null 2>&1 &
+import glob
+import os
+import selectors
+import struct
+import subprocess
+import time
+
+EV_KEY = 1
+EV_ABS = 3
+KEY_ESC = 1
+KEY_Q = 16
+KEY_LEFTCTRL = 29
+KEY_LEFTSHIFT = 42
+KEY_LEFTALT = 56
+KEY_HOME = 102
+KEY_HOMEPAGE = 172
+KEY_EXIT = 174
+KEY_CLOSE = 206
+KEY_UP = 103
+KEY_RIGHTCTRL = 97
+KEY_RIGHTALT = 100
+KEY_RIGHTSHIFT = 54
+KEY_MENU = 139
+KEY_BACK = 158
+BTN_MODE = 316
+BTN_NORTH = 307
+BTN_WEST = 308
+BTN_TL = 310
+BTN_TR = 311
+BTN_DPAD_UP = 544
+ABS_HAT0Y = 17
+ABS_HAT0X = 16
+STOP_KEYS = {KEY_HOME, KEY_HOMEPAGE, KEY_BACK, KEY_EXIT, KEY_CLOSE, BTN_MODE}
+
+unit = os.environ.get("MP240_MOONLIGHT_STOP_UNIT", "240mp-moonlight.service")
+event_struct = struct.Struct("llHHI")
+selector = selectors.DefaultSelector()
+fds = {}
+pressed = set()
+abs_values = {}
+stopped = False
+
+def add_device(path):
+    if path in fds:
+        return
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return
+    fds[path] = fd
+    try:
+        selector.register(fd, selectors.EVENT_READ, path)
+    except Exception:
+        os.close(fd)
+        fds.pop(path, None)
+
+def scan_devices():
+    for path in sorted(glob.glob("/dev/input/event*")):
+        add_device(path)
+
+def request_stop():
+    global stopped
+    if stopped:
+        return
+    stopped = True
+    subprocess.Popen(
+        ["systemctl", "stop", unit],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+def any_pressed(codes):
+    return any(code in pressed for code in codes)
+
+def exit_combo_pressed():
+    dpad_up = BTN_DPAD_UP in pressed or KEY_UP in pressed or abs_values.get(ABS_HAT0Y) == -1
+    shoulders = BTN_TL in pressed and BTN_TR in pressed
+    face = BTN_NORTH in pressed or BTN_WEST in pressed
+    ctrl = any_pressed({KEY_LEFTCTRL, KEY_RIGHTCTRL})
+    alt = any_pressed({KEY_LEFTALT, KEY_RIGHTALT})
+    shift = any_pressed({KEY_LEFTSHIFT, KEY_RIGHTSHIFT})
+    return (dpad_up and shoulders and face) or (ctrl and alt and shift and KEY_Q in pressed)
+
+scan_at = 0.0
+while not stopped:
+    now = time.monotonic()
+    if now >= scan_at:
+        scan_devices()
+        scan_at = now + 2.0
+
+    for key, _ in selector.select(timeout=0.25):
+        fd = key.fd
+        while True:
+            try:
+                data = os.read(fd, event_struct.size * 64)
+            except BlockingIOError:
+                break
+            except OSError:
+                try:
+                    selector.unregister(fd)
+                except Exception:
+                    pass
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                for path, known_fd in list(fds.items()):
+                    if known_fd == fd:
+                        fds.pop(path, None)
+                break
+            if not data:
+                break
+
+            limit = len(data) - (len(data) % event_struct.size)
+            for offset in range(0, limit, event_struct.size):
+                _, _, event_type, code, value = event_struct.unpack_from(data, offset)
+                if event_type == EV_KEY:
+                    if value:
+                        pressed.add(code)
+                        if code in STOP_KEYS:
+                            request_stop()
+                    else:
+                        pressed.discard(code)
+                elif event_type == EV_ABS:
+                    if value >= 0x80000000:
+                        value -= 0x100000000
+                    abs_values[code] = value
+
+                if exit_combo_pressed():
+                    request_stop()
+PY
+    watcher_pid="$!"
+}
+
+parse_control_args() {
+    moonlight_bin_arg=""
+    moonlight_args=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --moonlight-bin)
+                shift
+                moonlight_bin_arg="${1:-}"
+                ;;
+            *)
+                moonlight_args+=("$1")
+                ;;
+        esac
+        [ "$#" -gt 0 ] && shift
+    done
+}
+
+launch_stream() {
+    parse_control_args "$@"
+    systemctl stop 240mp-moonlight.service >/dev/null 2>&1 || true
+    systemctl reset-failed 240mp-moonlight.service >/dev/null 2>&1 || true
+
+    local run_args=(
+        --unit=240mp-moonlight
+        --collect
+        --property=StandardOutput=journal
+        --property=StandardError=journal
+    )
+    if [ -n "$moonlight_bin_arg" ]; then
+        run_args+=(--setenv=MP240_MOONLIGHT_BIN="$moonlight_bin_arg")
+    fi
+
+    systemd-run "${run_args[@]}" "$0" run "${moonlight_args[@]}"
+}
+
+run_stream() {
+    local user home data_root status watcher_pid
+    user="$(find_service_user)"
+    home="$(find_service_home "$user")"
+    data_root="${home}/.local/share/240-MP"
+    install -d -m 0755 "$data_root"
+    chown "$user:$user" "$data_root" 2>/dev/null || true
+
+    cleanup() {
+        status=$?
+        if [ -n "${watcher_pid:-}" ]; then
+            kill "$watcher_pid" >/dev/null 2>&1 || true
+            wait "$watcher_pid" >/dev/null 2>&1 || true
+        fi
+        blank_tty "/dev/tty${vt}"
+        systemctl reset-failed "$service_name" >/dev/null 2>&1 || true
+        systemctl start "$service_name" >/dev/null 2>&1 || true
+        exit "$status"
+    }
+    trap cleanup EXIT INT TERM
+
+    systemctl stop "$service_name" >/dev/null 2>&1 || true
+    blank_tty "/dev/tty${vt}"
+    start_exit_watcher || true
+
+    "$0" exec --service-user "$user" --data-root "$data_root" "$@"
+}
+
+exec_stream() {
+    local user="mp240"
+    local data_root="/var/lib/240mp/.local/share/240-MP"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --service-user)
+                shift
+                user="${1:-$user}"
+                ;;
+            --data-root)
+                shift
+                data_root="${1:-$data_root}"
+                ;;
+            *)
+                break
+                ;;
+        esac
+        [ "$#" -gt 0 ] && shift
+    done
+
+    local bin bundle_dir drm_device
+    bin="$(find_moonlight_bin)"
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+        echo "Moonlight executable not found" >&2
+        exit 1
+    fi
+
+    bundle_dir="$(dirname "$(dirname "$bin")")"
+    drm_device="$(find_drm_device)"
+
+    export HOME="$data_root"
+    export XDG_CONFIG_HOME="${data_root}/moonlight/config"
+    export XDG_DATA_HOME="${data_root}/moonlight/data"
+    export XDG_CACHE_HOME="${data_root}/moonlight/cache"
+    export SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1
+    export SDL_VIDEODRIVER=KMSDRM
+    export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+    export XDG_DATA_DIRS="${bundle_dir}/share:/usr/local/share:/usr/share"
+    export LD_LIBRARY_PATH="${bundle_dir}/lib:${LD_LIBRARY_PATH:-}"
+    if [ -n "$drm_device" ]; then
+        export SDL_VIDEO_KMSDRM_DEVICE="$drm_device"
+    fi
+
+    install -d -m 0755 "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+    chown -R "$user:$user" "$data_root" 2>/dev/null || true
+
+    if [ "$user" = "root" ]; then
+        exec "$bin" "$@"
+    fi
+
+    exec sudo -u "$user" \
+        --preserve-env=HOME,XDG_CONFIG_HOME,XDG_DATA_HOME,XDG_CACHE_HOME,XDG_DATA_DIRS,SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD,SDL_VIDEODRIVER,SDL_AUDIODRIVER,SDL_VIDEO_KMSDRM_DEVICE,LD_LIBRARY_PATH \
+        "$bin" "$@"
+}
+
+case "$action" in
+    launch)
+        launch_stream "$@"
+        ;;
+    run)
+        run_stream "$@"
+        ;;
+    exec)
+        exec_stream "$@"
+        ;;
+    status)
+        bin="$(find_moonlight_bin)"
+        if [ -n "$bin" ] && [ -x "$bin" ]; then
+            printf 'available=1\n'
+            printf 'path=%s\n' "$bin"
+        else
+            printf 'available=0\n'
+        fi
+        ;;
+    *)
+        echo "usage: $0 [status|launch|run|exec] ..." >&2
+        exit 2
+        ;;
+esac
+HELPER
+
+    pi240_install_file_from_stdin /etc/sudoers.d/240mp-moonlight-control 0440 <<SUDOERS
+${service_user} ALL=(root) NOPASSWD: ${helper}
+SUDOERS
+
+    if command -v visudo >/dev/null 2>&1; then
+        pi240_root visudo -cf /etc/sudoers.d/240mp-moonlight-control
+    fi
 }
 
 pi240_install_ssh_control() {
@@ -1595,6 +2083,71 @@ SUDOERS
     pi240_root systemctl enable 240mp-argon-fan.service || true
     if [ -d /run/systemd/system ]; then
         pi240_root systemctl restart 240mp-argon-fan.service || true
+    fi
+}
+
+pi240_install_retro_core_control() {
+    local service_user="${1:-mp240}"
+    local helper="${2:-/usr/local/sbin/240mp-retro-core-control}"
+    local setup_script="${3:-/opt/240mp/share/240mp/scripts/lib/pi-setup.sh}"
+
+    pi240_install_file_from_stdin "$helper" 0755 <<HELPER
+#!/usr/bin/env bash
+set -euo pipefail
+
+action="\${1:-status}"
+setup_script="$setup_script"
+log_file="/var/log/240mp-retro-core-control.log"
+lock_dir="/run/240mp-retro-core-install.lock"
+
+emit_status() {
+    if [ -d "\$lock_dir" ]; then
+        echo "status=installing"
+    else
+        echo "status=ready"
+    fi
+}
+
+case "\$action" in
+    status)
+        emit_status
+        ;;
+    install|refresh)
+        if ! mkdir "\$lock_dir" 2>/dev/null; then
+            echo "status=installing"
+            exit 0
+        fi
+        trap 'rmdir "\$lock_dir" >/dev/null 2>&1 || true' EXIT
+
+        if [ ! -f "\$setup_script" ]; then
+            echo "setup script not found: \$setup_script" >&2
+            exit 1
+        fi
+
+        {
+            echo "[\$(date -Is)] Installing CRT Station RetroArch cores"
+            # shellcheck source=/dev/null
+            source "\$setup_script"
+            export PI240_INSTALL_ALL_RETRO_CORE_FALLBACKS=1
+            pi240_install_retro_core_dependencies
+            echo "[\$(date -Is)] Finished CRT Station RetroArch core install"
+        } >> "\$log_file" 2>&1
+
+        echo "status=done"
+        ;;
+    *)
+        echo "usage: \$0 [status|install|refresh]" >&2
+        exit 2
+        ;;
+esac
+HELPER
+
+    pi240_install_file_from_stdin /etc/sudoers.d/240mp-retro-core-control 0440 <<SUDOERS
+${service_user} ALL=(root) NOPASSWD: ${helper}
+SUDOERS
+
+    if command -v visudo >/dev/null 2>&1; then
+        pi240_root visudo -cf /etc/sudoers.d/240mp-retro-core-control
     fi
 }
 

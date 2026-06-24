@@ -33,7 +33,15 @@ jobs:
             qml6-module-qtquick-window \
             libdrm-dev \
             libssl-dev \
-            libsdl2-dev
+            libsdl2-dev \
+            git \
+            libopus-dev \
+            libevdev-dev \
+            libavcodec-dev \
+            libavutil-dev \
+            libcurl4-openssl-dev \
+            libexpat1-dev \
+            libavahi-client-dev
 
       - name: Configure
         run: |
@@ -46,6 +54,9 @@ jobs:
 
       - name: Install
         run: cmake --install build
+
+      - name: Build bundled Moonlight SDL runtime
+        run: ./scripts/build-moonlight-sdl.sh "${GITHUB_WORKSPACE}/install/usr/local/share/240mp/vendor/moonlight-sdl"
 
       - name: Create tarball
         run: |
@@ -182,7 +193,7 @@ jobs:
             echo "### Install Instructions"
             echo
             echo "- Ready-to-flash image: download the NTSC or PAL image asset for your CRT, flash it with Raspberry Pi Imager or Balena Etcher, then boot the Pi."
-            echo "- Raspberry Pi OS Trixie app update: [Instructions](INSTALL.md#update-an-existing-240-mp-image)"
+            echo "- Raspberry Pi OS Trixie app update: [Instructions](INSTALL.md#update-an-existing-crt-station-image)"
           } > release-notes.md
 
       - name: Publish

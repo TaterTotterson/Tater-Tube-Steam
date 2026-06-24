@@ -10,6 +10,7 @@ The release images are built for:
 - HDHomeRun OTA tuners
 - YouTube playlists
 - RetroNAS/MiSTer ROM shares
+- Sunshine/Moonlight PC Link hosts
 - Bluetooth controllers
 - Argon IR remote support
 - GPIO IR receiver on GPIO23, physical pin 16
@@ -131,10 +132,11 @@ The OTA module connects directly to the HDHomeRun and opens into TV playback wit
 ## Public Access Setup
 
 1. Open the Public Access module.
-2. Enter a public YouTube playlist URL or just the playlist `list` code.
-3. Pick a video from the VHS-style list.
+2. Add a public YouTube playlist URL or just the playlist `list` code.
+3. Pick a saved playlist.
+4. Pick a video from the VHS-style list.
 
-The saved playlist loads automatically on later launches. The Pi image installs `yt-dlp` so mpv can stream YouTube videos directly. Public Access defaults to 360p for reliable CRT/Pi playback; change Quality in Settings if needed.
+Saved playlists load automatically on later launches. The Pi image installs `yt-dlp` so mpv can stream YouTube videos directly. Public Access defaults to 360p for reliable CRT/Pi playback; change Quality in Settings if needed.
 
 ## Game Center Setup
 
@@ -147,6 +149,23 @@ The saved playlist loads automatically on later launches. The Pi image installs 
 The Pi image installs RetroArch and tries to install the supported libretro cores automatically. The module only shows systems that have both a ROM folder and an installed core. Games launch directly into RetroArch; press Home on the remote to stop the game and return to the CRT Station menu.
 
 Bluetooth pairing only connects the controller. Button layout is handled by the global controller mapper/RetroArch input mapping layer.
+
+## PC Link Setup
+
+1. Install and configure Sunshine on the PC or Mac you want to stream from.
+2. Add Steam, games, or desktop apps in the Sunshine web UI.
+3. In CRT Station, open Settings, then PC Link.
+4. Enter the Sunshine host IP address or hostname.
+5. Pick a stream resolution. The default is `640x480`.
+6. Open PC Link and choose Enter PIN if the host is not paired yet.
+7. Enter the PIN in the Sunshine web UI.
+8. Launch Steam or another Sunshine app from the CRT Station list.
+
+CRT Station controls the Moonlight stream request. The default PC Link profile asks Sunshine for `640x480`, `15 FPS`, `1000 Kbps`, H.264 video. This keeps the stream itself CRT-friendly and 4:3.
+
+The host still controls the desktop or game resolution. For the cleanest CRT image, set the Sunshine app, host display, virtual display, or game launch options to a matching 4:3 resolution such as `640x480` or `800x600`. If the host keeps running widescreen, Sunshine may scale or letterbox that widescreen image inside the 4:3 stream.
+
+Controller support depends on the Sunshine host. Windows Sunshine requires ViGEmBus for virtual gamepads; install it from Sunshine's Troubleshooting tab and reboot if controllers do not work. Sunshine on macOS currently streams video/audio and keyboard-style input, but does not currently support gamepads.
 
 ## Update An Existing CRT Station Image
 

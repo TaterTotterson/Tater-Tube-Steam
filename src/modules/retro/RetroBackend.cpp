@@ -36,6 +36,7 @@
 namespace {
 constexpr const char *kModuleId = "com.240mp.retro";
 constexpr const char *kRetroMountHelper = "/usr/local/sbin/240mp-retro-mount";
+constexpr const char *kRetroCoreHelper = "/usr/local/sbin/240mp-retro-core-control";
 constexpr const char *kGameCacheFile = "game-cache.json";
 constexpr int kGameCacheVersion = 2;
 
@@ -142,6 +143,11 @@ RetroBackend::RetroBackend(const QString &appRoot, const QString &dataRoot, QObj
 RetroBackend::~RetroBackend()
 {
     stop_game();
+    if (m_coreInstallProcess) {
+        m_coreInstallProcess->disconnect(this);
+        m_coreInstallProcess->deleteLater();
+        m_coreInstallProcess = nullptr;
+    }
 }
 
 bool RetroBackend::isRunning() const
@@ -192,6 +198,38 @@ QString RetroBackend::gamesRoot() const
 QString RetroBackend::retroarchPath() const
 {
     return QStandardPaths::findExecutable(QStringLiteral("retroarch"), executableSearchPaths());
+}
+
+QVariantList RetroBackend::coreInstallStatusOptions() const
+{
+    QString label = m_coreInstallStatus;
+    if (m_coreInstallProcess && m_coreInstallProcess->state() != QProcess::NotRunning) {
+        label = QStringLiteral("INSTALLING...");
+    } else if (label.isEmpty()) {
+#ifdef Q_OS_LINUX
+        const QFileInfo helperInfo(QString::fromUtf8(kRetroCoreHelper));
+        label = helperInfo.exists() && helperInfo.isExecutable()
+            ? QStringLiteral("READY")
+            : QStringLiteral("N/A");
+#else
+        label = QStringLiteral("PI ONLY");
+#endif
+    }
+
+    QString id = label.toLower();
+    id.replace(QRegularExpression("[^a-z0-9]+"), QStringLiteral("-"));
+
+    return QVariantList{
+        QVariantMap{
+            {QStringLiteral("id"), id},
+            {QStringLiteral("label"), label}
+        }
+    };
+}
+
+void RetroBackend::emitCoreInstallStatus()
+{
+    emit dynamicOptionsReady(QStringLiteral("core_install_status"), coreInstallStatusOptions());
 }
 
 QString RetroBackend::credentialsFilePath() const
@@ -1012,6 +1050,64 @@ void RetroBackend::get_retro_system_options()
     emit dynamicOptionsReady(QStringLiteral("systems"), options);
 }
 
+void RetroBackend::load_core_install_status_options()
+{
+    emitCoreInstallStatus();
+}
+
+void RetroBackend::install_game_cores()
+{
+#ifndef Q_OS_LINUX
+    m_coreInstallStatus = QStringLiteral("PI ONLY");
+    emitCoreInstallStatus();
+    return;
+#else
+    if (m_coreInstallProcess && m_coreInstallProcess->state() != QProcess::NotRunning) {
+        m_coreInstallStatus = QStringLiteral("INSTALLING...");
+        emitCoreInstallStatus();
+        return;
+    }
+
+    const QFileInfo helperInfo(QString::fromUtf8(kRetroCoreHelper));
+    if (!helperInfo.exists() || !helperInfo.isExecutable()) {
+        m_coreInstallStatus = QStringLiteral("HELPER N/A");
+        emitCoreInstallStatus();
+        return;
+    }
+
+    const QFileInfo sudoInfo(QStringLiteral("/usr/bin/sudo"));
+    const QString sudoPath = sudoInfo.exists() ? QStringLiteral("/usr/bin/sudo")
+                                               : QStringLiteral("sudo");
+
+    if (m_coreInstallProcess) {
+        m_coreInstallProcess->deleteLater();
+        m_coreInstallProcess = nullptr;
+    }
+
+    m_coreInstallProcess = new QProcess(this);
+    m_coreInstallProcess->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_coreInstallProcess,
+            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RetroBackend::onCoreInstallFinished);
+    m_coreInstallProcess->start(sudoPath, {
+        QStringLiteral("-n"),
+        QString::fromUtf8(kRetroCoreHelper),
+        QStringLiteral("install")
+    });
+
+    if (!m_coreInstallProcess->waitForStarted(2000)) {
+        m_coreInstallStatus = QStringLiteral("START FAILED");
+        m_coreInstallProcess->deleteLater();
+        m_coreInstallProcess = nullptr;
+        emitCoreInstallStatus();
+        return;
+    }
+
+    m_coreInstallStatus = QStringLiteral("INSTALLING...");
+    emitCoreInstallStatus();
+#endif
+}
+
 void RetroBackend::onSettingChanged(const QString &moduleId, const QString &key, const QVariant &value)
 {
     Q_UNUSED(value)
@@ -1045,6 +1141,26 @@ void RetroBackend::onProcessFinished(int exitCode, QProcess::ExitStatus exitStat
         qWarning("[RetroBackend] RetroArch exited with code %d", exitCode);
         emit errorOccurred(QStringLiteral("RETROARCH PLAYBACK FAILED"));
     }
+}
+
+void RetroBackend::onCoreInstallFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    QProcess *finished = m_coreInstallProcess;
+    if (finished) {
+        const QByteArray remaining = finished->readAll();
+        if (!remaining.isEmpty())
+            qInfo("[retro-core] %s", remaining.trimmed().constData());
+        finished->deleteLater();
+        m_coreInstallProcess = nullptr;
+    }
+
+    const bool ok = exitStatus == QProcess::NormalExit && exitCode == 0;
+    m_coreInstallStatus = ok ? QStringLiteral("DONE") : QStringLiteral("FAILED");
+    if (ok) {
+        clearGameCache();
+        emit authStateChanged();
+    }
+    emitCoreInstallStatus();
 }
 
 bool RetroBackend::detectHeadlessMode() const
