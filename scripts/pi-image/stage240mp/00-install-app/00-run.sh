@@ -37,6 +37,7 @@ install -m 0755 "$SOURCE_DIR/scripts/lib/pi-setup.sh" "${ROOTFS_DIR}/tmp/240mp-p
     printf 'PI240_IR_PROTOCOL=%q\n' "${PI240_IR_PROTOCOL:-nec}"
     printf 'PI240_ENABLE_BLUETOOTH=%q\n' "$ENABLE_BLUETOOTH"
     printf 'PI240_ENABLE_BOOT_SPLASH=%q\n' "$ENABLE_BOOT_SPLASH"
+    printf 'PI240_INSTALL_ALL_RETRO_CORE_FALLBACKS=%q\n' "${PI240_INSTALL_ALL_RETRO_CORE_FALLBACKS:-1}"
 } > "${ROOTFS_DIR}/tmp/240mp-image.env"
 
 if [ "$PROFILE" != "none" ]; then

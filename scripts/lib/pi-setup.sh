@@ -280,7 +280,11 @@ pi240_install_missing_retro_core_dependencies() {
             printf '[240mp-setup] Optional RetroArch core package unavailable: %s\n' "$pkg" >&2
         fi
     done
-    pi240_install_retro_core_fallbacks
+    if [ "${PI240_INSTALL_ALL_RETRO_CORE_FALLBACKS:-0}" = "1" ]; then
+        pi240_install_retro_core_fallbacks
+    else
+        pi240_install_psx_core_fallback
+    fi
 }
 
 pi240_retro_core_dirs() {
