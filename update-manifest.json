@@ -1,15 +1,15 @@
 {
-  "version": "v1.0.17",
-  "app_version": "1.0.17",
+  "version": "v1.0.18",
+  "app_version": "1.0.18",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/CRT-Station",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/CRT-Station/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/CRT-Station/releases/download/v1.0.17/240-MP-v1.0.17-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/CRT-Station/archive/refs/tags/v1.0.17.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/CRT-Station/releases/download/v1.0.18/240-MP-v1.0.18-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/CRT-Station/archive/refs/tags/v1.0.18.tar.gz",
   "notes": [
-    "Replaces the Gamepad Bluetooth control helper with a BlueZ D-Bus implementation instead of shelling out through bluetoothctl.",
-    "Registers a real pairing agent and handles discovery, pairing, trust, connect, and service-ready state through BlueZ events.",
-    "Adds the Python D-Bus runtime packages needed by fresh images and updater installs.",
-    "Extends app-side Gamepad pair/connect timeouts to match the cleaner full pairing workflow."
+    "Updates Argon ONE fan control to match Argon's official register-plus-legacy I2C fan protocol.",
+    "Fixes fixed-percent fan settings that could show in Settings without changing the physical fan speed.",
+    "Keeps Auto, Off, and fixed fan speeds update-safe through the built-in updater.",
+    "Documents Argon ONE fan control in the install notes."
   ]
 }

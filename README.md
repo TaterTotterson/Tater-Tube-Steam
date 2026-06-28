@@ -83,6 +83,7 @@ The easiest way to use it is to download the ready-to-flash NTSC or PAL `.img.xz
 - CRT Station boot screen
 - SSH enabled for debugging
 - Argon IR remote defaults
+- Argon ONE fan Auto, Off, and fixed-speed settings
 - GPIO IR receiver default: GPIO23, physical pin 16
 - Analog audio defaults for the Pi composite/3.5mm setup
 - RetroArch and RetroNAS mount support

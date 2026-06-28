@@ -2302,27 +2302,66 @@ def close_bus(bus):
     except Exception:
         pass
 
+def read_register(bus, register):
+    if bus is None:
+        raise OSError("i2c bus is not available")
+    return bus.read_byte_data(ADDR, register)
+
+def write_register(bus, register, value):
+    if bus is None:
+        raise OSError("i2c bus is not available")
+    bus.write_byte_data(ADDR, register, clamp_speed(value))
+    time.sleep(1.0)
+
+def register_supported(bus):
+    if bus is None:
+        return False
+    try:
+        old_speed = clamp_speed(read_register(bus, REG_DUTY))
+        probe_speed = old_speed + 1
+        if probe_speed >= 100:
+            probe_speed = 98
+        write_register(bus, REG_DUTY, probe_speed)
+        detected_speed = clamp_speed(read_register(bus, REG_DUTY))
+        if detected_speed != old_speed:
+            write_register(bus, REG_DUTY, old_speed)
+            return True
+        return False
+    except Exception:
+        return False
+
 def has_argon(bus):
     if bus is None:
         return False
     try:
-        bus.read_byte_data(ADDR, REG_DUTY)
+        read_register(bus, REG_DUTY)
         return True
     except Exception:
-        return False
+        return register_supported(bus)
 
-def current_fan(bus):
+def current_fan(bus, regsupport=None):
     if bus is None:
         return 0
+    if regsupport is None:
+        regsupport = register_supported(bus)
+    if not regsupport:
+        return 0
     try:
-        return clamp_speed(bus.read_byte_data(ADDR, REG_DUTY))
+        return clamp_speed(read_register(bus, REG_DUTY))
     except Exception:
         return 0
 
-def write_fan(bus, speed):
+def write_fan(bus, speed, regsupport=None):
     speed = clamp_speed(speed)
-    bus.write_byte_data(ADDR, REG_DUTY, speed)
-    time.sleep(0.2)
+    if bus is None:
+        raise OSError("i2c bus is not available")
+    if regsupport is None:
+        regsupport = register_supported(bus)
+    if regsupport:
+        write_register(bus, REG_DUTY, speed)
+    else:
+        bus.write_byte(ADDR, speed)
+        time.sleep(1.0)
 
 def target_speed(mode, fixed_speed, curve):
     if mode == "off":
@@ -2340,8 +2379,9 @@ def emit_status():
     mode, fixed_speed, curve = load_config()
     bus = bus_obj()
     control_available = smbus is not None
-    detected = has_argon(bus)
-    fan = current_fan(bus) if detected else 0
+    regsupport = register_supported(bus)
+    detected = regsupport or has_argon(bus)
+    fan = current_fan(bus, regsupport) if detected else 0
     temp = cpu_temp()
     close_bus(bus)
 
@@ -2361,41 +2401,59 @@ def emit_status():
 def apply_once():
     mode, fixed_speed, curve = load_config()
     bus = bus_obj()
-    if not has_argon(bus):
+    if bus is None:
         close_bus(bus)
         return 1
+    regsupport = register_supported(bus)
     speed = target_speed(mode, fixed_speed, curve)
-    if speed > 0:
-        write_fan(bus, 100)
-    write_fan(bus, speed)
-    close_bus(bus)
-    return 0
+    try:
+        if speed > 0:
+            write_fan(bus, 100, regsupport)
+        write_fan(bus, speed, regsupport)
+        close_bus(bus)
+        return 0
+    except Exception:
+        close_bus(bus)
+        return 1
 
 def daemon_loop():
     global reload_requested
     bus = None
     previous = None
+    regsupport = None
 
     while True:
         if bus is None:
             bus = bus_obj()
 
-        if not has_argon(bus):
+        if bus is None:
             close_bus(bus)
             bus = None
             previous = None
+            regsupport = None
             time.sleep(60)
             continue
+
+        if regsupport is None:
+            regsupport = register_supported(bus)
 
         mode, fixed_speed, curve = load_config()
         speed = target_speed(mode, fixed_speed, curve)
 
         if speed != previous or reload_requested:
-            if speed > 0 and (previous is None or previous <= 0) and speed < 100:
-                write_fan(bus, 100)
-            write_fan(bus, speed)
-            previous = speed
-            reload_requested = False
+            try:
+                if speed > 0 and (previous is None or previous <= 0) and speed < 100:
+                    write_fan(bus, 100, regsupport)
+                write_fan(bus, speed, regsupport)
+                previous = speed
+                reload_requested = False
+            except Exception:
+                close_bus(bus)
+                bus = None
+                previous = None
+                regsupport = None
+                time.sleep(60)
+                continue
 
         time.sleep(30)
 

@@ -64,6 +64,10 @@ Then copy the printed scancodes into `/etc/rc_keymaps/240mp.toml` and reload:
 sudo systemctl restart 240mp-ir-keymap.service
 ```
 
+### Argon ONE Fan
+
+Settings, System, Argon Fan can run the case fan in Auto, Off, or a fixed speed. CRT Station uses the Argon ONE I2C fan controller and supports both the register-based controller and the older one-byte fan command used by some Argon boards.
+
 ### Bluetooth Controllers
 
 The Pi image includes BlueZ and a Settings screen helper for Bluetooth controller pairing.
