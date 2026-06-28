@@ -19,6 +19,9 @@ PI240_RUNTIME_PACKAGES=(
     i2c-tools
     bluez
     bluetooth
+    python3-dbus
+    python3-gi
+    gir1.2-glib-2.0
     rfkill
     cifs-utils
     ir-keytable
@@ -1624,10 +1627,37 @@ pi240_install_bluetooth_control() {
     local service_user="${1:-mp240}"
     local helper="${2:-/usr/local/sbin/240mp-bluetooth-control}"
     local default_enabled="${3:-}"
+    local tmp_helper=""
 
     pi240_configure_bluetooth_input
 
-    pi240_install_file_from_stdin "$helper" 0755 <<'HELPER'
+    local helper_source=""
+    local candidate=""
+    for candidate in \
+        "${PI240_SOURCE_DIR:-}/scripts/240mp-bluetooth-control" \
+        "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)/240mp-bluetooth-control" \
+        "/opt/240mp/share/240mp/scripts/240mp-bluetooth-control"; do
+        if [ -f "$candidate" ]; then
+            helper_source="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$helper_source" ]; then
+        pi240_root install -D -m 0755 "$helper_source" "$helper"
+    elif [ -n "${PI240_REPO:-}" ] && [ -n "${PI240_VERSION:-}" ] && command -v curl >/dev/null 2>&1; then
+        pi240_root install -d -m 0755 "$(dirname "$helper")"
+        if pi240_is_root; then
+            curl -fsSL "https://raw.githubusercontent.com/${PI240_REPO}/${PI240_VERSION}/scripts/240mp-bluetooth-control" -o "$helper"
+            chmod 0755 "$helper"
+        else
+            tmp_helper="$(mktemp)"
+            curl -fsSL "https://raw.githubusercontent.com/${PI240_REPO}/${PI240_VERSION}/scripts/240mp-bluetooth-control" -o "$tmp_helper"
+            sudo install -D -m 0755 "$tmp_helper" "$helper"
+            rm -f "$tmp_helper"
+        fi
+    else
+        pi240_install_file_from_stdin "$helper" 0755 <<'HELPER'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -2151,6 +2181,7 @@ case "$action" in
         ;;
 esac
 HELPER
+    fi
 
     pi240_install_file_from_stdin /etc/sudoers.d/240mp-bluetooth-control 0440 <<SUDOERS
 ${service_user} ALL=(root) NOPASSWD: ${helper}

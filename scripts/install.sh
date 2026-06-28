@@ -22,6 +22,8 @@ if [ "$VERSION" = "latest" ]; then
         | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
 fi
 echo "Installing CRT Station ${VERSION}"
+export PI240_REPO="${REPO}"
+export PI240_VERSION="${VERSION}"
 
 TARBALL="240-MP-${VERSION}-linux-arm64.tar.gz"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"

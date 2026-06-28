@@ -1,0 +1,567 @@
+#!/usr/bin/env python3
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+ACTION = sys.argv[1] if len(sys.argv) > 1 else "status"
+ADDRESS = sys.argv[2].upper() if len(sys.argv) > 2 else ""
+
+try:
+    import dbus
+    import dbus.service
+    import dbus.mainloop.glib
+    from gi.repository import GLib
+except Exception as exc:
+    if ACTION == "status":
+        print("available=0")
+        print("enabled=0")
+        print("active=0")
+        print("powered=0")
+        print("discovering=0")
+        sys.exit(0)
+    print(f"BlueZ D-Bus Python bindings are not available: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+BLUEZ = "org.bluez"
+OBJECT_MANAGER = "org.freedesktop.DBus.ObjectManager"
+PROPERTIES = "org.freedesktop.DBus.Properties"
+ADAPTER = "org.bluez.Adapter1"
+DEVICE = "org.bluez.Device1"
+AGENT_MANAGER = "org.bluez.AgentManager1"
+AGENT = "org.bluez.Agent1"
+AGENT_PATH = f"/com/crtstation/agent_{os.getpid()}"
+SERVICE = "bluetooth.service"
+HID_UUID = "00001124-0000-1000-8000-00805f9b34fb"
+INPUT_ICONS = {"input-gaming", "input-keyboard", "input-mouse", "input-tablet"}
+INPUT_NAMES = (
+    "controller",
+    "gamepad",
+    "dualsense",
+    "dualshock",
+    "8bitdo",
+    "xbox",
+    "joy-con",
+    "joycon",
+    "pro controller",
+    "steam controller",
+    "crkd",
+)
+
+
+class ControlError(Exception):
+    pass
+
+
+def run_cmd(args, timeout=5):
+    try:
+        return subprocess.run(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        ).returncode
+    except Exception:
+        return 1
+
+
+def systemd_live():
+    return os.path.isdir("/run/systemd/system")
+
+
+def systemctl_ok(*args):
+    return run_cmd(["systemctl", *args]) == 0
+
+
+def bool_text(value):
+    return "1" if bool(value) else "0"
+
+
+def valid_address(address):
+    return bool(re.fullmatch(r"[A-F0-9]{2}(:[A-F0-9]{2}){5}", address or ""))
+
+
+def loop_for_seconds(seconds):
+    loop = GLib.MainLoop()
+
+    def stop():
+        loop.quit()
+        return False
+
+    GLib.timeout_add(max(1, int(seconds * 1000)), stop)
+    loop.run()
+
+
+class Agent(dbus.service.Object):
+    def __init__(self, bus, path):
+        super().__init__(bus, path)
+        self.bus = bus
+
+    def _trust(self, device):
+        try:
+            props = dbus.Interface(self.bus.get_object(BLUEZ, device), PROPERTIES)
+            props.Set(DEVICE, "Trusted", dbus.Boolean(True))
+        except Exception:
+            pass
+
+    @dbus.service.method(AGENT, in_signature="", out_signature="")
+    def Release(self):
+        return
+
+    @dbus.service.method(AGENT, in_signature="os", out_signature="")
+    def AuthorizeService(self, device, uuid):
+        self._trust(device)
+        return
+
+    @dbus.service.method(AGENT, in_signature="o", out_signature="s")
+    def RequestPinCode(self, device):
+        self._trust(device)
+        return "0000"
+
+    @dbus.service.method(AGENT, in_signature="o", out_signature="u")
+    def RequestPasskey(self, device):
+        self._trust(device)
+        return dbus.UInt32(0)
+
+    @dbus.service.method(AGENT, in_signature="ouq", out_signature="")
+    def DisplayPasskey(self, device, passkey, entered):
+        return
+
+    @dbus.service.method(AGENT, in_signature="os", out_signature="")
+    def DisplayPinCode(self, device, pincode):
+        return
+
+    @dbus.service.method(AGENT, in_signature="ou", out_signature="")
+    def RequestConfirmation(self, device, passkey):
+        self._trust(device)
+        return
+
+    @dbus.service.method(AGENT, in_signature="o", out_signature="")
+    def RequestAuthorization(self, device):
+        self._trust(device)
+        return
+
+    @dbus.service.method(AGENT, in_signature="", out_signature="")
+    def Cancel(self):
+        return
+
+
+class BluetoothControl:
+    def __init__(self):
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        self.bus = dbus.SystemBus()
+        self.manager = dbus.Interface(self.bus.get_object(BLUEZ, "/"), OBJECT_MANAGER)
+        self.adapter_path = self.find_adapter_path()
+        if not self.adapter_path:
+            raise ControlError("Bluetooth adapter is not available")
+        self.adapter = dbus.Interface(self.bus.get_object(BLUEZ, self.adapter_path), ADAPTER)
+
+    def objects(self):
+        return self.manager.GetManagedObjects()
+
+    def find_adapter_path(self):
+        for path, interfaces in self.objects().items():
+            if ADAPTER in interfaces:
+                return path
+        return None
+
+    def props(self, path):
+        return dbus.Interface(self.bus.get_object(BLUEZ, path), PROPERTIES)
+
+    def get_all(self, path, interface):
+        try:
+            return dict(self.props(path).GetAll(interface))
+        except Exception:
+            return {}
+
+    def set_prop(self, path, interface, key, value):
+        self.props(path).Set(interface, key, value)
+
+    def adapter_props(self):
+        return self.get_all(self.adapter_path, ADAPTER)
+
+    def device_paths(self):
+        for path, interfaces in self.objects().items():
+            if DEVICE in interfaces:
+                yield path, dict(interfaces[DEVICE])
+
+    def find_device(self, address):
+        address = address.upper()
+        for path, props in self.device_paths():
+            if str(props.get("Address", "")).upper() == address:
+                return path, props
+        return None, {}
+
+    def device_props(self, path):
+        return self.get_all(path, DEVICE)
+
+    def register_agent(self):
+        agent = Agent(self.bus, AGENT_PATH)
+        manager = dbus.Interface(self.bus.get_object(BLUEZ, "/org/bluez"), AGENT_MANAGER)
+        manager.RegisterAgent(AGENT_PATH, "NoInputNoOutput")
+        return agent, manager
+
+    def unregister_agent(self, manager):
+        try:
+            manager.UnregisterAgent(AGENT_PATH)
+        except Exception:
+            pass
+
+    def call_async(self, method, timeout_seconds, *args):
+        loop = GLib.MainLoop()
+        result = {"done": False, "error": None, "timeout": False}
+
+        def reply(*_reply):
+            result["done"] = True
+            loop.quit()
+
+        def error(err):
+            result["error"] = err
+            loop.quit()
+
+        def timed_out():
+            result["timeout"] = True
+            loop.quit()
+            return False
+
+        GLib.timeout_add_seconds(timeout_seconds, timed_out)
+        try:
+            method(*args, reply_handler=reply, error_handler=error, timeout=timeout_seconds * 1000)
+        except Exception as exc:
+            result["error"] = exc
+            result["done"] = True
+            return result
+
+        loop.run()
+        return result
+
+    def wait_for_device(self, path, predicate, timeout_seconds):
+        if predicate():
+            return True
+
+        loop = GLib.MainLoop()
+        result = {"ready": False}
+
+        def check():
+            if predicate():
+                result["ready"] = True
+                loop.quit()
+                return False
+            return True
+
+        def changed(interface, changed_props, _invalidated):
+            if interface == DEVICE and check():
+                return
+
+        def timed_out():
+            loop.quit()
+            return False
+
+        self.bus.add_signal_receiver(
+            changed,
+            dbus_interface=PROPERTIES,
+            signal_name="PropertiesChanged",
+            path=path,
+        )
+        GLib.timeout_add(250, check)
+        GLib.timeout_add_seconds(timeout_seconds, timed_out)
+        loop.run()
+        return result["ready"] or predicate()
+
+    def set_discovery_filter(self):
+        try:
+            self.adapter.SetDiscoveryFilter(
+                dbus.Dictionary(
+                    {
+                        "Transport": dbus.String("auto"),
+                        "DuplicateData": dbus.Boolean(False),
+                    },
+                    signature="sv",
+                )
+            )
+        except Exception:
+            pass
+
+    def start_discovery(self):
+        self.set_discovery_filter()
+        try:
+            self.adapter.StartDiscovery()
+        except dbus.DBusException as exc:
+            if exc.get_dbus_name() != "org.bluez.Error.InProgress":
+                raise
+
+    def stop_discovery(self):
+        try:
+            self.adapter.StopDiscovery()
+        except Exception:
+            pass
+
+    def scan(self, seconds):
+        self.start_discovery()
+        try:
+            loop_for_seconds(seconds)
+        finally:
+            self.stop_discovery()
+
+    def discover_device(self, address, timeout_seconds=10):
+        path, props = self.find_device(address)
+        if path:
+            return path, props
+
+        loop = GLib.MainLoop()
+        found = {"path": None, "props": {}}
+
+        def check():
+            path, props = self.find_device(address)
+            if path:
+                found["path"] = path
+                found["props"] = props
+                loop.quit()
+                return False
+            return True
+
+        def timed_out():
+            loop.quit()
+            return False
+
+        self.start_discovery()
+        try:
+            GLib.timeout_add(250, check)
+            GLib.timeout_add_seconds(timeout_seconds, timed_out)
+            loop.run()
+        finally:
+            self.stop_discovery()
+
+        if not found["path"]:
+            raise ControlError("controller was not found; hold pairing mode and scan again")
+        return found["path"], found["props"]
+
+    def ensure_enabled(self, manage_service=True):
+        if manage_service and systemd_live():
+            run_cmd(["systemctl", "unmask", SERVICE])
+            run_cmd(["systemctl", "enable", SERVICE], timeout=8)
+            run_cmd(["systemctl", "start", SERVICE], timeout=8)
+        if shutil.which("rfkill"):
+            run_cmd(["rfkill", "unblock", "bluetooth"])
+        self.set_prop(self.adapter_path, ADAPTER, "Powered", dbus.Boolean(True))
+        self.set_prop(self.adapter_path, ADAPTER, "Pairable", dbus.Boolean(True))
+        self.set_prop(self.adapter_path, ADAPTER, "Discoverable", dbus.Boolean(True))
+
+    def disable(self):
+        self.stop_discovery()
+        try:
+            self.set_prop(self.adapter_path, ADAPTER, "Powered", dbus.Boolean(False))
+        except Exception:
+            pass
+        run_cmd(["systemctl", "disable", SERVICE], timeout=8)
+        if systemd_live():
+            run_cmd(["systemctl", "stop", SERVICE], timeout=8)
+
+    def remove_device(self, path):
+        try:
+            self.adapter.RemoveDevice(dbus.ObjectPath(path))
+        except Exception:
+            pass
+
+    def disconnect_device(self, path):
+        try:
+            dbus.Interface(self.bus.get_object(BLUEZ, path), DEVICE).Disconnect()
+        except Exception:
+            pass
+
+    def is_paired_or_bonded(self, props):
+        return bool(props.get("Paired", False)) or bool(props.get("Bonded", False))
+
+    def is_ready(self, path):
+        props = self.device_props(path)
+        connected = bool(props.get("Connected", False))
+        services = props.get("ServicesResolved", True)
+        return connected and bool(services)
+
+    def trust(self, path):
+        self.set_prop(path, DEVICE, "Trusted", dbus.Boolean(True))
+
+    def pair_device(self, path):
+        props = self.device_props(path)
+        if self.is_paired_or_bonded(props):
+            return
+
+        _agent, manager = self.register_agent()
+        try:
+            dev = dbus.Interface(self.bus.get_object(BLUEZ, path), DEVICE)
+            result = self.call_async(dev.Pair, 45)
+            if result["timeout"]:
+                try:
+                    dev.CancelPairing()
+                except Exception:
+                    pass
+                raise ControlError("controller pairing timed out")
+            if result["error"]:
+                name = getattr(result["error"], "get_dbus_name", lambda: "")()
+                if name != "org.bluez.Error.AlreadyExists":
+                    raise ControlError(str(result["error"]))
+        finally:
+            self.unregister_agent(manager)
+
+    def connect_device(self, path, timeout_seconds=15):
+        if self.is_ready(path):
+            return
+
+        self.trust(path)
+        dev = dbus.Interface(self.bus.get_object(BLUEZ, path), DEVICE)
+        result = self.call_async(dev.Connect, timeout_seconds)
+        if result["error"]:
+            name = getattr(result["error"], "get_dbus_name", lambda: "")()
+            if name != "org.bluez.Error.AlreadyConnected":
+                raise ControlError(str(result["error"]))
+        if not self.wait_for_device(path, lambda: self.is_ready(path), 8):
+            raise ControlError("controller did not finish connecting")
+
+    def pair_connect(self, address):
+        self.ensure_enabled()
+        path, props = self.discover_device(address, 10)
+        was_paired = self.is_paired_or_bonded(props)
+        try:
+            self.pair_device(path)
+            self.trust(path)
+            self.connect_device(path)
+        except Exception:
+            if not was_paired:
+                self.remove_device(path)
+            raise
+
+    def connect_address(self, address):
+        self.ensure_enabled()
+        path, props = self.find_device(address)
+        if not path or not self.is_paired_or_bonded(props):
+            raise ControlError("controller is not paired; scan and pair it again")
+        self.connect_device(path)
+
+    def reconnect(self):
+        if not systemctl_ok("is-enabled", "--quiet", SERVICE):
+            return
+        self.ensure_enabled(manage_service=False)
+        for path, props in list(self.device_paths()):
+            if self.is_paired_or_bonded(props) and not bool(props.get("Connected", False)):
+                try:
+                    self.connect_device(path, timeout_seconds=8)
+                except Exception:
+                    pass
+
+    def forget(self, address):
+        path, _props = self.find_device(address)
+        if path:
+            self.disconnect_device(path)
+            self.remove_device(path)
+
+    def emit_status(self):
+        props = self.adapter_props()
+        print("available=1")
+        print(f"enabled={bool_text(systemctl_ok('is-enabled', '--quiet', SERVICE))}")
+        print(f"active={bool_text(systemctl_ok('is-active', '--quiet', SERVICE))}")
+        print(f"powered={bool_text(props.get('Powered', False))}")
+        print(f"discovering={bool_text(props.get('Discovering', False))}")
+
+    def input_device(self, props):
+        icon = str(props.get("Icon", ""))
+        if icon in INPUT_ICONS:
+            return True
+        uuids = [str(uuid).lower() for uuid in props.get("UUIDs", [])]
+        if HID_UUID in uuids:
+            return True
+        name = str(props.get("Name", props.get("Alias", ""))).lower()
+        return any(token in name for token in INPUT_NAMES)
+
+    def emit_devices(self, input_only=False):
+        rows = sorted(self.device_paths(), key=lambda item: str(item[1].get("Alias", item[1].get("Name", ""))).lower())
+        for _path, props in rows:
+            if input_only and not self.input_device(props):
+                continue
+            address = str(props.get("Address", "")).upper()
+            if not valid_address(address):
+                continue
+            name = str(props.get("Alias", props.get("Name", address))).replace("\t", " ").strip() or address
+            bonded = bool(props.get("Bonded", False))
+            paired = bool(props.get("Paired", False)) or bonded
+            trusted = bool(props.get("Trusted", False))
+            connected = bool(props.get("Connected", False))
+            print(
+                "device\t{}\t{}\t{}\t{}\t{}\t{}".format(
+                    address,
+                    name,
+                    bool_text(paired),
+                    bool_text(trusted),
+                    bool_text(connected),
+                    bool_text(bonded),
+                )
+            )
+
+
+def emit_unavailable():
+    print("available=0")
+    print("enabled=0")
+    print("active=0")
+    print("powered=0")
+    print("discovering=0")
+
+
+def main():
+    if ACTION in {"pair-connect", "connect", "forget"} and not valid_address(ADDRESS):
+        print("invalid Bluetooth address", file=sys.stderr)
+        return 2
+
+    try:
+        control = BluetoothControl()
+    except Exception as exc:
+        if ACTION == "status":
+            emit_unavailable()
+            return 0
+        print(f"Bluetooth is not available: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        if ACTION == "status":
+            pass
+        elif ACTION == "enable":
+            control.ensure_enabled()
+        elif ACTION == "disable":
+            control.disable()
+        elif ACTION == "scan":
+            control.ensure_enabled()
+            control.scan(10)
+        elif ACTION == "pair-connect":
+            control.pair_connect(ADDRESS)
+        elif ACTION == "connect":
+            control.connect_address(ADDRESS)
+        elif ACTION == "reconnect":
+            control.reconnect()
+        elif ACTION == "forget":
+            control.forget(ADDRESS)
+        else:
+            print("usage: 240mp-bluetooth-control [status|enable|disable|scan|pair-connect <mac>|connect <mac>|reconnect|forget <mac>]", file=sys.stderr)
+            return 2
+    except ControlError as exc:
+        print(str(exc), file=sys.stderr)
+        control.emit_status()
+        control.emit_devices(input_only=True)
+        return 4
+    except dbus.DBusException as exc:
+        print(str(exc), file=sys.stderr)
+        control.emit_status()
+        control.emit_devices(input_only=True)
+        return 4
+    finally:
+        try:
+            control.stop_discovery()
+        except Exception:
+            pass
+
+    control.emit_status()
+    control.emit_devices(input_only=(ACTION in {"scan", "pair-connect", "connect", "forget"}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -942,7 +942,7 @@ void AppCore::scanBluetoothDevicesAsync() {
 }
 
 QVariantMap AppCore::pairBluetoothDevice(const QString &address) {
-    return runBluetoothControl({QStringLiteral("pair-connect"), address.trimmed()}, 60000);
+    return runBluetoothControl({QStringLiteral("pair-connect"), address.trimmed()}, 95000);
 }
 
 void AppCore::pairBluetoothDeviceAsync(const QString &address) {
@@ -954,12 +954,12 @@ void AppCore::pairBluetoothDeviceAsync(const QString &address) {
         emit bluetoothActionFinished(QStringLiteral("pair-connect"), result);
     });
     watcher->setFuture(QtConcurrent::run([cleanAddress]() {
-        return runBluetoothControl({QStringLiteral("pair-connect"), cleanAddress}, 60000);
+        return runBluetoothControl({QStringLiteral("pair-connect"), cleanAddress}, 95000);
     }));
 }
 
 QVariantMap AppCore::connectBluetoothDevice(const QString &address) {
-    return runBluetoothControl({QStringLiteral("connect"), address.trimmed()}, 15000);
+    return runBluetoothControl({QStringLiteral("connect"), address.trimmed()}, 30000);
 }
 
 void AppCore::connectBluetoothDeviceAsync(const QString &address) {
@@ -971,7 +971,7 @@ void AppCore::connectBluetoothDeviceAsync(const QString &address) {
         emit bluetoothActionFinished(QStringLiteral("connect"), result);
     });
     watcher->setFuture(QtConcurrent::run([cleanAddress]() {
-        return runBluetoothControl({QStringLiteral("connect"), cleanAddress}, 20000);
+        return runBluetoothControl({QStringLiteral("connect"), cleanAddress}, 30000);
     }));
 }
 

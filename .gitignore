@@ -49,6 +49,8 @@ _CPack_Packages/
 *.log
 *.tmp
 *.temp
+__pycache__/
+*.pyc
 *.swp
 *.swo
 *.bak

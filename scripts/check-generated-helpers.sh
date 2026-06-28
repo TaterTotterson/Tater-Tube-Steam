@@ -57,8 +57,20 @@ if [ "$count" -eq 0 ]; then
     exit 1
 fi
 
-for helper in "$tmp_dir"/helper-*.sh; do
-    bash -n "$helper"
+for helper in "$tmp_dir"/helper-*; do
+    shebang="$(head -n 1 "$helper")"
+    case "$shebang" in
+        *python*)
+            python3 -m py_compile "$helper"
+            ;;
+        *)
+            bash -n "$helper"
+            ;;
+    esac
 done
+
+if [ -f "${repo_root}/scripts/240mp-bluetooth-control" ]; then
+    python3 -m py_compile "${repo_root}/scripts/240mp-bluetooth-control"
+fi
 
 echo "Generated helper syntax OK (${count} helpers)."
