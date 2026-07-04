@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/tater-tube-boot.png" alt="Tater Tube" width="520">
+  <img src="assets/images/tater-tube-readme.png" alt="Tater Tube" width="520">
 </p>
 
 # Tater Tube
