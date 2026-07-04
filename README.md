@@ -17,6 +17,7 @@ This fork is focused on two appliance-style setups:
 - Emby/Jellyfin or Plex music playback through the Tape Deck module
 - HDHomeRun Over The Air playback
 - YouTube playlist playback through Public Access
+- Newsgroups browsing and streaming through the Usenet module
 - Game Center ROM browsing from RetroNAS/MiSTer shares with clean RetroArch game launch
 - PC Link game streaming from Sunshine/Moonlight hosts
 - Bluetooth controller pairing from Settings
@@ -58,6 +59,17 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - Uses mpv with yt-dlp streaming, defaulting to CRT-friendly 360p
 - Optional autoplay next video
 
+### Usenet
+- Connects to a Newznab-compatible indexer
+- Browses media-only category groups for movies, TV, and music
+- Keeps category folders grouped instead of flattening everything into one list
+- Includes Newsgroups search from the main Usenet menu
+- Supports larger browse limits of 50, 100, 250, or 500 results
+- Streams selected NZBs through an AltMount/Stremio-compatible streaming service
+- Supports OMGWTFNZBS Trending for movies and TV
+- Trending views include today, week, month, and year
+- OMGWTFNZBS Trending uses the normal Newznab API key plus the optional OMG username setting
+
 ### Game Center
 - Connects to a RetroNAS share using the MiSTer `games` folder layout
 - Shows only systems with a supported installed RetroArch core and matching ROM folder
@@ -93,6 +105,7 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - HDMI/KMS defaults for the Pi 5 auto-resolution setup
 - RetroArch and RetroNAS mount support
 - yt-dlp support for Public Access playlist streaming
+- Newznab and AltMount/Stremio settings for Usenet streaming
 - Bluetooth controller support through BlueZ
 
 ### Controls
@@ -143,7 +156,7 @@ Set `MP240_API_TOKEN` to require `Authorization: Bearer <token>` or `X-240MP-Tok
 
 ## Hardware Target
 
-This project targets Raspberry Pi appliance builds: Pi 4 composite output for CRTs, plus a Pi 5 HDMI auto-resolution image for modern displays. Media modules cover Emby/Jellyfin, Plex, HDHomeRun OTA, YouTube playlists, RetroNAS-backed games, and Sunshine/Moonlight PC Link.
+This project targets Raspberry Pi appliance builds: Pi 4 composite output for CRTs, plus a Pi 5 HDMI auto-resolution image for modern displays. Media modules cover Emby/Jellyfin, Plex, HDHomeRun OTA, YouTube playlists, Usenet streaming, RetroNAS-backed games, and Sunshine/Moonlight PC Link.
 
 ## License
 
@@ -153,4 +166,4 @@ You are free to use, study, and modify this code. If you distribute a modified v
 
 ## Credits
 
-Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This fork is focused on appliance-style Pi images, Emby/Jellyfin and Plex support, HDHomeRun OTA, Public Access playlists, RetroNAS games, PC Link, and Argon IR defaults.
+Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This fork is focused on appliance-style Pi images, Emby/Jellyfin and Plex support, HDHomeRun OTA, Public Access playlists, Usenet streaming, RetroNAS games, PC Link, and Argon IR defaults.
