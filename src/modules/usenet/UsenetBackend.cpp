@@ -104,6 +104,16 @@ QString stableNzbFilename(QString title, const QString &sourceUrl)
     return QStringLiteral("%1-%2.nzb").arg(title, digest);
 }
 
+QString omgItemIdFromUrl(const QString &value)
+{
+    const QUrl url(value.trimmed());
+    if (!url.isValid())
+        return QString();
+
+    const QUrlQuery query(url);
+    return query.queryItemValue(QStringLiteral("id")).trimmed();
+}
+
 QString newznabErrorMessage(const QByteArray &data)
 {
     QXmlStreamReader xml(data);
@@ -116,6 +126,20 @@ QString newznabErrorMessage(const QByteArray &data)
         return cleanText(QStringLiteral("NEWZNAB %1 %2").arg(code, description));
     }
     return QString();
+}
+
+bool isMediaCategoryGroup(const QString &id, const QString &name)
+{
+    const QString normalizedId = id.trimmed();
+    const QString lowerName = name.trimmed().toLower();
+    return normalizedId.startsWith(QStringLiteral("2000"))
+        || normalizedId.startsWith(QStringLiteral("3000"))
+        || normalizedId.startsWith(QStringLiteral("5000"))
+        || lowerName.contains(QStringLiteral("movie"))
+        || lowerName == QStringLiteral("tv")
+        || lowerName.contains(QStringLiteral("television"))
+        || lowerName.contains(QStringLiteral("audio"))
+        || lowerName.contains(QStringLiteral("music"));
 }
 }
 
@@ -154,6 +178,11 @@ QString UsenetBackend::newznabApiKey() const
     if (key.endsWith(QStringLiteral("Copy"), Qt::CaseSensitive))
         key.chop(4);
     return key.trimmed();
+}
+
+QString UsenetBackend::omgUsername() const
+{
+    return setting(QStringLiteral("omg_username")).trimmed();
 }
 
 QString UsenetBackend::newznabApiBase() const
@@ -220,6 +249,31 @@ QUrl UsenetBackend::newznabUrl(const QVariantMap &params) const
     return url;
 }
 
+QUrl UsenetBackend::omgNzbUrl(const QString &id) const
+{
+    QUrl url(QStringLiteral("https://api.omgwtfnzbs.org/nzb/"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("id"), id.trimmed());
+    query.addQueryItem(QStringLiteral("user"), omgUsername());
+    query.addQueryItem(QStringLiteral("api"), newznabApiKey());
+    url.setQuery(query);
+    return url;
+}
+
+QUrl UsenetBackend::omgTrendingUrl(const QString &category, const QString &timePeriod) const
+{
+    QUrl url(QStringLiteral("https://rss.omgwtfnzbs.org/rss-trends.php"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("user"), omgUsername());
+    query.addQueryItem(QStringLiteral("api"), newznabApiKey());
+    query.addQueryItem(QStringLiteral("cat"), category.trimmed().toLower());
+    query.addQueryItem(QStringLiteral("s"), QString());
+    query.addQueryItem(QStringLiteral("time"), timePeriod.trimmed().toLower());
+    query.addQueryItem(QStringLiteral("res"), QString());
+    url.setQuery(query);
+    return url;
+}
+
 QUrl UsenetBackend::altMountStreamsUrl() const
 {
     QUrl url(altMountApiBase());
@@ -240,7 +294,7 @@ QString UsenetBackend::ensureNewznabApiKey(const QString &rawUrl) const
         return rawUrl.trimmed();
 
     QUrlQuery query(url);
-    if (!query.hasQueryItem(QStringLiteral("apikey"))) {
+    if (!query.hasQueryItem(QStringLiteral("apikey")) && !query.hasQueryItem(QStringLiteral("api"))) {
         query.addQueryItem(QStringLiteral("apikey"), apiKey);
         url.setQuery(query);
     }
@@ -250,10 +304,10 @@ QString UsenetBackend::ensureNewznabApiKey(const QString &rawUrl) const
 int UsenetBackend::browseLimit() const
 {
     bool ok = false;
-    int limit = setting(QStringLiteral("browse_limit"), QStringLiteral("50")).toInt(&ok);
+    int limit = setting(QStringLiteral("browse_limit"), QStringLiteral("100")).toInt(&ok);
     if (!ok)
-        limit = 50;
-    return qBound(10, limit, 100);
+        limit = 100;
+    return qBound(10, limit, 500);
 }
 
 int UsenetBackend::streamTimeout() const
@@ -280,6 +334,7 @@ QVariantMap UsenetBackend::get_setup_status()
     QVariantMap status;
     status[QStringLiteral("newznabUrl")] = setting(QStringLiteral("newznab_url"));
     status[QStringLiteral("newznabApiKey")] = setting(QStringLiteral("newznab_api_key"));
+    status[QStringLiteral("omgUsername")] = omgUsername();
     status[QStringLiteral("altmountUrl")] = setting(QStringLiteral("altmount_url"));
     status[QStringLiteral("altmountApiKey")] = setting(QStringLiteral("altmount_api_key"));
     status[QStringLiteral("configured")] = get_auth_state() == QStringLiteral("authed");
@@ -318,6 +373,74 @@ void UsenetBackend::load_items(const QString &categoryId, const QString &categor
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, categoryTitle]() {
         handleItemsReply(reply, categoryTitle);
+    });
+}
+
+void UsenetBackend::search_items(const QString &query)
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit errorOccurred(QStringLiteral("ENTER USENET SETTINGS"));
+        return;
+    }
+
+    const QString cleanQuery = cleanText(query);
+    if (cleanQuery.size() < 3) {
+        emit errorOccurred(QStringLiteral("ENTER 3 OR MORE LETTERS"));
+        return;
+    }
+
+    QNetworkRequest request(newznabUrl({
+        {QStringLiteral("t"), QStringLiteral("search")},
+        {QStringLiteral("q"), cleanQuery},
+        {QStringLiteral("cat"), QStringLiteral("2000,3000,5000")},
+        {QStringLiteral("extended"), QStringLiteral("1")},
+        {QStringLiteral("limit"), QString::number(browseLimit())}
+    }));
+    QNetworkReply *reply = m_network.get(request);
+    const QString title = QStringLiteral("Search: %1").arg(cleanQuery);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, title]() {
+        handleItemsReply(reply, title);
+    });
+}
+
+void UsenetBackend::load_trending(const QString &category, const QString &timePeriod,
+                                  const QString &title)
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit errorOccurred(QStringLiteral("ENTER USENET SETTINGS"));
+        return;
+    }
+
+    const QUrl baseUrl(newznabApiBase());
+    if (!isOmgwtfHost(baseUrl.host())) {
+        emit errorOccurred(QStringLiteral("TRENDING NEEDS OMGWTFNZBS"));
+        return;
+    }
+
+    if (omgUsername().isEmpty()) {
+        emit errorOccurred(QStringLiteral("ENTER OMG USERNAME"));
+        return;
+    }
+
+    const QString cleanCategory = category.trimmed().toLower();
+    if (cleanCategory != QStringLiteral("movie") && cleanCategory != QStringLiteral("tv")) {
+        emit errorOccurred(QStringLiteral("TRENDING CATEGORY INVALID"));
+        return;
+    }
+
+    const QString cleanTime = timePeriod.trimmed().toLower();
+    if (cleanTime != QStringLiteral("today")
+        && cleanTime != QStringLiteral("week")
+        && cleanTime != QStringLiteral("month")
+        && cleanTime != QStringLiteral("year")) {
+        emit errorOccurred(QStringLiteral("TRENDING TIME INVALID"));
+        return;
+    }
+
+    QNetworkRequest request(omgTrendingUrl(cleanCategory, cleanTime));
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, title]() {
+        handleItemsReply(reply, title);
     });
 }
 
@@ -510,12 +633,17 @@ QVariantList UsenetBackend::parseCategories(const QByteArray &data, QString *err
         if (id.isEmpty() || name.isEmpty())
             continue;
 
-        QVariantMap parent;
-        parent[QStringLiteral("id")] = id;
-        parent[QStringLiteral("title")] = name;
-        parent[QStringLiteral("group")] = name;
-        parent[QStringLiteral("isSubcat")] = false;
-        rows.append(parent);
+        QVariantList children;
+        const bool includeGroup = isMediaCategoryGroup(id, name);
+        if (includeGroup) {
+            QVariantMap all;
+            all[QStringLiteral("id")] = id;
+            all[QStringLiteral("title")] = QStringLiteral("All %1").arg(name);
+            all[QStringLiteral("fullTitle")] = name;
+            all[QStringLiteral("group")] = name;
+            all[QStringLiteral("isSubcat")] = false;
+            children.append(all);
+        }
 
         while (!(xml.isEndElement() && xml.name() == QStringLiteral("category")) && !xml.atEnd()) {
             xml.readNext();
@@ -526,13 +654,28 @@ QVariantList UsenetBackend::parseCategories(const QByteArray &data, QString *err
             const QString subName = cleanText(attrValue(subAttrs, QStringLiteral("name")));
             if (subId.isEmpty() || subName.isEmpty())
                 continue;
+            if (!includeGroup)
+                continue;
             QVariantMap sub;
             sub[QStringLiteral("id")] = subId;
-            sub[QStringLiteral("title")] = QStringLiteral("%1 / %2").arg(name, subName);
+            sub[QStringLiteral("title")] = subName;
+            sub[QStringLiteral("fullTitle")] = QStringLiteral("%1 / %2").arg(name, subName);
             sub[QStringLiteral("group")] = name;
             sub[QStringLiteral("isSubcat")] = true;
-            rows.append(sub);
+            children.append(sub);
         }
+
+        if (!includeGroup)
+            continue;
+
+        QVariantMap parent;
+        parent[QStringLiteral("id")] = id;
+        parent[QStringLiteral("title")] = name;
+        parent[QStringLiteral("group")] = name;
+        parent[QStringLiteral("isGroup")] = true;
+        parent[QStringLiteral("children")] = children;
+        parent[QStringLiteral("count")] = children.size();
+        rows.append(parent);
     }
 
     if (xml.hasError() && errorOut)
@@ -638,11 +781,26 @@ QVariantList UsenetBackend::parseItems(const QByteArray &data, QString *errorOut
                 const QString title = cleanText(item.value(QStringLiteral("title")).toString());
                 QString nzbUrl = item.value(QStringLiteral("nzbUrl")).toString().trimmed();
                 const QString guid = item.value(QStringLiteral("guid")).toString().trimmed();
+                if (!nzbUrl.isEmpty()) {
+                    const QUrl candidateUrl(nzbUrl);
+                    const QString itemId = omgItemIdFromUrl(nzbUrl);
+                    if (!itemId.isEmpty()
+                        && isOmgwtfHost(candidateUrl.host())
+                        && !candidateUrl.path().startsWith(QStringLiteral("/nzb"),
+                                                           Qt::CaseInsensitive)) {
+                        nzbUrl = omgNzbUrl(itemId).toString();
+                    }
+                }
                 if (nzbUrl.isEmpty() && !guid.isEmpty()) {
-                    nzbUrl = newznabUrl({
-                        {QStringLiteral("t"), QStringLiteral("get")},
-                        {QStringLiteral("id"), guid}
-                    }).toString();
+                    const QString itemId = omgItemIdFromUrl(guid);
+                    if (!itemId.isEmpty()) {
+                        nzbUrl = omgNzbUrl(itemId).toString();
+                    } else {
+                        nzbUrl = newznabUrl({
+                            {QStringLiteral("t"), QStringLiteral("get")},
+                            {QStringLiteral("id"), guid}
+                        }).toString();
+                    }
                 }
                 if (!title.isEmpty() && !nzbUrl.isEmpty()) {
                     item[QStringLiteral("title")] = title;
@@ -708,6 +866,7 @@ void UsenetBackend::onSettingChanged(const QString &moduleId, const QString &key
         return;
     if (key == QStringLiteral("newznab_url")
         || key == QStringLiteral("newznab_api_key")
+        || key == QStringLiteral("omg_username")
         || key == QStringLiteral("altmount_url")
         || key == QStringLiteral("altmount_api_key")) {
         emit authStateChanged();

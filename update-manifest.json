@@ -1,14 +1,14 @@
 {
-  "version": "v1.2.4",
-  "app_version": "1.2.4",
+  "version": "v1.2.5",
+  "app_version": "1.2.5",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.4/Tater-Tube-v1.2.4-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.4.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.5/Tater-Tube-v1.2.5-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.5.tar.gz",
   "notes": [
-    "Fixes PC Link reset pairing by unpairing the Sunshine host through Moonlight before clearing local pairing state.",
-    "Clears the full app-specific Moonlight state directory so the next PC Link pairing can show a fresh PIN.",
-    "Adjusts the Off Air orange highlight toward a deeper red-orange for CRT/composite displays."
+    "Adds Newsgroups search from the main Usenet menu.",
+    "Groups Newsgroups browsing into media-only sections with nested categories and larger list limits.",
+    "Adds OMGWTFNZBS Trending for movies and TV with today, week, month, and year views."
   ]
 }

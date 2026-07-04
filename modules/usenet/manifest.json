@@ -24,6 +24,12 @@
       "default": ""
     },
     {
+      "key": "omg_username",
+      "label": "OMG USERNAME",
+      "type": "text",
+      "default": ""
+    },
+    {
       "key": "altmount_url",
       "label": "ALTMOUNT URL",
       "type": "text",
@@ -39,8 +45,8 @@
       "key": "browse_limit",
       "label": "BROWSE LIMIT",
       "type": "list_single",
-      "options": ["25", "50", "100"],
-      "default": "50"
+      "options": ["50", "100", "250", "500"],
+      "default": "100"
     },
     {
       "key": "stream_timeout",

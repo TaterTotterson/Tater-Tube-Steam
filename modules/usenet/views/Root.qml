@@ -17,13 +17,33 @@ FocusScope {
     property string mode: "loading"
     property string statusText: "LOADING USENET..."
     property var categories: []
+    property var subcategories: []
+    property var trendingRows: [
+        { type: "trending", title: "Movies Today", detail: "MOVIE", category: "movie", time: "today" },
+        { type: "trending", title: "Movies Week", detail: "MOVIE", category: "movie", time: "week" },
+        { type: "trending", title: "Movies Month", detail: "MOVIE", category: "movie", time: "month" },
+        { type: "trending", title: "Movies Year", detail: "MOVIE", category: "movie", time: "year" },
+        { type: "trending", title: "TV Today", detail: "TV", category: "tv", time: "today" },
+        { type: "trending", title: "TV Week", detail: "TV", category: "tv", time: "week" },
+        { type: "trending", title: "TV Month", detail: "TV", category: "tv", time: "month" },
+        { type: "trending", title: "TV Year", detail: "TV", category: "tv", time: "year" }
+    ]
+    property var shortcutRows: [
+        { type: "search", title: "Search", detail: "ALL MEDIA" },
+        { type: "trendingRoot", title: "Trending", detail: "OMG", children: trendingRows }
+    ]
+    property var categoryRows: mode === "subcategories" ? subcategories : shortcutRows.concat(categories)
     property var items: []
     property var streams: []
     property int currentCategoryIndex: 0
+    property int currentSubcategoryIndex: 0
     property int currentItemIndex: 0
     property int currentStreamIndex: 0
     property int setupRow: 0
+    readonly property int setupConnectRow: 5
+    property string currentGroupTitle: ""
     property string currentCategoryTitle: ""
+    property string searchQuery: ""
     property string pendingRequestId: ""
     property string pendingTitle: ""
     property bool playbackStarted: false
@@ -56,8 +76,9 @@ FocusScope {
     function focusSetupRow() {
         if (setupRow === 0) newznabUrlField.forceInputFocus()
         else if (setupRow === 1) newznabKeyField.forceInputFocus()
-        else if (setupRow === 2) altmountUrlField.forceInputFocus()
-        else if (setupRow === 3) altmountKeyField.forceInputFocus()
+        else if (setupRow === 2) omgUsernameField.forceInputFocus()
+        else if (setupRow === 3) altmountUrlField.forceInputFocus()
+        else if (setupRow === 4) altmountKeyField.forceInputFocus()
         else connectButton.forceActiveFocus()
     }
 
@@ -69,7 +90,7 @@ FocusScope {
     }
 
     function setupNext() {
-        if (setupRow < 4) {
+        if (setupRow < setupConnectRow) {
             setupRow++
             focusSetupRow()
         }
@@ -79,6 +100,7 @@ FocusScope {
         var status = usenetBackend.get_setup_status()
         newznabUrlField.text = status.newznabUrl || ""
         newznabKeyField.text = status.newznabApiKey || ""
+        omgUsernameField.text = status.omgUsername || ""
         altmountUrlField.text = status.altmountUrl || ""
         altmountKeyField.text = status.altmountApiKey || ""
         statusText = message || "ENTER USENET SETTINGS"
@@ -89,6 +111,7 @@ FocusScope {
     function saveSetup() {
         var newznabUrl = (newznabUrlField.text || "").trim()
         var newznabKey = (newznabKeyField.text || "").trim()
+        var omgUsername = (omgUsernameField.text || "").trim()
         var altmountUrl = (altmountUrlField.text || "").trim()
         var altmountKey = (altmountKeyField.text || "").trim()
 
@@ -106,19 +129,20 @@ FocusScope {
         }
         if (altmountUrl === "") {
             statusText = "ENTER ALTMOUNT URL"
-            setupRow = 2
+            setupRow = 3
             focusSetupRow()
             return
         }
         if (altmountKey === "") {
             statusText = "ENTER ALTMOUNT KEY"
-            setupRow = 3
+            setupRow = 4
             focusSetupRow()
             return
         }
 
         appCore.save_setting(moduleId, "newznab_url", newznabUrl)
         appCore.save_setting(moduleId, "newznab_api_key", newznabKey)
+        appCore.save_setting(moduleId, "omg_username", omgUsername)
         appCore.save_setting(moduleId, "altmount_url", altmountUrl)
         appCore.save_setting(moduleId, "altmount_api_key", altmountKey)
         loadCategories()
@@ -139,14 +163,82 @@ FocusScope {
         usenetBackend.load_categories()
     }
 
-    function selectCategory(index) {
-        if (index < 0 || index >= categories.length) return
-        currentCategoryIndex = index
-        var row = categories[index] || ({})
-        currentCategoryTitle = row.title || "CATEGORY"
+    function showSearch() {
+        resetCategoryDrilldown()
+        mode = "search"
+        statusText = "SEARCH NEWGROUPS"
+        searchField.text = searchQuery
+        searchFocusTimer.restart()
+    }
+
+    function runSearch() {
+        var query = (searchField.text || "").trim()
+        searchQuery = query
+        if (query.length < 3) {
+            statusText = "ENTER 3 OR MORE LETTERS"
+            searchFocusTimer.restart()
+            return
+        }
+        currentCategoryTitle = "Search: " + query
         mode = "loading"
-        statusText = "BROWSING " + currentCategoryTitle
-        usenetBackend.load_items(row.id || "", currentCategoryTitle)
+        statusText = "SEARCHING " + query
+        usenetBackend.search_items(query)
+    }
+
+    function browseCategory(row) {
+        if (!row) return
+        currentCategoryTitle = row.fullTitle || row.title || "CATEGORY"
+        mode = "loading"
+        if (row.type === "trending") {
+            statusText = "LOADING " + currentCategoryTitle
+            usenetBackend.load_trending(row.category || "", row.time || "", currentCategoryTitle)
+        } else {
+            statusText = "BROWSING " + currentCategoryTitle
+            usenetBackend.load_items(row.id || "", currentCategoryTitle)
+        }
+    }
+
+    function selectCategory(index) {
+        if (index < 0 || index >= categoryRows.length) return
+        var row = categoryRows[index] || ({})
+        if (row.type === "search") {
+            currentCategoryIndex = index
+            showSearch()
+            return
+        }
+        if (mode === "subcategories") {
+            currentSubcategoryIndex = index
+            browseCategory(row)
+            return
+        }
+
+        currentCategoryIndex = index
+        currentGroupTitle = row.title || "CATEGORY"
+        subcategories = row.children || []
+        currentSubcategoryIndex = 0
+        if (subcategories.length > 0) {
+            mode = "subcategories"
+            setListIndex(categoryList, currentSubcategoryIndex)
+            return
+        }
+        browseCategory(row)
+    }
+
+    function returnToCategoryMenu() {
+        if (subcategories.length > 0) {
+            mode = "subcategories"
+            setListIndex(categoryList, currentSubcategoryIndex)
+            return
+        }
+        mode = "categories"
+        setListIndex(categoryList, currentCategoryIndex)
+    }
+
+    function resetCategoryDrilldown() {
+        subcategories = []
+        currentSubcategoryIndex = 0
+        currentGroupTitle = ""
+        currentCategoryTitle = ""
     }
 
     function selectItem(index) {
@@ -176,11 +268,20 @@ FocusScope {
     function stopPlayback() {
         playbackStarted = false
         mpvController.stop()
-        mode = items.length > 0 ? "items" : "categories"
+        mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
     }
 
     Keys.onPressed: function(event) {
-        if (mode === "categories") {
+        if (mode === "search") {
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                mode = "categories"
+                setListIndex(categoryList, currentCategoryIndex)
+                event.accepted = true
+            }
+            return
+        }
+
+        if (mode === "categories" || mode === "subcategories") {
             if (event.key === Qt.Key_Up) {
                 setListIndex(categoryList, categoryList.currentIndex - 1)
                 event.accepted = true
@@ -197,7 +298,12 @@ FocusScope {
                 selectCategory(categoryList.currentIndex)
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                goBack()
+                if (mode === "subcategories") {
+                    mode = "categories"
+                    setListIndex(categoryList, currentCategoryIndex)
+                } else {
+                    goBack()
+                }
                 event.accepted = true
             }
             return
@@ -220,8 +326,7 @@ FocusScope {
                 selectItem(itemList.currentIndex)
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                mode = "categories"
-                setListIndex(categoryList, currentCategoryIndex)
+                returnToCategoryMenu()
                 event.accepted = true
             }
             return
@@ -300,11 +405,21 @@ FocusScope {
         onTriggered: focusSetupRow()
     }
 
+    Timer {
+        id: searchFocusTimer
+        interval: 1
+        repeat: false
+        onTriggered: {
+            searchField.forceActiveFocus()
+        }
+    }
+
     Connections {
         target: usenetBackend
 
         function onCategoriesLoaded(rows) {
             categories = rows || []
+            resetCategoryDrilldown()
             if (categories.length === 0) {
                 mode = "message"
                 statusText = "NO CATEGORIES FOUND"
@@ -350,7 +465,7 @@ FocusScope {
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
             if (mode === "playing") {
                 playbackStarted = false
-                mode = items.length > 0 ? "items" : "categories"
+                mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
             }
         }
 
@@ -379,7 +494,7 @@ FocusScope {
         iconSource: moduleIcon
         iconHeight: root.sh * 0.075
         title: moduleName
-        subtitle: mode === "items" ? currentCategoryTitle : "NEWZNAB"
+        subtitle: mode === "items" ? currentCategoryTitle : (mode === "subcategories" ? currentGroupTitle : "NEWZNAB")
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.125
@@ -421,22 +536,23 @@ FocusScope {
 
         SetupField { id: newznabUrlField; label: "NEWZNAB URL"; selected: setupRow === 0 }
         SetupField { id: newznabKeyField; label: "NEWZNAB API KEY"; selected: setupRow === 1; password: true }
-        SetupField { id: altmountUrlField; label: "ALTMOUNT URL"; selected: setupRow === 2 }
-        SetupField { id: altmountKeyField; label: "ALTMOUNT KEY OR STREMIO URL"; selected: setupRow === 3; password: true }
+        SetupField { id: omgUsernameField; label: "OMG USERNAME"; selected: setupRow === 2 }
+        SetupField { id: altmountUrlField; label: "ALTMOUNT URL"; selected: setupRow === 3 }
+        SetupField { id: altmountKeyField; label: "ALTMOUNT KEY OR STREMIO URL"; selected: setupRow === 4; password: true }
 
         Rectangle {
             id: connectButton
             width: setupForm.width
             height: root.sh * 0.0583333
-            color: setupRow === 4 ? root.accentColor : "transparent"
-            focus: setupRow === 4
+            color: setupRow === setupConnectRow ? root.accentColor : "transparent"
+            focus: setupRow === setupConnectRow
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: root.sw * 0.009375
                 text: "CONNECT"
-                color: setupRow === 4 ? root.surfaceColor : root.primaryColor
+                color: setupRow === setupConnectRow ? root.surfaceColor : root.primaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 font.pixelSize: root.sh * 0.05
@@ -455,10 +571,74 @@ FocusScope {
         }
     }
 
+    Column {
+        id: searchForm
+        visible: mode === "search"
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: root.sh * 0.25
+        anchors.leftMargin: root.sw * 0.115625
+        width: root.sw * 0.76875
+        spacing: root.sh * 0.025
+
+        Text {
+            text: statusText
+            color: root.secondaryColor
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            font.pixelSize: root.sh * 0.031
+            width: searchForm.width
+            elide: Text.ElideRight
+        }
+
+        Rectangle {
+            width: searchForm.width
+            height: root.sh * 0.076
+            color: root.accentColor
+
+            Text {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.leftMargin: root.sw * 0.009375
+                text: "SEARCH"
+                color: root.surfaceColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                font.pixelSize: root.sh * 0.026
+            }
+
+            TextInput {
+                id: searchField
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: root.sw * 0.009375
+                anchors.rightMargin: root.sw * 0.009375
+                height: root.sh * 0.047
+                color: root.surfaceColor
+                selectedTextColor: root.surfaceColor
+                selectionColor: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.04
+                clip: true
+
+                Keys.onReturnPressed: runSearch()
+                Keys.onEnterPressed: runSearch()
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back) {
+                        mode = "categories"
+                        setListIndex(categoryList, currentCategoryIndex)
+                        event.accepted = true
+                    }
+                }
+            }
+        }
+    }
+
     ListView {
         id: categoryList
-        visible: mode === "categories"
-        model: categories
+        visible: mode === "categories" || mode === "subcategories"
+        model: categoryRows
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.25
@@ -467,7 +647,12 @@ FocusScope {
         height: root.sh * 0.525
         clip: true
         focus: visible
-        onCurrentIndexChanged: currentCategoryIndex = currentIndex
+        onCurrentIndexChanged: {
+            if (mode === "subcategories")
+                currentSubcategoryIndex = currentIndex
+            else
+                currentCategoryIndex = currentIndex
+        }
 
         delegate: MenuRow {
             required property var modelData
@@ -476,7 +661,7 @@ FocusScope {
             list: categoryList
             rowIndex: index
             text: modelData.title || "CATEGORY"
-            detail: modelData.id || ""
+            detail: modelData.detail || (mode === "categories" && modelData.count ? (modelData.count + " CAT") : (modelData.id || ""))
         }
     }
 
@@ -634,11 +819,11 @@ FocusScope {
             Keys.onUpPressed: setupPrevious()
             Keys.onDownPressed: setupNext()
             Keys.onReturnPressed: {
-                if (setupRow === 3) saveSetup()
+                if (setupRow === setupConnectRow - 1) saveSetup()
                 else setupNext()
             }
             Keys.onEnterPressed: {
-                if (setupRow === 3) saveSetup()
+                if (setupRow === setupConnectRow - 1) saveSetup()
                 else setupNext()
             }
             Keys.onPressed: function(event) {

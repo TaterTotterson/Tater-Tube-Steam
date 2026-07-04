@@ -18,6 +18,9 @@ public:
     Q_INVOKABLE QVariantMap get_setup_status();
     Q_INVOKABLE void load_categories();
     Q_INVOKABLE void load_items(const QString &categoryId, const QString &categoryTitle);
+    Q_INVOKABLE void search_items(const QString &query);
+    Q_INVOKABLE void load_trending(const QString &category, const QString &timePeriod,
+                                   const QString &title);
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
 
 signals:
@@ -34,10 +37,13 @@ private:
     QVariantMap moduleConfig() const;
     QString setting(const QString &key, const QString &fallback = QString()) const;
     QString newznabApiKey() const;
+    QString omgUsername() const;
     QString newznabApiBase() const;
     QString altMountApiBase() const;
     QString altMountDownloadKey() const;
     QUrl newznabUrl(const QVariantMap &params) const;
+    QUrl omgNzbUrl(const QString &id) const;
+    QUrl omgTrendingUrl(const QString &category, const QString &timePeriod) const;
     QUrl altMountStreamsUrl() const;
     QString ensureNewznabApiKey(const QString &url) const;
     int browseLimit() const;
