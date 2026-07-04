@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/tater-tube-boot.png" alt="Tater Tube" width="520">
+</p>
+
 # Tater Tube
 
 Tater Tube is a retro VCR-style media frontend for Raspberry Pi appliance builds.
