@@ -1,14 +1,14 @@
 {
-  "version": "v1.2.5",
-  "app_version": "1.2.5",
+  "version": "v1.2.6",
+  "app_version": "1.2.6",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.5/Tater-Tube-v1.2.5-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.5.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.6/Tater-Tube-v1.2.6-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.6.tar.gz",
   "notes": [
-    "Adds Newsgroups search from the main Usenet menu.",
-    "Groups Newsgroups browsing into media-only sections with nested categories and larger list limits.",
-    "Adds OMGWTFNZBS Trending for movies and TV with today, week, month, and year views."
+    "Adds transparent Tater mascot art for each main menu module.",
+    "Adds an Appearance setting to show or hide the main menu mascots, enabled by default.",
+    "Improves PC Link on Pi 5 HDMI by selecting the connected HDMI audio device and clamping Pi streaming to a stable 1080p profile."
   ]
 }

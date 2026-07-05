@@ -117,12 +117,24 @@ FocusScope {
         var colorOpts = ["Off Air","Video 1","Late Night","Synthwave","Terminal","T-120","Amber","Kinescope"]
         var custom = appCore.getCustomColorScheme()
         if (Object.keys(custom).length === 5) colorOpts.push("Custom")
+        var showMascots = appSettings["show_module_mascots"]
+        if (showMascots === undefined || showMascots === null || showMascots === "")
+            showMascots = true
+        showMascots = showMascots === true || showMascots === "ON" || showMascots === "true" || showMascots === "1"
         items.push({
             type: "list_single",
             key: "color_scheme",
             label: "Color Scheme",
             options: colorOpts,
             value: appSettings["color_scheme"] || "Off Air",
+            moduleId: ""
+        })
+        items.push({
+            type: "toggle",
+            key: "show_module_mascots",
+            label: "Menu Mascots",
+            value: showMascots ? "ON" : "OFF",
+            enabled: showMascots,
             moduleId: ""
         })
         if ((appSettings["color_scheme"] || "Off Air") === "Off Air") {
@@ -581,6 +593,16 @@ FocusScope {
         }
     }
 
+    function setToggleValue(rowIndex, row, enabled) {
+        if (!row || row.type !== "toggle") return
+
+        replaceSettingsRow(rowIndex, {
+            value: enabled ? "ON" : "OFF",
+            enabled: enabled
+        })
+        appCore.save_setting(row.moduleId || "", row.key, enabled)
+    }
+
     function setClockPartValue(rowIndex, row, newVal) {
         var parts = root.vcrClockParts()
         var hour = row.part === "hour" ? parseInt(newVal) : parts.hour
@@ -721,6 +743,8 @@ FocusScope {
                 var idx = opts.indexOf(row.value)
                 var newIdx = (idx - 1 + opts.length) % opts.length
                 settingsRoot.setListSingleValue(currentIndex, row, opts[newIdx])
+            } else if (row && row.type === "toggle") {
+                settingsRoot.setToggleValue(currentIndex, row, false)
             } else if (row && row.type === "ssh_toggle") {
                 settingsRoot.setSshEnabled(currentIndex, false)
             } else if (row && row.type === "bluetooth_toggle") {
@@ -735,6 +759,8 @@ FocusScope {
                 var idx = opts.indexOf(row.value)
                 var newIdx = (idx + 1) % opts.length
                 settingsRoot.setListSingleValue(currentIndex, row, opts[newIdx])
+            } else if (row && row.type === "toggle") {
+                settingsRoot.setToggleValue(currentIndex, row, true)
             } else if (row && row.type === "ssh_toggle") {
                 settingsRoot.setSshEnabled(currentIndex, true)
             } else if (row && row.type === "bluetooth_toggle") {
@@ -762,6 +788,8 @@ FocusScope {
                     currentIndex: settingsList.currentIndex,
                     sectionKey: activeSection
                 })
+            } else if (row && row.type === "toggle") {
+                settingsRoot.setToggleValue(currentIndex, row, !row.enabled)
             } else if (row && row.type === "ssh_toggle") {
                 settingsRoot.setSshEnabled(currentIndex, !row.enabled)
             } else if (row && row.type === "bluetooth_toggle") {
@@ -842,7 +870,7 @@ FocusScope {
                     spacing: root.sw * 0.00625 //4
 
                     Text {
-                        visible: modelData.type === "list_single" || modelData.type === "clock_part" || (modelData.type === "argon_fan" && modelData.available === true) || (modelData.type === "ssh_toggle" && modelData.available === true) || (modelData.type === "bluetooth_toggle" && modelData.available === true)
+                        visible: modelData.type === "list_single" || modelData.type === "clock_part" || modelData.type === "toggle" || (modelData.type === "argon_fan" && modelData.available === true) || (modelData.type === "ssh_toggle" && modelData.available === true) || (modelData.type === "bluetooth_toggle" && modelData.available === true)
                         text: "\u25C4"
                         color: settingsList.currentIndex === index ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont
@@ -852,7 +880,7 @@ FocusScope {
                         font.pixelSize: root.sh * 0.0375 //18
                     }
                     Text {
-                        visible: modelData.type === "list_single" || modelData.type === "clock_part" || modelData.type === "argon_fan" || modelData.value !== undefined
+                        visible: modelData.type === "list_single" || modelData.type === "clock_part" || modelData.type === "toggle" || modelData.type === "argon_fan" || modelData.value !== undefined
                         text: modelData.value || ""
                         color: settingsList.currentIndex === index ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont
@@ -865,7 +893,7 @@ FocusScope {
                         font.pixelSize:root.sh * 0.05 //24
                     }
                     Text {
-                        visible: modelData.type === "settings_category" || modelData.type === "submenu" || modelData.type === "list_single" || modelData.type === "clock_part" || (modelData.type === "argon_fan" && modelData.available === true) || modelData.type === "action" || modelData.type === "bluetooth_device" || modelData.type === "bluetooth_known" || modelData.type === "bluetooth_forget" || (modelData.type === "ssh_toggle" && modelData.available === true) || (modelData.type === "bluetooth_toggle" && modelData.available === true)
+                        visible: modelData.type === "settings_category" || modelData.type === "submenu" || modelData.type === "list_single" || modelData.type === "clock_part" || modelData.type === "toggle" || (modelData.type === "argon_fan" && modelData.available === true) || modelData.type === "action" || modelData.type === "bluetooth_device" || modelData.type === "bluetooth_known" || modelData.type === "bluetooth_forget" || (modelData.type === "ssh_toggle" && modelData.available === true) || (modelData.type === "bluetooth_toggle" && modelData.available === true)
                         text: "\u25BA"
                         color: settingsList.currentIndex === index ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont

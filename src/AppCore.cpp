@@ -561,7 +561,8 @@ QJsonObject AppCore::loadConfig() const {
     return QJsonObject{
         {"app", QJsonObject{
             {"color_scheme", "Off Air"},
-            {"off_air_highlight_color", "Orange"}
+            {"off_air_highlight_color", "Orange"},
+            {"show_module_mascots", true}
         }},
         {"modules", QJsonObject{}}
     };
@@ -604,6 +605,7 @@ void AppCore::scan_for_modules() {
         // entry_point is a path relative to APP_ROOT
         QString entryPoint = QStringLiteral("modules/%1/%2").arg(m.folder, m.entryQml);
         QVariantMap entry;
+        entry["id"]          = m.id;
         entry["name"]        = m.name;
         entry["entry_point"] = entryPoint;
         displayData.append(entry);

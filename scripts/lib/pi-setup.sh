@@ -1158,6 +1158,109 @@ find_drm_device() {
     done
 }
 
+find_alsa_card() {
+    if [ -n "${MP240_MOONLIGHT_ALSA_CARD:-}" ]; then
+        printf '%s\n' "$MP240_MOONLIGHT_ALSA_CARD"
+        return 0
+    fi
+
+    local status connector hdmi_index alsa_card
+    for status in /sys/class/drm/card*-HDMI-A-*/status; do
+        [ -e "$status" ] || continue
+        [ "$(cat "$status" 2>/dev/null || true)" = "connected" ] || continue
+        connector="$(basename "$(dirname "$status")")"
+        hdmi_index="${connector##*-HDMI-A-}"
+        case "$hdmi_index" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        alsa_card=$((hdmi_index - 1))
+        if [ "$alsa_card" -ge 0 ] && [ -e "/proc/asound/card${alsa_card}" ]; then
+            printf '%s\n' "$alsa_card"
+            return 0
+        fi
+    done
+}
+
+find_alsa_device() {
+    if [ -n "${MP240_MOONLIGHT_ALSA_DEVICE:-}" ]; then
+        printf '%s\n' "$MP240_MOONLIGHT_ALSA_DEVICE"
+        return 0
+    fi
+
+    local alsa_card
+    alsa_card="$(find_alsa_card || true)"
+    if [ -n "$alsa_card" ]; then
+        printf 'plughw:%s,0\n' "$alsa_card"
+    fi
+}
+
+is_raspberry_pi() {
+    [ -r /proc/device-tree/model ] || return 1
+    tr -d '\0' </proc/device-tree/model 2>/dev/null | grep -qi 'raspberry pi'
+}
+
+set_moonlight_arg() {
+    local -n target_args="$1"
+    local key="$2"
+    local value="$3"
+    local i
+    for ((i = 0; i < ${#target_args[@]}; i++)); do
+        if [ "${target_args[$i]}" = "$key" ]; then
+            if [ $((i + 1)) -lt ${#target_args[@]} ]; then
+                target_args[$((i + 1))]="$value"
+            else
+                target_args+=("$value")
+            fi
+            return 0
+        fi
+    done
+    target_args+=("$key" "$value")
+}
+
+apply_pi_stream_limits() {
+    local -n args_ref="$1"
+    is_raspberry_pi || return 0
+    [ "${args_ref[0]:-}" = "stream" ] || return 0
+
+    local width="" height="" fps="" bitrate="" i
+    for ((i = 0; i < ${#args_ref[@]}; i++)); do
+        case "${args_ref[$i]}" in
+            -width) [ $((i + 1)) -lt ${#args_ref[@]} ] && width="${args_ref[$((i + 1))]}" ;;
+            -height) [ $((i + 1)) -lt ${#args_ref[@]} ] && height="${args_ref[$((i + 1))]}" ;;
+            -fps) [ $((i + 1)) -lt ${#args_ref[@]} ] && fps="${args_ref[$((i + 1))]}" ;;
+            -bitrate) [ $((i + 1)) -lt ${#args_ref[@]} ] && bitrate="${args_ref[$((i + 1))]}" ;;
+        esac
+    done
+
+    case "$width" in ''|*[!0-9]*) width=640 ;; esac
+    case "$height" in ''|*[!0-9]*) height=480 ;; esac
+    if [ "$width" -gt 1920 ] || [ "$height" -gt 1080 ]; then
+        if [ $((width * 1080)) -gt $((height * 1920)) ]; then
+            height=$((height * 1920 / width))
+            width=1920
+        else
+            width=$((width * 1080 / height))
+            height=1080
+        fi
+        [ "$width" -lt 2 ] && width=2
+        [ "$height" -lt 2 ] && height=2
+        [ $((width % 2)) -ne 0 ] && width=$((width - 1))
+        [ $((height % 2)) -ne 0 ] && height=$((height - 1))
+        set_moonlight_arg args_ref -width "$width"
+        set_moonlight_arg args_ref -height "$height"
+    fi
+
+    case "$fps" in ''|*[!0-9]*) fps=15 ;; esac
+    if [ "$fps" -gt 30 ]; then
+        set_moonlight_arg args_ref -fps 30
+    fi
+
+    case "$bitrate" in ''|*[!0-9]*) bitrate=1000 ;; esac
+    if [ "$bitrate" -gt 12000 ]; then
+        set_moonlight_arg args_ref -bitrate 12000
+    fi
+}
+
 blank_tty() {
     local tty_path="$1"
     [ -w "$tty_path" ] || return 0
@@ -1320,6 +1423,7 @@ parse_control_args() {
         esac
         [ "$#" -gt 0 ] && shift
     done
+    apply_pi_stream_limits moonlight_args
 }
 
 launch_stream() {
@@ -1338,6 +1442,12 @@ launch_stream() {
     fi
     if [ -n "${MP240_MOONLIGHT_DRM_DEVICE:-}" ]; then
         run_args+=(--setenv=MP240_MOONLIGHT_DRM_DEVICE="$MP240_MOONLIGHT_DRM_DEVICE")
+    fi
+    if [ -n "${MP240_MOONLIGHT_ALSA_DEVICE:-}" ]; then
+        run_args+=(--setenv=MP240_MOONLIGHT_ALSA_DEVICE="$MP240_MOONLIGHT_ALSA_DEVICE")
+    fi
+    if [ -n "${MP240_MOONLIGHT_ALSA_CARD:-}" ]; then
+        run_args+=(--setenv=MP240_MOONLIGHT_ALSA_CARD="$MP240_MOONLIGHT_ALSA_CARD")
     fi
 
     systemd-run "${run_args[@]}" "$0" run "${moonlight_args[@]}"
@@ -1391,7 +1501,7 @@ exec_stream() {
         [ "$#" -gt 0 ] && shift
     done
 
-    local bin bundle_dir drm_device
+    local bin bundle_dir drm_device alsa_card alsa_device
     bin="$(find_moonlight_bin)"
     if [ -z "$bin" ] || [ ! -x "$bin" ]; then
         echo "Moonlight executable not found" >&2
@@ -1400,6 +1510,8 @@ exec_stream() {
 
     bundle_dir="$(dirname "$(dirname "$bin")")"
     drm_device="$(find_drm_device)"
+    alsa_card="$(find_alsa_card || true)"
+    alsa_device="$(find_alsa_device || true)"
 
     export HOME="$data_root"
     export XDG_CONFIG_HOME="${data_root}/moonlight/config"
@@ -1408,6 +1520,13 @@ exec_stream() {
     export SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1
     export SDL_VIDEODRIVER=KMSDRM
     export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
+    if [ -n "$alsa_card" ]; then
+        export ALSA_CARD="$alsa_card"
+        export ALSA_PCM_CARD="$alsa_card"
+    fi
+    if [ -n "$alsa_device" ]; then
+        export SDL_AUDIO_ALSA_DEFAULT_DEVICE="$alsa_device"
+    fi
     export XDG_DATA_DIRS="${bundle_dir}/share:/usr/local/share:/usr/share"
     export LD_LIBRARY_PATH="${bundle_dir}/lib:${LD_LIBRARY_PATH:-}"
     if [ -n "$drm_device" ]; then
@@ -1415,14 +1534,14 @@ exec_stream() {
     fi
 
     install -d -m 0755 "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
-    chown -R "$user:$user" "$data_root" 2>/dev/null || true
+    chown "$user:$user" "$data_root" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" 2>/dev/null || true
 
     if [ "$user" = "root" ]; then
         exec "$bin" "$@"
     fi
 
     exec sudo -u "$user" \
-        --preserve-env=HOME,XDG_CONFIG_HOME,XDG_DATA_HOME,XDG_CACHE_HOME,XDG_DATA_DIRS,SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD,SDL_VIDEODRIVER,SDL_AUDIODRIVER,SDL_VIDEO_KMSDRM_DEVICE,LD_LIBRARY_PATH \
+        --preserve-env=HOME,XDG_CONFIG_HOME,XDG_DATA_HOME,XDG_CACHE_HOME,XDG_DATA_DIRS,SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD,SDL_VIDEODRIVER,SDL_AUDIODRIVER,ALSA_CARD,ALSA_PCM_CARD,SDL_AUDIO_ALSA_DEFAULT_DEVICE,SDL_VIDEO_KMSDRM_DEVICE,LD_LIBRARY_PATH \
         "$bin" "$@"
 }
 
@@ -1442,6 +1561,8 @@ case "$action" in
             printf 'available=1\n'
             printf 'path=%s\n' "$bin"
             printf 'drm_device=%s\n' "$(find_drm_device)"
+            printf 'alsa_card=%s\n' "$(find_alsa_card)"
+            printf 'alsa_device=%s\n' "$(find_alsa_device)"
         else
             printf 'available=0\n'
         fi

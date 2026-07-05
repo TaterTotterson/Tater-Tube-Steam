@@ -76,6 +76,26 @@ QString optionValue(QString value, const QString &fallback)
     return value.isEmpty() ? fallback : value;
 }
 
+void fitInside(int &width, int &height, int maxWidth, int maxHeight)
+{
+    if (width <= 0 || height <= 0) {
+        width = maxWidth;
+        height = maxHeight;
+        return;
+    }
+    if (width <= maxWidth && height <= maxHeight)
+        return;
+
+    const double scale = std::min(double(maxWidth) / double(width),
+                                  double(maxHeight) / double(height));
+    width = std::max(2, int(width * scale));
+    height = std::max(2, int(height * scale));
+    if ((width % 2) != 0)
+        --width;
+    if ((height % 2) != 0)
+        --height;
+}
+
 QString connectedPiHdmiAudioCard()
 {
 #ifdef Q_OS_LINUX
@@ -634,27 +654,44 @@ void MoonlightBackend::onListProcessFinished(int exitCode, QProcess::ExitStatus 
 
 QStringList MoonlightBackend::streamArguments(const QString &appName, bool forceSdl) const
 {
-    QString width = QStringLiteral("640");
-    QString height = QStringLiteral("480");
+    int width = 640;
+    int height = 480;
+    const bool piHelperStream = forceSdl && detectHeadlessMode();
     const QString resolution = setting(QStringLiteral("resolution"), QStringLiteral("640x480"));
     const QRegularExpressionMatch resolutionMatch =
         QRegularExpression(QStringLiteral("^(\\d{3,5})x(\\d{3,5})$")).match(resolution);
     if (resolutionMatch.hasMatch()) {
-        width = resolutionMatch.captured(1);
-        height = resolutionMatch.captured(2);
+        width = resolutionMatch.captured(1).toInt();
+        height = resolutionMatch.captured(2).toInt();
     }
+    if (piHelperStream)
+        fitInside(width, height, 1920, 1080);
 
     QString bitrate = setting(QStringLiteral("bitrate"), QStringLiteral("1000 Kbps"));
     bitrate.remove(QStringLiteral("Kbps"), Qt::CaseInsensitive);
     bitrate.remove(QStringLiteral(" "));
     if (bitrate.isEmpty())
         bitrate = QStringLiteral("1000");
+    if (piHelperStream) {
+        bool bitrateOk = false;
+        int bitrateValue = bitrate.toInt(&bitrateOk);
+        if (bitrateOk && bitrateValue > 12000)
+            bitrate = QStringLiteral("12000");
+    }
+
+    QString fps = optionValue(setting(QStringLiteral("fps")), QStringLiteral("15"));
+    if (piHelperStream) {
+        bool fpsOk = false;
+        int fpsValue = fps.toInt(&fpsOk);
+        if (fpsOk && fpsValue > 30)
+            fps = QStringLiteral("30");
+    }
 
     QStringList args{
         QStringLiteral("stream"),
-        QStringLiteral("-width"), width,
-        QStringLiteral("-height"), height,
-        QStringLiteral("-fps"), optionValue(setting(QStringLiteral("fps")), QStringLiteral("15")),
+        QStringLiteral("-width"), QString::number(width),
+        QStringLiteral("-height"), QString::number(height),
+        QStringLiteral("-fps"), fps,
         QStringLiteral("-bitrate"), bitrate,
         QStringLiteral("-codec"), setting(QStringLiteral("codec"), QStringLiteral("h264")).toLower(),
         QStringLiteral("-remote"), QStringLiteral("no"),

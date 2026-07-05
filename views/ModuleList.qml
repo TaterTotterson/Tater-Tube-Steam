@@ -9,13 +9,56 @@ FocusScope {
 
     property var navParams: ({})
     property var navListState: ({})
+    property bool showModuleMascots: true
+    property var mascotByModuleId: ({
+        "com.240mp.ota": "../assets/images/mascots/over-the-air.png",
+        "com.240mp.emby_jellyfin": "../assets/images/mascots/video-on-demand.png",
+        "com.240mp.youtube_playlist": "../assets/images/mascots/public-access.png",
+        "com.240mp.usenet": "../assets/images/mascots/usenet.png",
+        "com.240mp.audio_tapes": "../assets/images/mascots/tape-deck.png",
+        "com.240mp.retro": "../assets/images/mascots/game-center.png",
+        "com.240mp.local_files": "../assets/images/mascots/local-files.png",
+        "com.240mp.moonlight": "../assets/images/mascots/pc-link.png"
+    })
+
+    function selectedModule() {
+        if (!menuList.model || menuList.currentIndex < 0 || menuList.currentIndex >= menuList.count)
+            return ({})
+        return menuList.model[menuList.currentIndex] || ({})
+    }
+
+    function selectedMascotSource() {
+        if (!showModuleMascots)
+            return ""
+        var moduleId = selectedModule().id || ""
+        return mascotByModuleId[moduleId] || ""
+    }
+
+    function loadMascotSetting() {
+        var value = appCore.get_setting("", "show_module_mascots")
+        if (value === undefined || value === null || value === "") {
+            showModuleMascots = true
+            return
+        }
+        if (value === true || value === false) {
+            showModuleMascots = value
+            return
+        }
+        var normalized = ("" + value).toUpperCase()
+        showModuleMascots = !(normalized === "OFF" || normalized === "FALSE" || normalized === "0" || normalized === "NO")
+    }
 
     Component.onCompleted: {
+        loadMascotSetting()
         appCore.scan_for_modules()
     }
 
     Connections {
         target: appCore;
+        function onAppSettingChanged(key, value) {
+            if (key === "show_module_mascots")
+                appRoot.loadMascotSetting()
+        }
         function onModulesLoaded(moduleData) {
             menuList.model = moduleData
             if (moduleData.length > 0) {
@@ -58,6 +101,21 @@ FocusScope {
             anchors.horizontalCenter: parent.horizontalCenter
             font.pixelSize: root.sh * 0.0333333 //16
         }
+    }
+
+    Image {
+        id: moduleMascot
+        source: appRoot.selectedMascotSource()
+        visible: source !== ""
+        anchors.verticalCenter: menuList.verticalCenter
+        anchors.right: parent.right
+        anchors.rightMargin: root.sw * 0.0625
+        width: root.sw * 0.32
+        height: root.sh * 0.55
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        mipmap: true
+        opacity: 0.96
     }
 
     ListView {
