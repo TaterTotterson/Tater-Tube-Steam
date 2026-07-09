@@ -101,7 +101,8 @@ FocusScope {
 
     function channelLabel(channel) {
         if (!channel) return "CH --"
-        return "CH " + (channel.number || "--")
+        var title = String(channel.title || "").trim()
+        return "CH " + (channel.number || "--") + (title !== "" ? " " + title : "")
     }
 
     function randomCommercial() {
@@ -685,7 +686,9 @@ FocusScope {
         anchors.right: parent.right
         anchors.topMargin: root.sh * 0.09
         anchors.rightMargin: root.sw * 0.07
-        width: Math.max(channelText.implicitWidth + root.sw * 0.04, root.sw * 0.18)
+        width: Math.min(root.sw * 0.66,
+                        Math.max(channelText.implicitWidth + root.sw * 0.04,
+                                 root.sw * 0.18))
         height: root.sh * 0.085
         color: "#60000000"
         border.color: root.primaryColor
@@ -694,11 +697,14 @@ FocusScope {
         Text {
             id: channelText
             anchors.centerIn: parent
+            width: parent.width - root.sw * 0.025
             text: tvRoot.statusText
             color: root.primaryColor
             font.family: root.globalFont
             font.capitalization: Font.AllUppercase
             font.pixelSize: root.sh * 0.055
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
         }
     }
 }

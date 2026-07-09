@@ -34,6 +34,7 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - Resume playback, with Continue Watching for Emby/Jellyfin
 - Autoplay next episode
 - Playlist and Collection support for Emby/Jellyfin
+- TV Mode builds extra movie, cartoon, genre, and decade channels when library metadata is available
 - Audio and subtitle track selection
 - H.264/AAC transcode playback with display-adaptive Auto plus 4K, 1440p, 1080p, 720p, and 480p quality targets
 

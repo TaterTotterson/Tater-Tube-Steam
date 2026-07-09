@@ -1,14 +1,14 @@
 {
-  "version": "v1.2.6",
-  "app_version": "1.2.6",
+  "version": "v1.2.7",
+  "app_version": "1.2.7",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.6/Tater-Tube-v1.2.6-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.6.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.7/Tater-Tube-v1.2.7-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.7.tar.gz",
   "notes": [
-    "Adds transparent Tater mascot art for each main menu module.",
-    "Adds an Appearance setting to show or hide the main menu mascots, enabled by default.",
-    "Improves PC Link on Pi 5 HDMI by selecting the connected HDMI audio device and clamping Pi streaming to a stable 1080p profile."
+    "Expands Video on Demand TV Mode with extra genre, cartoon, movie, and decade channels when library metadata is available.",
+    "Shows the themed VoD TV channel name in the on-screen channel overlay while keeping the label constrained for CRT layouts.",
+    "Removes provider-specific Usenet wording from public docs and user-facing messages."
   ]
 }

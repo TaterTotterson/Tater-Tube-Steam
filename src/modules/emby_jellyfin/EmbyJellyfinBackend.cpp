@@ -155,6 +155,42 @@ QString musicArtistName(const QJsonObject &item) {
     return artist;
 }
 
+QStringList jsonStringList(const QJsonValue &value) {
+    QStringList out;
+    for (const QJsonValue &entry : value.toArray()) {
+        const QString text = entry.toString().trimmed();
+        if (!text.isEmpty())
+            out.append(text);
+    }
+    out.removeDuplicates();
+    return out;
+}
+
+QStringList plexGenresFromElement(QXmlStreamReader *xml) {
+    QStringList genres;
+    if (!xml || !xml->isStartElement())
+        return genres;
+
+    int depth = 1;
+    while (!xml->atEnd() && depth > 0) {
+        xml->readNext();
+        if (xml->isStartElement()) {
+            if (xml->name() == QStringLiteral("Genre")) {
+                const QString tag = xml->attributes()
+                    .value(QStringLiteral("tag")).toString().trimmed();
+                if (!tag.isEmpty())
+                    genres.append(tag);
+            }
+            ++depth;
+        } else if (xml->isEndElement()) {
+            --depth;
+        }
+    }
+
+    genres.removeDuplicates();
+    return genres;
+}
+
 QStringList normalizedApiTypes(const QStringList &types) {
     QSet<QString> result;
     for (QString type : types) {
@@ -272,6 +308,211 @@ QVariantMap vodChannel(const QString &title,
         {QStringLiteral("channelType"), channelType},
         {QStringLiteral("programs"), programs}
     };
+}
+
+QStringList vodGenres(const QVariantMap &item) {
+    const QVariant raw = item.value(QStringLiteral("genres"));
+    QStringList genres = raw.toStringList();
+    if (genres.isEmpty()) {
+        for (const QVariant &value : raw.toList()) {
+            const QString text = value.toString().trimmed();
+            if (!text.isEmpty())
+                genres.append(text);
+        }
+    }
+    return genres;
+}
+
+bool vodHasAnyGenre(const QVariantMap &item, const QStringList &terms) {
+    const QStringList genres = vodGenres(item);
+    for (const QString &genre : genres) {
+        const QString normalized = genre.toLower();
+        for (const QString &term : terms) {
+            if (normalized.contains(term))
+                return true;
+        }
+    }
+    return false;
+}
+
+int vodYear(const QVariantMap &item) {
+    bool ok = false;
+    const int year = item.value(QStringLiteral("year")).toInt(&ok);
+    return ok ? year : 0;
+}
+
+QVariantList filterVodPrograms(const QVariantList &programs,
+                               const std::function<bool(const QVariantMap &)> &predicate) {
+    QVariantList result;
+    for (const QVariant &value : programs) {
+        const QVariantMap item = value.toMap();
+        if (predicate(item))
+            result.append(item);
+    }
+    return result;
+}
+
+QString vodChannelSignature(const QString &channelType, const QVariantList &programs) {
+    QStringList keys;
+    for (const QVariant &value : programs) {
+        const QVariantMap item = value.toMap();
+        QString key = item.value(QStringLiteral("ratingKey")).toString();
+        if (key.isEmpty())
+            key = item.value(QStringLiteral("seriesKey")).toString();
+        if (key.isEmpty())
+            key = item.value(QStringLiteral("title")).toString();
+        if (!key.isEmpty())
+            keys.append(key);
+    }
+    keys.removeDuplicates();
+    keys.sort();
+    return channelType + QLatin1Char(':') + keys.join(QLatin1Char('|'));
+}
+
+bool isGenericVodLibraryTitle(const QString &title) {
+    const QString normalized = title.trimmed().toUpper();
+    static const QSet<QString> genericTitles = {
+        QStringLiteral("MOVIE"),
+        QStringLiteral("MOVIES"),
+        QStringLiteral("FILM"),
+        QStringLiteral("FILMS"),
+        QStringLiteral("TV"),
+        QStringLiteral("TV SHOWS"),
+        QStringLiteral("SHOWS"),
+        QStringLiteral("SERIES"),
+        QStringLiteral("VIDEO"),
+        QStringLiteral("VIDEOS"),
+        QStringLiteral("VIDEO ON DEMAND"),
+        QStringLiteral("VOD")
+    };
+    return normalized.isEmpty() || genericTitles.contains(normalized);
+}
+
+QString themedVodTitle(const QString &libraryTitle, const QString &channelTitle) {
+    const QString cleanChannel = channelTitle.trimmed().toUpper();
+    const QString cleanLibrary = libraryTitle.trimmed().toUpper();
+    if (isGenericVodLibraryTitle(cleanLibrary))
+        return cleanChannel;
+    if (cleanChannel.startsWith(cleanLibrary))
+        return cleanChannel;
+    return cleanLibrary + QLatin1Char(' ') + cleanChannel;
+}
+
+void appendVodChannelIfUseful(QVariantList *channels,
+                              QSet<QString> *signatures,
+                              const QString &title,
+                              const QString &channelType,
+                              const QVariantList &programs,
+                              int minCount) {
+    if (!channels || !signatures || programs.size() < minCount)
+        return;
+
+    const QString signature = vodChannelSignature(channelType, programs);
+    if (signature.endsWith(QLatin1Char(':')) || signatures->contains(signature))
+        return;
+
+    channels->append(vodChannel(title, channelType, programs));
+    signatures->insert(signature);
+}
+
+struct VodGenreChannelRule {
+    QString title;
+    QStringList terms;
+    int minCount = 1;
+};
+
+QString decadeChannelLabel(int decade) {
+    if (decade >= 2000)
+        return QString::number(decade) + QStringLiteral("S");
+    return QString::number(decade).right(2) + QStringLiteral("S");
+}
+
+void appendThemedMovieChannels(QVariantList *channels,
+                               QSet<QString> *signatures,
+                               const QString &libraryTitle,
+                               const QVariantList &movies) {
+    static const QList<VodGenreChannelRule> rules = {
+        {QStringLiteral("ACTION MOVIES"), {QStringLiteral("action"), QStringLiteral("adventure"), QStringLiteral("thriller")}, 2},
+        {QStringLiteral("COMEDY MOVIES"), {QStringLiteral("comedy")}, 2},
+        {QStringLiteral("HORROR MOVIES"), {QStringLiteral("horror")}, 2},
+        {QStringLiteral("SCI-FI MOVIES"), {QStringLiteral("science fiction"), QStringLiteral("sci-fi"), QStringLiteral("sci fi")}, 2},
+        {QStringLiteral("FANTASY MOVIES"), {QStringLiteral("fantasy")}, 2},
+        {QStringLiteral("FAMILY MOVIES"), {QStringLiteral("family"), QStringLiteral("children"), QStringLiteral("kids")}, 2},
+        {QStringLiteral("CARTOON MOVIES"), {QStringLiteral("animation"), QStringLiteral("anime")}, 2},
+        {QStringLiteral("DOCUMENTARY MOVIES"), {QStringLiteral("documentary")}, 2},
+        {QStringLiteral("DRAMA MOVIES"), {QStringLiteral("drama")}, 2},
+        {QStringLiteral("CRIME MOVIES"), {QStringLiteral("crime"), QStringLiteral("mystery")}, 2}
+    };
+
+    for (const VodGenreChannelRule &rule : rules) {
+        const QVariantList filtered = filterVodPrograms(movies, [&rule](const QVariantMap &item) {
+            return vodHasAnyGenre(item, rule.terms);
+        });
+        appendVodChannelIfUseful(channels, signatures,
+                                 themedVodTitle(libraryTitle, rule.title),
+                                 QStringLiteral("movie"), filtered, rule.minCount);
+    }
+
+    const QVariantList classic = filterVodPrograms(movies, [](const QVariantMap &item) {
+        const int year = vodYear(item);
+        return year > 0 && year <= 1979;
+    });
+    appendVodChannelIfUseful(channels, signatures,
+                             themedVodTitle(libraryTitle, QStringLiteral("CLASSIC MOVIES")),
+                             QStringLiteral("movie"), classic, 2);
+
+    for (int decade : {1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020}) {
+        const QVariantList filtered = filterVodPrograms(movies, [decade](const QVariantMap &item) {
+            const int year = vodYear(item);
+            return year >= decade && year < decade + 10;
+        });
+        appendVodChannelIfUseful(channels, signatures,
+                                 themedVodTitle(libraryTitle, decadeChannelLabel(decade) + QStringLiteral(" MOVIES")),
+                                 QStringLiteral("movie"), filtered, 2);
+    }
+}
+
+void appendThemedTvChannels(QVariantList *channels,
+                            QSet<QString> *signatures,
+                            const QString &libraryTitle,
+                            const QVariantList &showGroups) {
+    static const QList<VodGenreChannelRule> rules = {
+        {QStringLiteral("CARTOON CHANNEL"), {QStringLiteral("animation"), QStringLiteral("anime"), QStringLiteral("children"), QStringLiteral("kids")}, 1},
+        {QStringLiteral("COMEDY CHANNEL"), {QStringLiteral("comedy")}, 1},
+        {QStringLiteral("DRAMA CHANNEL"), {QStringLiteral("drama")}, 1},
+        {QStringLiteral("SCI-FI CHANNEL"), {QStringLiteral("science fiction"), QStringLiteral("sci-fi"), QStringLiteral("sci fi")}, 1},
+        {QStringLiteral("ACTION CHANNEL"), {QStringLiteral("action"), QStringLiteral("adventure")}, 1},
+        {QStringLiteral("CRIME CHANNEL"), {QStringLiteral("crime"), QStringLiteral("mystery")}, 1},
+        {QStringLiteral("REALITY CHANNEL"), {QStringLiteral("reality")}, 1},
+        {QStringLiteral("DOCUMENTARY CHANNEL"), {QStringLiteral("documentary")}, 1}
+    };
+
+    for (const VodGenreChannelRule &rule : rules) {
+        const QVariantList filtered = filterVodPrograms(showGroups, [&rule](const QVariantMap &item) {
+            return vodHasAnyGenre(item, rule.terms);
+        });
+        appendVodChannelIfUseful(channels, signatures,
+                                 themedVodTitle(libraryTitle, rule.title),
+                                 QStringLiteral("tv"), filtered, rule.minCount);
+    }
+
+    const QVariantList classic = filterVodPrograms(showGroups, [](const QVariantMap &item) {
+        const int year = vodYear(item);
+        return year > 0 && year <= 1979;
+    });
+    appendVodChannelIfUseful(channels, signatures,
+                             themedVodTitle(libraryTitle, QStringLiteral("CLASSIC TV")),
+                             QStringLiteral("tv"), classic, 1);
+
+    for (int decade : {1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020}) {
+        const QVariantList filtered = filterVodPrograms(showGroups, [decade](const QVariantMap &item) {
+            const int year = vodYear(item);
+            return year >= decade && year < decade + 10;
+        });
+        appendVodChannelIfUseful(channels, signatures,
+                                 themedVodTitle(libraryTitle, decadeChannelLabel(decade) + QStringLiteral(" TV")),
+                                 QStringLiteral("tv"), filtered, 1);
+    }
 }
 }
 
@@ -1006,7 +1247,7 @@ QVariantMap EmbyJellyfinBackend::formatItem(const QJsonObject &item) const {
     const QString type = itemType(item);
     const int duration = static_cast<int>(ticksToMs(item["RunTimeTicks"]));
 
-    return QVariantMap{
+    QVariantMap result{
         {"ratingKey", item["Id"].toString()},
         {"title", item["Name"].toString().toUpper()},
         {"type", type},
@@ -1026,6 +1267,12 @@ QVariantMap EmbyJellyfinBackend::formatItem(const QJsonObject &item) const {
         {"parentTitle", item["SeasonName"].toString()},
         {"originallyAvailableAt", item["PremiereDate"].toString()},
     };
+
+    const QStringList genres = jsonStringList(item.value(QStringLiteral("Genres")));
+    if (!genres.isEmpty())
+        result[QStringLiteral("genres")] = genres;
+
+    return result;
 }
 
 QVariantMap EmbyJellyfinBackend::formatMusicAlbum(const QJsonObject &item) const {
@@ -1218,7 +1465,10 @@ QVariantList EmbyJellyfinBackend::parsePlexItems(const QByteArray &body) const {
 
         const auto name = xml.name();
         if (name == QStringLiteral("Video") || name == QStringLiteral("Directory")) {
-            const QVariantMap item = formatPlexItem(xml.attributes());
+            QVariantMap item = formatPlexItem(xml.attributes());
+            const QStringList genres = plexGenresFromElement(&xml);
+            if (!genres.isEmpty())
+                item[QStringLiteral("genres")] = genres;
             if (!item["ratingKey"].toString().isEmpty())
                 result.append(item);
         }
@@ -3200,7 +3450,8 @@ void EmbyJellyfinBackend::load_next_episode(const QString &currentRatingKey) {
 
 QJsonObject EmbyJellyfinBackend::vodTvCacheIdentity() const {
     QJsonObject identity{
-        {QStringLiteral("provider"), mediaProvider()}
+        {QStringLiteral("provider"), mediaProvider()},
+        {QStringLiteral("schema"), QStringLiteral("vod-tv-themed-channels-v2")}
     };
     if (mediaProvider() == kProviderPlex) {
         const QJsonObject auth = loadPlexAuth();
@@ -3411,18 +3662,25 @@ void EmbyJellyfinBackend::buildVodTvChannelsFromLibraries(const QVariantList &li
                     lib.value(QStringLiteral("title")).toString().toUpper();
                 const bool hasMovies = !movies.isEmpty();
                 const bool hasShows = !showGroups.isEmpty();
+                QSet<QString> channelSignatures;
 
                 if (hasMovies) {
                     QString movieTitle = title;
                     if (hasShows)
                         movieTitle += QStringLiteral(" MOVIES");
-                    channels->append(vodChannel(movieTitle, QStringLiteral("movie"), movies));
+                    appendVodChannelIfUseful(channels.get(), &channelSignatures,
+                                             movieTitle, QStringLiteral("movie"), movies, 1);
+                    appendThemedMovieChannels(channels.get(), &channelSignatures,
+                                              title, movies);
                 }
                 if (hasShows) {
                     QString tvTitle = title;
                     if (hasMovies)
                         tvTitle += QStringLiteral(" TV");
-                    channels->append(vodChannel(tvTitle, QStringLiteral("tv"), showGroups));
+                    appendVodChannelIfUseful(channels.get(), &channelSignatures,
+                                             tvTitle, QStringLiteral("tv"), showGroups, 1);
+                    appendThemedTvChannels(channels.get(), &channelSignatures,
+                                           title, showGroups);
                 }
 
                 ++(*index);
@@ -3515,6 +3773,8 @@ void EmbyJellyfinBackend::fetchVodTvShowGroups(
                     {QStringLiteral("type"), QStringLiteral("series")},
                     {QStringLiteral("title"), show.value(QStringLiteral("title")).toString()},
                     {QStringLiteral("seriesKey"), seriesId},
+                    {QStringLiteral("year"), show.value(QStringLiteral("year"))},
+                    {QStringLiteral("genres"), show.value(QStringLiteral("genres"))},
                     {QStringLiteral("episodes"), playableEpisodes}
                 });
             }
