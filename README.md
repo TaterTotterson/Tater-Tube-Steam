@@ -21,7 +21,7 @@ This fork is focused on two appliance-style setups:
 - Game Center ROM browsing from RetroNAS/MiSTer shares with clean RetroArch game launch
 - PC Link game streaming from Sunshine/Moonlight hosts
 - Bluetooth controller pairing from Settings
-- Mobile web setup UI for module logins and API keys
+- Mobile web setup UI for module logins, API keys, local commercials, and custom VoD TV channels
 - NTSC composite, PAL composite, and Pi 5 HDMI auto image builds
 
 The easiest way to use it is to download the ready-to-flash `.img.xz` for your display from the latest GitHub release, flash it to an SD card, and boot the Pi.
@@ -36,6 +36,8 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - Autoplay next episode
 - Playlist and Collection support for Emby/Jellyfin
 - TV Mode builds extra movie, cartoon, genre, and decade channels when library metadata is available
+- Custom TV Mode channels can be built from selected movies and TV series in the Web Setup UI
+- TV Mode can use local commercial categories uploaded through the Web Setup UI
 - Audio and subtitle track selection
 - H.264/AAC transcode playback with display-adaptive Auto plus 4K, 1440p, 1080p, 720p, and 480p quality targets
 
@@ -60,6 +62,7 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - Shows each video in the VHS-style list
 - Uses mpv with yt-dlp streaming, defaulting to CRT-friendly 360p
 - Optional autoplay next video
+- TV Mode shuffles playlist channels and can use shared local commercial categories uploaded through the Web Setup UI
 
 ### Usenet
 - Connects to a Newznab-compatible indexer
@@ -124,7 +127,7 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 Tater Tube includes a small HTTP API for companion apps and voice-assistant bridges. It is enabled by default on the Pi image at port `24024`.
 
 ```bash
-curl http://240mp.local:24024/api/v1/status
+curl http://tatertube.local:24024/api/v1/status
 ```
 
 Useful endpoints:
@@ -150,7 +153,11 @@ Search results include normalized IDs such as `vod:movie:...`, `vod:show:...`, a
 
 ### Web Setup UI
 
-Open `http://240mp.local:24024/setup` from a phone or computer on the same network to update module settings, logins, API keys, RetroNAS settings, and Sunshine pairing without typing everything on the TV.
+Open `http://tatertube.local:24024/setup` from a phone or computer on the same network to update module settings, logins, API keys, RetroNAS settings, Sunshine pairing, local commercial categories, and custom VoD TV channels without typing everything on the TV.
+
+The Commercials page lets you create categories and upload local video files. Public Access TV Mode and Video on Demand TV Mode can then pick which categories to use, so commercials do not depend on YouTube playlists.
+
+The VoD Channels page lets you build named TV Mode channels from Plex, Emby, or Jellyfin movies and series. Custom channels are placed first when VoD TV Mode starts.
 
 The Web Setup UI uses the same API port as the Local Control API. If `MP240_API_TOKEN` is set, the page prompts for the token before loading or saving settings.
 
