@@ -543,6 +543,7 @@
     let commercialLibrary = null;
     let vodChannels = null;
     let vodDraftTitle = "";
+    let vodDraftCommercialCategory = "";
     let vodSearchQuery = "";
     let vodDraftItems = [];
     let vodSearchResults = [];
@@ -931,11 +932,23 @@
             <div class="picker-row">
               <span>
                 <span class="picker-title">${escapeHtml(channel.title || "Custom Channel")}</span>
-                <span class="picker-meta">${(channel.items || []).length} selections</span>
+                <span class="picker-meta">${(channel.items || []).length} selections${channel.commercialCategory ? " / " + escapeHtml(channel.commercialCategory) : ""}</span>
               </span>
               <button class="secondary tiny" type="button" data-vod-delete-channel="${escapeAttr(channel.id || "")}">Delete</button>
             </div>`).join("")}
         </div>`;
+    }
+
+    function renderVodCommercialCategoryOptions() {
+      const categories = (commercialLibrary && commercialLibrary.categories) ? commercialLibrary.categories : [];
+      return [
+        `<option value="">Use VoD Commercials Setting</option>`
+      ].concat(categories.map(category => {
+        const id = category.id || category.name || "";
+        const label = category.name || category.id || "Commercials";
+        const selected = id === vodDraftCommercialCategory ? " selected" : "";
+        return `<option value="${escapeAttr(id)}"${selected}>${escapeHtml(label)}</option>`;
+      })).join("");
     }
 
     function renderVodDraftItems() {
@@ -991,6 +1004,12 @@
             <div class="field">
               <label>Channel Name</label>
               <input data-vod-channel-name value="${escapeAttr(vodDraftTitle)}" autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label>Commercial Category</label>
+              <select data-vod-commercial-category>
+                ${renderVodCommercialCategoryOptions()}
+              </select>
             </div>
             <div class="section-label">Search Movies / Series</div>
             <div class="field">
@@ -1392,10 +1411,19 @@
       };
     }
 
+    function captureVodDraftForm(card) {
+      if (!card) return;
+      const titleInput = card.querySelector("[data-vod-channel-name]");
+      const categoryInput = card.querySelector("[data-vod-commercial-category]");
+      const queryInput = card.querySelector("[data-vod-search-query]");
+      vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
+      vodDraftCommercialCategory = categoryInput ? categoryInput.value.trim() : vodDraftCommercialCategory;
+      vodSearchQuery = queryInput ? queryInput.value.trim() : vodSearchQuery;
+    }
+
     async function searchVodItems(card) {
       const input = card.querySelector("[data-vod-search-query]");
-      const titleInput = card.querySelector("[data-vod-channel-name]");
-      vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
+      captureVodDraftForm(card);
       const query = input ? input.value.trim() : "";
       if (!query) {
         cardMessage(card, "Enter a search term.", "err");
@@ -1414,12 +1442,7 @@
 
     function addVodSearchResult(index) {
       const card = document.querySelector('[data-module="__vod_channels"]');
-      if (card) {
-        const titleInput = card.querySelector("[data-vod-channel-name]");
-        const queryInput = card.querySelector("[data-vod-search-query]");
-        vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
-        vodSearchQuery = queryInput ? queryInput.value.trim() : vodSearchQuery;
-      }
+      captureVodDraftForm(card);
       const item = vodSearchResults[index];
       if (!item) return;
       const normalized = normalizeVodDraftItem(item);
@@ -1433,17 +1456,13 @@
 
     function removeVodDraftItem(index) {
       const card = document.querySelector('[data-module="__vod_channels"]');
-      if (card) {
-        const titleInput = card.querySelector("[data-vod-channel-name]");
-        const queryInput = card.querySelector("[data-vod-search-query]");
-        vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
-        vodSearchQuery = queryInput ? queryInput.value.trim() : vodSearchQuery;
-      }
+      captureVodDraftForm(card);
       vodDraftItems.splice(index, 1);
       render();
     }
 
     async function saveVodChannel(card) {
+      captureVodDraftForm(card);
       const input = card.querySelector("[data-vod-channel-name]");
       const title = input ? input.value.trim() : "";
       if (!title) {
@@ -1457,10 +1476,15 @@
       cardMessage(card, "Saving channel...");
       const result = await api("/api/v1/setup/vod-tv/custom-channels", {
         method: "POST",
-        body: JSON.stringify({ title, items: vodDraftItems })
+        body: JSON.stringify({
+          title,
+          commercialCategory: vodDraftCommercialCategory,
+          items: vodDraftItems
+        })
       });
       vodChannels = { ok: true, channels: result.channels || [] };
       vodDraftTitle = "";
+      vodDraftCommercialCategory = "";
       vodSearchQuery = "";
       vodDraftItems = [];
       vodSearchResults = [];
@@ -1573,6 +1597,7 @@
       document.querySelectorAll("[data-vod-clear-draft]").forEach(button => {
         button.onclick = () => {
           vodDraftTitle = "";
+          vodDraftCommercialCategory = "";
           vodSearchQuery = "";
           vodDraftItems = [];
           vodSearchResults = [];

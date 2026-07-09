@@ -823,9 +823,7 @@ if (boot_image.GetWidth() > 0 && boot_image.GetHeight() > 0) {
     center_sprite(boot_sprite, boot_image);
 }
 
-overlay_y = screen_height * 0.76;
-line_y = screen_height * 0.82;
-hint_y = screen_height * 0.88;
+line_y = screen_height * 0.92;
 
 fun center_text_sprite(sprite, image, y) {
     sprite.SetX((screen_width - image.GetWidth()) / 2);
@@ -848,14 +846,14 @@ hint_sprite.SetOpacity(0.0);
 
 fun message_callback(text) {
     if (text == "240MP_UPDATE") {
-        set_sprite_text(overlay_sprite, "///// FLASHING FIRMWARE /////", 1.0, 0.42, 0.0, overlay_y);
-        set_sprite_text(line_sprite, "DO NOT POWER OFF", 1.0, 1.0, 1.0, line_y);
-        set_sprite_text(hint_sprite, "VIDEO WILL RETURN", 0.65, 0.65, 0.65, hint_y);
+        overlay_sprite.SetOpacity(0.0);
+        set_sprite_text(line_sprite, "UPDATING - DO NOT POWER OFF", 1.0, 0.42, 0.0, line_y);
+        hint_sprite.SetOpacity(0.0);
     }
     if (text == "240MP_UPDATE_FAILED") {
-        set_sprite_text(overlay_sprite, "///// UPDATE FAILED /////", 1.0, 0.42, 0.0, overlay_y);
-        set_sprite_text(line_sprite, "CHECK UPDATE LOG", 1.0, 1.0, 1.0, line_y);
-        set_sprite_text(hint_sprite, "/var/log/240mp-update.log", 0.65, 0.65, 0.65, hint_y);
+        overlay_sprite.SetOpacity(0.0);
+        set_sprite_text(line_sprite, "UPDATE FAILED - CHECK LOG", 1.0, 0.42, 0.0, line_y);
+        hint_sprite.SetOpacity(0.0);
     }
 }
 

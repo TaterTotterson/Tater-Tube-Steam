@@ -37,7 +37,8 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - Playlist and Collection support for Emby/Jellyfin
 - TV Mode builds extra movie, cartoon, genre, and decade channels when library metadata is available
 - Custom TV Mode channels can be built from selected movies and TV series in the Web Setup UI
-- TV Mode can use local commercial categories uploaded through the Web Setup UI
+- Custom TV Mode channels can use a specific local commercial category
+- TV Mode can use local commercial categories, optional mid-roll breaks, and no-repeat commercial rotation
 - Audio and subtitle track selection
 - H.264/AAC transcode playback with display-adaptive Auto plus 4K, 1440p, 1080p, 720p, and 480p quality targets
 
@@ -63,6 +64,7 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 - Uses mpv with yt-dlp streaming, defaulting to CRT-friendly 360p
 - Optional autoplay next video
 - TV Mode shuffles playlist channels and can use shared local commercial categories uploaded through the Web Setup UI
+- TV Mode rotates commercials without repeating until the selected pool has played
 
 ### Usenet
 - Connects to a Newznab-compatible indexer
@@ -101,7 +103,7 @@ The easiest way to use it is to download the ready-to-flash `.img.xz` for your d
 ### Appliance Image
 - Boots straight into Tater Tube
 - Separate NTSC composite, PAL composite, and Pi 5 HDMI auto images
-- Tater Tube image boot screen
+- Tater Tube image boot screen and compact one-line update splash
 - SSH enabled for debugging
 - Argon IR remote defaults
 - Argon ONE fan Auto, Off, and fixed-speed settings
@@ -155,9 +157,9 @@ Search results include normalized IDs such as `vod:movie:...`, `vod:show:...`, a
 
 Open `http://tatertube.local:24024/setup` from a phone or computer on the same network to update module settings, logins, API keys, RetroNAS settings, Sunshine pairing, local commercial categories, and custom VoD TV channels without typing everything on the TV.
 
-The Commercials page lets you create categories and upload local video files. Public Access TV Mode and Video on Demand TV Mode can then pick which categories to use, so commercials do not depend on YouTube playlists.
+The Commercials page lets you create categories and upload local video files. Public Access TV Mode and Video on Demand TV Mode can then pick which categories to use, so commercials do not depend on YouTube playlists. Commercial playback rotates through the selected pool before repeating.
 
-The VoD Channels page lets you build named TV Mode channels from Plex, Emby, or Jellyfin movies and series. Custom channels are placed first when VoD TV Mode starts.
+The VoD Channels page lets you build named TV Mode channels from Plex, Emby, or Jellyfin movies and series. Custom channels are placed first when VoD TV Mode starts and can optionally use a specific commercial category.
 
 The Web Setup UI uses the same API port as the Local Control API. If `MP240_API_TOKEN` is set, the page prompts for the token before loading or saving settings.
 

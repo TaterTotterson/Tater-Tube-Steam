@@ -56,6 +56,7 @@ FocusScope {
     property double tvStartedAtMs: 0
     property var tvChannels: []
     property var tvCommercialPool: []
+    property var tvCommercialDeck: []
     property var tvLoadQueue: []
     property var tvCurrentLoad: ({})
     property var tvPendingPlayback: ({})
@@ -479,7 +480,12 @@ FocusScope {
     function randomCommercial() {
         if (tvCommercialPool.length === 0)
             return null
-        return tvCommercialPool[Math.floor(Math.random() * tvCommercialPool.length)]
+        var deck = tvCommercialDeck || []
+        if (deck.length === 0)
+            deck = shuffleList(tvCommercialPool)
+        var commercial = deck.shift()
+        tvCommercialDeck = deck
+        return commercial
     }
 
     function buildTvSchedule(videos) {
@@ -697,6 +703,7 @@ FocusScope {
                 commercials.push(tvPendingCommercials[i])
         }
         tvCommercialPool = commercials
+        tvCommercialDeck = []
 
         var readyChannels = []
         for (var j = 0; j < tvPendingChannels.length; j++) {
@@ -749,6 +756,7 @@ FocusScope {
         tvStartedAtMs = Date.now()
         tvChannels = []
         tvCommercialPool = []
+        tvCommercialDeck = []
         tvPendingChannels = []
         tvPendingCommercials = localCommercialPool()
         tvCurrentLoad = ({})

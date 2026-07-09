@@ -9,6 +9,7 @@ FocusScope {
     signal goBack()
 
     property string youtubeModuleId: "com.240mp.youtube_playlist"
+    property string vodModuleId: "com.240mp.emby_jellyfin"
     property var sourceChannels: []
     property var channels: []
     property var commercialPool: []
@@ -21,6 +22,7 @@ FocusScope {
     property bool tuningStaticVisible: true
     property bool noSignalVisible: false
     property bool stoppingForTune: false
+    property bool stoppingForScheduleAdvance: false
     property bool streamStarted: false
     property bool streamRequestActive: false
     property string pendingRequestId: ""
@@ -59,6 +61,11 @@ FocusScope {
         return value === true || value === "ON" || value === "true" || value === "1"
     }
 
+    function midrollCommercialsEnabled() {
+        var value = appCore.get_setting(vodModuleId, "vod_midroll_commercials")
+        return value === true || value === "ON" || value === "true" || value === "1"
+    }
+
     function durationSeconds(item, fallback) {
         var raw = item ? item.duration : 0
         var value = typeof raw === "number" ? raw : parseFloat(raw)
@@ -75,13 +82,39 @@ FocusScope {
         return "CH " + (channel.number || "--") + (title !== "" ? " " + title : "")
     }
 
-    function randomCommercial() {
-        if (commercialPool.length === 0)
-            return null
-        return commercialPool[Math.floor(Math.random() * commercialPool.length)]
+    function commercialStatePool(state) {
+        return state && state.pool ? state.pool : []
     }
 
-    function appendScheduleItem(schedule, source, kind, startAt) {
+    function randomCommercialFromState(state) {
+        var pool = commercialStatePool(state)
+        if (pool.length === 0)
+            return null
+        var deck = state.deck || []
+        if (deck.length === 0)
+            deck = shuffleList(pool)
+        var commercial = deck.shift()
+        state.deck = deck
+        return commercial
+    }
+
+    function commercialStateForChannel(channelSource, states) {
+        var category = ""
+        if (channelSource && channelSource.channelType === "custom")
+            category = String(channelSource.commercialCategory || "").trim()
+        var key = category === "" ? "__global__" : ("category:" + category)
+        if (!states[key]) {
+            states[key] = {
+                pool: category === ""
+                      ? commercialPool
+                      : youtubePlaylistBackend.get_commercial_videos_for_category(category),
+                deck: []
+            }
+        }
+        return states[key]
+    }
+
+    function appendScheduleItem(schedule, source, kind, startAt, segmentDuration, mediaOffset, forceAdvance) {
         if (!source)
             return startAt
         if (kind === "commercial") {
@@ -92,42 +125,102 @@ FocusScope {
         }
 
         var fallback = kind === "commercial" ? 30 : (kind === "movie" ? 5400 : 1500)
-        var duration = durationSeconds(source, fallback)
+        var fullDuration = durationSeconds(source, fallback)
+        var duration = segmentDuration === undefined || segmentDuration === null
+                       ? fullDuration
+                       : Math.max(5, segmentDuration)
         var item = Object.assign({}, source)
         item.kind = kind
         item.duration = duration
+        item.fullDuration = fullDuration
+        item.mediaOffset = Math.max(0, mediaOffset || 0)
+        item.forceAdvance = forceAdvance === true
         item.start = startAt
         item.end = startAt + duration
         schedule.push(item)
         return item.end
     }
 
-    function appendCommercialBreak(schedule, startAt) {
-        if (!commercialsEnabled() || commercialPool.length === 0)
+    function appendCommercialBreak(schedule, startAt, commercialState) {
+        if (!commercialsEnabled() || commercialStatePool(commercialState).length === 0)
             return startAt
 
         var total = startAt
         var count = 1 + Math.floor(Math.random() * 3)
         for (var i = 0; i < count; i++) {
-            var commercial = randomCommercial()
+            var commercial = randomCommercialFromState(commercialState)
             if (commercial)
                 total = appendScheduleItem(schedule, commercial, "commercial", total)
         }
         return total
     }
 
-    function buildMovieSchedule(programs) {
+    function midrollOffsetsFor(source, kind, duration, commercialState) {
+        if (!midrollCommercialsEnabled() || !commercialsEnabled() ||
+                commercialStatePool(commercialState).length === 0)
+            return []
+        if (kind !== "movie" && kind !== "episode")
+            return []
+        if (duration < 1200)
+            return []
+
+        var count = 1
+        if (kind === "movie") {
+            count = duration >= 7200 ? 3 : (duration >= 3600 ? 2 : 1)
+        } else {
+            count = duration >= 2700 ? 2 : 1
+        }
+
+        var guard = Math.min(900, Math.max(420, duration * 0.15))
+        var jitter = Math.min(360, Math.max(90, duration * 0.06))
+        var minGap = Math.min(900, Math.max(420, duration / (count + 2)))
+        var offsets = []
+        for (var i = 1; i <= count; i++) {
+            var center = duration * (i / (count + 1))
+            var offset = center + ((Math.random() * 2.0 - 1.0) * jitter)
+            offset = Math.max(guard, Math.min(duration - guard, offset))
+            if (offsets.length > 0 && offset - offsets[offsets.length - 1] < minGap)
+                offset = offsets[offsets.length - 1] + minGap
+            if (offset > guard && offset < duration - guard)
+                offsets.push(offset)
+        }
+        return offsets
+    }
+
+    function appendProgramWithMidroll(schedule, source, kind, startAt, commercialState) {
+        var fallback = kind === "movie" ? 5400 : 1500
+        var fullDuration = durationSeconds(source, fallback)
+        var offsets = midrollOffsetsFor(source, kind, fullDuration, commercialState)
+        if (offsets.length === 0)
+            return appendScheduleItem(schedule, source, kind, startAt)
+
+        var total = startAt
+        var cursor = 0
+        for (var i = 0; i < offsets.length; i++) {
+            var offset = Math.max(cursor + 5, Math.min(fullDuration - 5, offsets[i]))
+            total = appendScheduleItem(schedule, source, kind, total,
+                                       offset - cursor, cursor, true)
+            total = appendCommercialBreak(schedule, total, commercialState)
+            cursor = offset
+        }
+        if (fullDuration - cursor >= 5)
+            total = appendScheduleItem(schedule, source, kind, total,
+                                       fullDuration - cursor, cursor, false)
+        return total
+    }
+
+    function buildMovieSchedule(programs, commercialState) {
         var schedule = []
         var total = 0
         var movies = shuffleList(programs || [])
         for (var i = 0; i < movies.length; i++) {
-            total = appendScheduleItem(schedule, movies[i], "movie", total)
-            total = appendCommercialBreak(schedule, total)
+            total = appendProgramWithMidroll(schedule, movies[i], "movie", total, commercialState)
+            total = appendCommercialBreak(schedule, total, commercialState)
         }
         return { schedule: schedule, totalDuration: total }
     }
 
-    function buildTvSchedule(groups) {
+    function buildTvSchedule(groups, commercialState) {
         var schedule = []
         var total = 0
         var states = []
@@ -158,15 +251,15 @@ FocusScope {
             var state = states[stateIndex]
             var episode = state.episodes[state.nextIndex % state.episodes.length]
             state.nextIndex++
-            total = appendScheduleItem(schedule, episode, "episode", total)
-            total = appendCommercialBreak(schedule, total)
+            total = appendProgramWithMidroll(schedule, episode, "episode", total, commercialState)
+            total = appendCommercialBreak(schedule, total, commercialState)
             previousState = stateIndex
         }
 
         return { schedule: schedule, totalDuration: total }
     }
 
-    function buildCustomSchedule(programs) {
+    function buildCustomSchedule(programs, commercialState) {
         var schedule = []
         var total = 0
         var movies = []
@@ -204,12 +297,12 @@ FocusScope {
                 var state = states[stateIndex]
                 var episode = state.episodes[state.nextIndex % state.episodes.length]
                 state.nextIndex++
-                total = appendScheduleItem(schedule, episode, "episode", total)
-                total = appendCommercialBreak(schedule, total)
+                total = appendProgramWithMidroll(schedule, episode, "episode", total, commercialState)
+                total = appendCommercialBreak(schedule, total, commercialState)
                 previousState = stateIndex
             } else if (movieIndex < shuffledMovies.length) {
-                total = appendScheduleItem(schedule, shuffledMovies[movieIndex], "movie", total)
-                total = appendCommercialBreak(schedule, total)
+                total = appendProgramWithMidroll(schedule, shuffledMovies[movieIndex], "movie", total, commercialState)
+                total = appendCommercialBreak(schedule, total, commercialState)
                 movieIndex++
                 previousState = -1
             }
@@ -222,6 +315,7 @@ FocusScope {
         var ready = []
         var customChannels = []
         var generatedChannels = []
+        var commercialStates = ({})
         for (var s = 0; s < (loadedChannels || []).length; s++) {
             var channelSource = loadedChannels[s] || ({})
             if (channelSource.channelType === "custom")
@@ -232,11 +326,12 @@ FocusScope {
         var shuffled = customChannels.concat(shuffleList(generatedChannels))
         for (var i = 0; i < shuffled.length; i++) {
             var source = shuffled[i] || ({})
+            var commercialState = commercialStateForChannel(source, commercialStates)
             var scheduleData = source.channelType === "custom"
-                ? buildCustomSchedule(source.programs || [])
+                ? buildCustomSchedule(source.programs || [], commercialState)
                 : (source.channelType === "tv"
-                ? buildTvSchedule(source.programs || [])
-                : buildMovieSchedule(source.programs || []))
+                ? buildTvSchedule(source.programs || [], commercialState)
+                : buildMovieSchedule(source.programs || [], commercialState))
             if (!scheduleData.schedule || scheduleData.schedule.length === 0 ||
                     scheduleData.totalDuration <= 0) {
                 continue
@@ -291,18 +386,29 @@ FocusScope {
         var position = elapsed % channel.totalDuration
         for (var i = 0; i < channel.schedule.length; i++) {
             var item = channel.schedule[i]
-            if (position >= item.start && position < item.end)
-                return { item: item, index: i, offset: Math.max(0, position - item.start) }
+            if (position >= item.start && position < item.end) {
+                var segmentOffset = Math.max(0, position - item.start)
+                var mediaOffset = Math.max(0, item.mediaOffset || 0)
+                return {
+                    item: item,
+                    index: i,
+                    offset: mediaOffset + segmentOffset,
+                    segmentRemaining: Math.max(0, item.duration - segmentOffset)
+                }
+            }
         }
 
-        return { item: channel.schedule[0], index: 0, offset: 0 }
+        return { item: channel.schedule[0], index: 0, offset: channel.schedule[0].mediaOffset || 0,
+                 segmentRemaining: channel.schedule[0].duration || 0 }
     }
 
     function showStaticForChannel(channel) {
+        scheduleAdvanceTimer.stop()
         tuningStaticVisible = true
         noSignalVisible = false
         streamStarted = false
         streamRequestActive = false
+        stoppingForScheduleAdvance = false
         pendingRequestId = ""
         pendingPlayback = ({})
         youtubePlaylistBackend.cancel_video_stream_resolve()
@@ -341,19 +447,20 @@ FocusScope {
         pendingPlayback = {
             item: resolved.item,
             offset: resolved.offset || 0.0,
+            segmentRemaining: resolved.segmentRemaining || 0.0,
             label: label
         }
         if (resolved.item.kind === "commercial") {
             pendingRequestId = ""
             pendingPlayback = ({})
             launchPlayback(resolved.item.url || "", "", resolved.offset || 0.0,
-                           label, false, "")
+                           label, false, "", resolved.segmentRemaining || 0.0, resolved.item)
         } else {
             embyBackend.prepare_vod_tv_stream(requestId, resolved.item)
         }
     }
 
-    function launchPlayback(url, httpHeaderFields, offset, label, allowYtdl, format) {
+    function launchPlayback(url, httpHeaderFields, offset, label, allowYtdl, format, segmentRemaining, item) {
         if (!url) {
             noSignalVisible = true
             tuningStaticVisible = false
@@ -364,14 +471,22 @@ FocusScope {
 
         streamStarted = true
         stoppingForTune = false
+        stoppingForScheduleAdvance = false
         streamRequestActive = false
         noSignalVisible = false
         mpvController.loadAndPlay(url, offset || 0.0, 0, -1, [], false, -1, 0.0,
                                   httpHeaderFields || "", false, "ota", false, label || statusText,
                                   false, !!allowYtdl, format || "")
+
+        scheduleAdvanceTimer.stop()
+        if (item && item.forceAdvance === true && (segmentRemaining || 0) > 1.0) {
+            scheduleAdvanceTimer.interval = Math.max(1000, Math.round(segmentRemaining * 1000))
+            scheduleAdvanceTimer.restart()
+        }
     }
 
     function playNextScheduleItem() {
+        scheduleAdvanceTimer.stop()
         if (channels.length === 0)
             return
 
@@ -429,6 +544,7 @@ FocusScope {
     function exitTvMode() {
         leaving = true
         tuneTimer.stop()
+        scheduleAdvanceTimer.stop()
         pendingRequestId = ""
         youtubePlaylistBackend.cancel_video_stream_resolve()
         if (mpvController.running)
@@ -470,6 +586,20 @@ FocusScope {
         onTriggered: tvRoot.requestSelectedStream()
     }
 
+    Timer {
+        id: scheduleAdvanceTimer
+        repeat: false
+        onTriggered: {
+            if (tvRoot.leaving)
+                return
+            tvRoot.stoppingForScheduleAdvance = true
+            if (mpvController.running)
+                mpvController.stop()
+            else
+                tvRoot.playNextScheduleItem()
+        }
+    }
+
     Connections {
         target: embyBackend
 
@@ -489,7 +619,9 @@ FocusScope {
                                   pending.offset || 0.0,
                                   pending.label || tvRoot.statusText,
                                   false,
-                                  "")
+                                  "",
+                                  pending.segmentRemaining || 0.0,
+                                  pending.item || ({}))
         }
 
         function onVodTvStreamFailed(requestId, message) {
@@ -524,10 +656,16 @@ FocusScope {
         function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
             if (tvRoot.leaving)
                 return
+            scheduleAdvanceTimer.stop()
             tvRoot.playNextScheduleItem()
         }
 
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
+            if (tvRoot.stoppingForScheduleAdvance) {
+                tvRoot.stoppingForScheduleAdvance = false
+                tvRoot.playNextScheduleItem()
+                return
+            }
             if (tvRoot.stoppingForTune) {
                 tvRoot.stoppingForTune = false
                 return
@@ -542,6 +680,7 @@ FocusScope {
                 return
             }
             tvRoot.streamRequestActive = false
+            scheduleAdvanceTimer.stop()
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = "VOD TV PLAYBACK FAILED"

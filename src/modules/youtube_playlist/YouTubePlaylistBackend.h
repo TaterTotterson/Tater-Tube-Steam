@@ -22,6 +22,7 @@ public:
     Q_INVOKABLE QString normalize_playlist_input(const QString &input) const;
     Q_INVOKABLE QVariantList get_commercial_categories() const;
     Q_INVOKABLE QVariantList get_commercial_videos_for_setting(const QString &settingKey) const;
+    Q_INVOKABLE QVariantList get_commercial_videos_for_category(const QString &categoryId) const;
     Q_INVOKABLE QVariantMap resolve_playlist_info(const QString &input) const;
     Q_INVOKABLE QString ytdl_format_for_quality(const QString &quality) const;
     Q_INVOKABLE void resolve_video_stream(const QString &requestId, const QString &url,
@@ -55,6 +56,7 @@ private:
     QString ytDlpPath() const;
     QString commercialRootPath() const;
     QVariantList commercialCategoryOptions() const;
+    QVariantList commercialVideosForCategoryId(const QString &categoryId, int startIndex = 0) const;
     QVariantList commercialVideosForSelection(const QVariantMap &selection) const;
     QVariantList playlistRemovalOptions() const;
     QString playlistCachePath(const QString &playlistUrl) const;

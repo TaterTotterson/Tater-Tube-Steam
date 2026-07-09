@@ -1549,6 +1549,10 @@ void ControlApiServer::handleSetupVodCustomChannelSaveRequest(QTcpSocket *socket
         {"items", items},
         {"updatedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}
     };
+    const QString commercialCategory = safeCommercialName(
+        body.value(QStringLiteral("commercialCategory")).toString(), QString()).trimmed();
+    if (!commercialCategory.isEmpty())
+        channel[QStringLiteral("commercialCategory")] = commercialCategory;
 
     QJsonArray channels = vodCustomChannels();
     bool replaced = false;

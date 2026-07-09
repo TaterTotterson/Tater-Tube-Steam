@@ -59,6 +59,13 @@
       "requires_auth": true
     },
     {
+      "key": "vod_midroll_commercials",
+      "label": "TV Mid-Roll Commercials",
+      "type": "toggle",
+      "default": "OFF",
+      "requires_auth": true
+    },
+    {
       "key": "logout",
       "label": "Sign out",
       "type": "action",

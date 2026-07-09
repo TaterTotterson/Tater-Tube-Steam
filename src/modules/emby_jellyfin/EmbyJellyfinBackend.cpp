@@ -302,12 +302,17 @@ QVariantMap vodProgramFromItem(QVariantMap item) {
 
 QVariantMap vodChannel(const QString &title,
                        const QString &channelType,
-                       const QVariantList &programs) {
-    return QVariantMap{
+                       const QVariantList &programs,
+                       const QString &commercialCategory = QString()) {
+    QVariantMap channel{
         {QStringLiteral("title"), title.toUpper()},
         {QStringLiteral("channelType"), channelType},
         {QStringLiteral("programs"), programs}
     };
+    const QString cleanCategory = commercialCategory.trimmed();
+    if (!cleanCategory.isEmpty())
+        channel[QStringLiteral("commercialCategory")] = cleanCategory;
+    return channel;
 }
 
 QStringList vodGenres(const QVariantMap &item) {
@@ -3823,13 +3828,14 @@ void EmbyJellyfinBackend::buildCustomVodTvChannels(
             }
         }
 
-        const auto finishOne = [title, movies, channels, index, processNext](const QVariantList &showGroups) {
+        const QString commercialCategory = definition.value(QStringLiteral("commercialCategory")).toString().trimmed();
+        const auto finishOne = [title, movies, commercialCategory, channels, index, processNext](const QVariantList &showGroups) {
             QVariantList programs = movies;
             for (const QVariant &group : showGroups)
                 programs.append(group);
 
             if (!title.isEmpty() && !programs.isEmpty())
-                channels->append(vodChannel(title, QStringLiteral("custom"), programs));
+                channels->append(vodChannel(title, QStringLiteral("custom"), programs, commercialCategory));
 
             ++(*index);
             (*processNext)();
