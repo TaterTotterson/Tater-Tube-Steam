@@ -31,6 +31,20 @@
       "default": "ON"
     },
     {
+      "key": "public_access_commercial_categories",
+      "label": "PUBLIC ACCESS COMMERCIALS",
+      "type": "multiselect_submenu",
+      "options_source": "dynamic",
+      "options_slot": "load_public_access_commercial_category_options"
+    },
+    {
+      "key": "vod_commercial_categories",
+      "label": "VOD COMMERCIALS",
+      "type": "multiselect_submenu",
+      "options_source": "dynamic",
+      "options_slot": "load_vod_commercial_category_options"
+    },
+    {
       "key": "remove_playlist_id",
       "label": "PLAYLIST TO REMOVE",
       "type": "list_single",

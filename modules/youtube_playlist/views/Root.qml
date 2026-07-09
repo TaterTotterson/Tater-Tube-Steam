@@ -17,7 +17,7 @@ FocusScope {
     property string playlistTitle: "YOUTUBE PLAYLIST"
     property string playlistInput: ""
     property var playlists: []
-    property var commercialPlaylists: []
+    property var commercialCategoryRows: []
     property var playlistRows: []
     property var tvMenuRows: []
     property var storePlaylists: [
@@ -89,21 +89,31 @@ FocusScope {
         return Array.isArray(value) ? value : []
     }
 
-    function loadCommercialPlaylists() {
-        var saved = listSetting("commercial_playlists")
+    function mapSetting(key) {
+        var value = appCore.get_setting(moduleId, key)
+        return value && typeof value === "object" && !Array.isArray(value) ? value : ({})
+    }
+
+    function commercialCategoryEnabled(id) {
+        var selected = mapSetting("public_access_commercial_categories")
+        if (selected[id] === undefined || selected[id] === null)
+            return true
+        return selected[id] === true || selected[id] === "ON" || selected[id] === "true" || selected[id] === "1"
+    }
+
+    function buildCommercialCategoryRows() {
+        var categories = youtubePlaylistBackend.get_commercial_categories()
         var rows = []
-        var seen = ({})
-        for (var i = 0; i < saved.length; i++) {
-            var item = Object.assign({}, saved[i] || ({}))
-            var input = (item.input || item.url || "").trim()
-            if (input === "" || seen[input] === true)
-                continue
-            seen[input] = true
-            item.input = input
-            item.title = item.title || ("COMMERCIALS " + (rows.length + 1))
-            rows.push(item)
+        for (var i = 0; i < categories.length; i++) {
+            var category = Object.assign({}, categories[i] || ({}))
+            category.rowType = "category"
+            category.enabled = commercialCategoryEnabled(category.id || "")
+            category.title = (category.enabled ? "ON  " : "OFF ") + (category.label || category.id || "COMMERCIALS")
+            rows.push(category)
         }
-        commercialPlaylists = rows
+        if (rows.length === 0)
+            rows.push({ rowType: "empty", title: "NO COMMERCIALS UPLOADED" })
+        commercialCategoryRows = rows
     }
 
     function buildPlaylistRows() {
@@ -114,7 +124,7 @@ FocusScope {
             item.rowType = "playlist"
             rows.push(item)
         }
-        if (playlists.length > 0 || commercialPlaylists.length > 0)
+        if (playlists.length > 0)
             rows.push({ rowType: "refresh", title: "REFRESH ALL PLAYLISTS" })
         rows.push({ rowType: "add", title: "+ ADD PLAYLIST" })
         rows.push({ rowType: "store", title: "PLAYLIST STORE" })
@@ -125,7 +135,7 @@ FocusScope {
         tvMenuRows = [
             { rowType: "start", title: "START TV MODE" },
             { rowType: "commercials", title: "COMMERCIALS " + (tvCommercialsEnabled() ? "ON" : "OFF") },
-            { rowType: "add_commercial", title: "+ ADD COMMERCIAL PLAYLIST" }
+            { rowType: "commercial_categories", title: "COMMERCIAL CATEGORIES" }
         ]
     }
 
@@ -153,7 +163,6 @@ FocusScope {
         tvStoppingForTune = false
         tvCurrentScheduleIndex = -1
         playlists = youtubePlaylistBackend.get_saved_playlists()
-        loadCommercialPlaylists()
         buildPlaylistRows()
         mode = "library"
         var idx = preferredIndex === undefined ? currentPlaylistIndex : preferredIndex
@@ -169,7 +178,6 @@ FocusScope {
         tvTuningStaticVisible = false
         tvStoppingForTune = false
         tvCurrentScheduleIndex = -1
-        loadCommercialPlaylists()
         buildTvMenuRows()
         mode = "tvmenu"
         tvMenuList.currentIndex = Math.max(0, Math.min(tvMenuList.currentIndex, tvMenuRows.length - 1))
@@ -197,6 +205,13 @@ FocusScope {
         storeList.currentIndex = Math.max(0, Math.min(storeList.currentIndex, storePlaylists.length - 1))
     }
 
+    function showCommercialCategories() {
+        buildCommercialCategoryRows()
+        mode = "commercialcategories"
+        commercialCategoryList.currentIndex = Math.max(0, Math.min(commercialCategoryList.currentIndex,
+                                                                   commercialCategoryRows.length - 1))
+    }
+
     function cancelAdd() {
         addingPlaylist = false
         pendingPlaylistInput = ""
@@ -215,13 +230,6 @@ FocusScope {
             buildPlaylistRows()
             return false
         }
-        buildPlaylistRows()
-        return true
-    }
-
-    function saveCommercialPlaylistRows(nextCommercials) {
-        appCore.save_setting(moduleId, "commercial_playlists", nextCommercials)
-        commercialPlaylists = nextCommercials
         buildPlaylistRows()
         return true
     }
@@ -284,15 +292,11 @@ FocusScope {
             return
         }
 
-        var isCommercial = pendingPlaylistKind === "commercial"
-        var targetPlaylists = isCommercial ? commercialPlaylists : playlists
+        var targetPlaylists = playlists
         for (var i = 0; i < targetPlaylists.length; i++) {
             if (targetPlaylists[i].url === info.url) {
                 statusText = "PLAYLIST ALREADY ADDED"
-                if (isCommercial && addReturnMode === "tvmenu")
-                    showTvMenu()
-                else
-                    loadPlaylistLibrary(isCommercial ? playlists.length + i + 1 : i + 1)
+                loadPlaylistLibrary(i + 1)
                 return
             }
         }
@@ -301,11 +305,11 @@ FocusScope {
             id: info.id || info.url,
             input: info.input || value,
             url: info.url,
-            title: info.title || ((isCommercial ? "COMMERCIALS " : "PLAYLIST ") + (targetPlaylists.length + 1))
+            title: info.title || ("PLAYLIST " + (targetPlaylists.length + 1))
         }
         var next = targetPlaylists.slice()
         next.push(item)
-        var saved = isCommercial ? saveCommercialPlaylistRows(next) : savePlaylistRows(next)
+        var saved = savePlaylistRows(next)
         if (!saved) {
             mode = "add"
             statusText = "COULD NOT SAVE PLAYLIST"
@@ -314,11 +318,8 @@ FocusScope {
             playlistField.selectAll()
             return
         }
-        statusText = isCommercial ? "COMMERCIAL PLAYLIST ADDED" : "PLAYLIST ADDED"
-        if (isCommercial && addReturnMode === "tvmenu")
-            showTvMenu()
-        else
-            loadPlaylistLibrary(isCommercial ? playlists.length + next.length : next.length)
+        statusText = "PLAYLIST ADDED"
+        loadPlaylistLibrary(next.length)
     }
 
     function selectPlaylist(index) {
@@ -363,9 +364,37 @@ FocusScope {
             startTvMode()
         } else if (row.rowType === "commercials") {
             toggleTvCommercials()
-        } else if (row.rowType === "add_commercial") {
-            showAdd("ADD COMMERCIAL PLAYLIST", "commercial", "tvmenu")
+        } else if (row.rowType === "commercial_categories") {
+            showCommercialCategories()
         }
+    }
+
+    function toggleCommercialCategory(index) {
+        if (index < 0 || index >= commercialCategoryRows.length)
+            return
+        var row = commercialCategoryRows[index] || ({})
+        if (row.rowType !== "category" || !row.id)
+            return
+        appCore.save_setting(moduleId, "public_access_commercial_categories." + row.id,
+                             !commercialCategoryEnabled(row.id))
+        buildCommercialCategoryRows()
+        commercialCategoryList.currentIndex = Math.max(0, Math.min(index, commercialCategoryRows.length - 1))
+    }
+
+    function pageCommercialCategories(direction) {
+        if (commercialCategoryRows.length === 0) return
+        var rowHeight = root.sh * 0.0583333
+        var rows = Math.max(1, Math.floor(commercialCategoryList.height / rowHeight) - 1)
+        var next = Math.max(0, Math.min(commercialCategoryList.count - 1,
+                                        commercialCategoryList.currentIndex + direction * rows))
+        commercialCategoryList.currentIndex = next
+        commercialCategoryList.positionViewAtIndex(next, ListView.Contain)
+    }
+
+    function localCommercialPool() {
+        if (!tvCommercialsEnabled())
+            return []
+        return youtubePlaylistBackend.get_commercial_videos_for_setting("public_access_commercial_categories")
     }
 
     function loadPlaylist(input) {
@@ -377,7 +406,7 @@ FocusScope {
     }
 
     function refreshAllPlaylists() {
-        if (playlists.length === 0 && commercialPlaylists.length === 0) {
+        if (playlists.length === 0) {
             mode = "message"
             statusText = "NO PLAYLISTS SAVED"
             return
@@ -534,6 +563,10 @@ FocusScope {
         tvStoppingForTune = false
         tvCurrentScheduleIndex = resolved.index
         var format = youtubePlaylistBackend.ytdl_format_for_quality(playbackQuality())
+        if (resolved.item.kind === "commercial" && resolved.item.local === true) {
+            launchTvPlayback(resolved.item.url || "", resolved.offset || 0.0, label, false, "")
+            return
+        }
         var requestId = "tv-" + (++tvResolveSerial)
         tvPendingResolveId = requestId
         tvPendingPlayback = {
@@ -717,7 +750,7 @@ FocusScope {
         tvChannels = []
         tvCommercialPool = []
         tvPendingChannels = []
-        tvPendingCommercials = []
+        tvPendingCommercials = localCommercialPool()
         tvCurrentLoad = ({})
         tvLoadQueue = []
         statusText = "LOADING TV MODE"
@@ -743,13 +776,6 @@ FocusScope {
             }
             tvPendingChannels.push(channel)
             queue.push({ kind: "channel", index: i, playlist: channel })
-        }
-
-        if (tvCommercialsEnabled()) {
-            for (var j = 0; j < commercialPlaylists.length; j++) {
-                var commercial = commercialPlaylists[j] || ({})
-                queue.push({ kind: "commercial", playlist: commercial })
-            }
         }
 
         tvLoadQueue = queue
@@ -910,6 +936,30 @@ FocusScope {
             return
         }
 
+        if (mode === "commercialcategories") {
+            if (event.key === Qt.Key_Up) {
+                commercialCategoryList.currentIndex = Math.max(0, commercialCategoryList.currentIndex - 1)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Down) {
+                commercialCategoryList.currentIndex = Math.min(commercialCategoryList.count - 1,
+                                                               commercialCategoryList.currentIndex + 1)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Left) {
+                pageCommercialCategories(-1)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Right) {
+                pageCommercialCategories(1)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                toggleCommercialCategory(commercialCategoryList.currentIndex)
+                event.accepted = true
+            } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                showTvMenu()
+                event.accepted = true
+            }
+            return
+        }
+
         if (mode === "store") {
             if (event.key === Qt.Key_Up) {
                 storeList.currentIndex = Math.max(0, storeList.currentIndex - 1)
@@ -1041,6 +1091,17 @@ FocusScope {
         interval: mixRoot.tvTuneDelayMs
         repeat: false
         onTriggered: mixRoot.requestTvStream()
+    }
+
+    Connections {
+        target: appCore
+
+        function onModuleSettingChanged(mid, key, value) {
+            if (mid !== mixRoot.moduleId || key !== "commercial_library_updated_ms")
+                return
+            if (mixRoot.mode === "commercialcategories")
+                mixRoot.buildCommercialCategoryRows()
+        }
     }
 
     Connections {
@@ -1177,7 +1238,8 @@ FocusScope {
         subtitle: mode === "list" ? playlistTitle
                   : (mode === "library" ? "PLAYLISTS"
                      : (mode === "tvmenu" ? "TV MODE"
-                     : (mode === "store" ? "STORE" : "PUBLIC"))
+                     : (mode === "commercialcategories" ? "COMMERCIALS"
+                     : (mode === "store" ? "STORE" : "PUBLIC")))
                     )
         anchors.top: parent.top
         anchors.left: parent.left
@@ -1350,6 +1412,45 @@ FocusScope {
                 id: tvMenuText
                 text: modelData.title || "TV MODE"
                 color: tvMenuList.currentIndex === index ? root.surfaceColor : root.primaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                elide: Text.ElideRight
+                leftPadding: root.sw * 0.009375
+                rightPadding: root.sw * 0.009375
+                font.pixelSize: root.sh * 0.05
+            }
+        }
+    }
+
+    ListView {
+        id: commercialCategoryList
+        visible: mode === "commercialcategories"
+        model: commercialCategoryRows
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: root.sh * 0.25
+        anchors.leftMargin: root.sw * 0.115625
+        width: root.sw * 0.76875
+        height: root.sh * 0.525
+        clip: true
+        focus: visible
+
+        delegate: Item {
+            width: commercialCategoryList.width
+            height: root.sh * 0.0583333
+
+            Rectangle {
+                anchors.fill: commercialCategoryText
+                color: root.accentColor
+                visible: commercialCategoryList.currentIndex === index
+            }
+
+            Text {
+                id: commercialCategoryText
+                text: modelData.title || "COMMERCIALS"
+                color: commercialCategoryList.currentIndex === index ? root.surfaceColor : root.primaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 anchors.verticalCenter: parent.verticalCenter

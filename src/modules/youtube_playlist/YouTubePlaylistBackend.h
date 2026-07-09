@@ -20,6 +20,8 @@ public:
     Q_INVOKABLE QString get_saved_playlist_input() const;
     Q_INVOKABLE QVariantList get_saved_playlists() const;
     Q_INVOKABLE QString normalize_playlist_input(const QString &input) const;
+    Q_INVOKABLE QVariantList get_commercial_categories() const;
+    Q_INVOKABLE QVariantList get_commercial_videos_for_setting(const QString &settingKey) const;
     Q_INVOKABLE QVariantMap resolve_playlist_info(const QString &input) const;
     Q_INVOKABLE QString ytdl_format_for_quality(const QString &quality) const;
     Q_INVOKABLE void resolve_video_stream(const QString &requestId, const QString &url,
@@ -30,6 +32,8 @@ public:
     Q_INVOKABLE void refresh_playlist(const QString &input);
     Q_INVOKABLE void load_playlist_remove_options();
     Q_INVOKABLE void load_playlist_rename_options();
+    Q_INVOKABLE void load_public_access_commercial_category_options();
+    Q_INVOKABLE void load_vod_commercial_category_options();
     Q_INVOKABLE void remove_selected_playlist();
     Q_INVOKABLE void rename_selected_playlist();
 
@@ -49,6 +53,9 @@ private:
     QVariantMap moduleConfig() const;
     QString setting(const QString &key, const QString &fallback = QString()) const;
     QString ytDlpPath() const;
+    QString commercialRootPath() const;
+    QVariantList commercialCategoryOptions() const;
+    QVariantList commercialVideosForSelection(const QVariantMap &selection) const;
     QVariantList playlistRemovalOptions() const;
     QString playlistCachePath(const QString &playlistUrl) const;
     QVariantMap loadPlaylistCache(const QString &playlistUrl) const;

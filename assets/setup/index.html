@@ -396,6 +396,89 @@
     .message.ok { color: var(--ok); border-color: rgba(56,214,107,.45); }
     .message.err { color: var(--danger); border-color: rgba(255,59,48,.45); }
 
+    .commercial-library {
+      display: grid;
+      gap: 10px;
+    }
+
+    .commercial-category {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .commercial-category-head,
+    .commercial-video-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 11px;
+    }
+
+    .commercial-category-head {
+      border-bottom: 1px solid var(--line);
+      color: var(--orange-2);
+      text-transform: uppercase;
+    }
+
+    .commercial-video-row {
+      border-top: 1px solid rgba(255,255,255,.06);
+      color: var(--text);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .commercial-video-row:first-of-type {
+      border-top: 0;
+    }
+
+    .commercial-empty {
+      padding: 10px 11px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    button.tiny {
+      min-height: 32px;
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+
+    .picker-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .picker-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 9px 10px;
+      background: #000;
+    }
+
+    .picker-title {
+      display: block;
+      color: var(--text);
+      text-transform: uppercase;
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .picker-meta {
+      display: block;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 11px;
+      margin-top: 3px;
+    }
+
     .token-card {
       display: none;
       margin-bottom: 14px;
@@ -457,6 +540,12 @@
       newznab_api_key: "Newznab API Key"
     };
     let setupData = null;
+    let commercialLibrary = null;
+    let vodChannels = null;
+    let vodDraftTitle = "";
+    let vodSearchQuery = "";
+    let vodDraftItems = [];
+    let vodSearchResults = [];
     let currentModuleId = "";
     let plexPollTimer = null;
     let moonlightPollTimer = null;
@@ -482,6 +571,24 @@
         headers["X-240MP-Token"] = token();
       }
       const response = await fetch(path, Object.assign({}, options, { headers }));
+      if (response.status === 401) {
+        showTokenPrompt(true);
+        throw new Error("Unauthorized");
+      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.message || data.error || ("HTTP " + response.status));
+      }
+      return data;
+    }
+
+    async function uploadApi(path, formData) {
+      const headers = {};
+      if (token()) {
+        headers.Authorization = "Bearer " + token();
+        headers["X-240MP-Token"] = token();
+      }
+      const response = await fetch(path, { method: "POST", headers, body: formData });
       if (response.status === 401) {
         showTokenPrompt(true);
         throw new Error("Unauthorized");
@@ -610,10 +717,12 @@
 
     function moduleSummary(entry) {
       if (!entry || entry.id === "__app") return "Theme, sleep timer, and global appliance settings.";
+      if (entry.id === "__commercials") return "Local commercial categories for Public Access and VoD TV Mode.";
+      if (entry.id === "__vod_channels") return "Custom movie and TV series channels for VoD TV Mode.";
       const summaries = {
         "com.240mp.ota": "HDHomeRun address and over-the-air setup.",
         "com.240mp.emby_jellyfin": "Emby, Jellyfin, Plex, playback, and library settings.",
-        "com.240mp.youtube_playlist": "Public Access playlists, commercials, quality, and cache refresh.",
+        "com.240mp.youtube_playlist": "Public Access playlists, quality, and cache refresh.",
         "com.240mp.usenet": "Newznab indexer, streamer keys, browse limits, and trending.",
         "com.240mp.audio_tapes": "Tape Deck module visibility.",
         "com.240mp.retro": "RetroNAS share, local ROM path, core install, and game cache.",
@@ -632,12 +741,32 @@
       };
     }
 
+    function commercialsEntry() {
+      return {
+        id: "__commercials",
+        name: "Commercials",
+        icon: "/setup/assets/images/tater-tube-readme.png",
+        auth_state: "authed"
+      };
+    }
+
+    function vodChannelsEntry() {
+      return {
+        id: "__vod_channels",
+        name: "VoD Channels",
+        icon: "/setup/assets/images/mascots/video-on-demand.png",
+        auth_state: "authed"
+      };
+    }
+
     function setupEntries() {
-      return [appEntry()].concat(setupData.modules || []);
+      return [appEntry(), commercialsEntry(), vodChannelsEntry()].concat(setupData.modules || []);
     }
 
     function findEntry(id) {
       if (id === "__app") return appEntry();
+      if (id === "__commercials") return commercialsEntry();
+      if (id === "__vod_channels") return vodChannelsEntry();
       return (setupData.modules || []).find(module => module.id === id) || null;
     }
 
@@ -701,6 +830,182 @@
             ${fields}
             <div class="actions">
               <button type="button" data-save-card>Save Tater Tube Settings</button>
+            </div>
+            <div class="message"></div>
+          </div>
+        </article>`;
+    }
+
+    function renderCommercialsLibrary() {
+      const categories = (commercialLibrary && commercialLibrary.categories) ? commercialLibrary.categories : [];
+      if (categories.length === 0) {
+        return `<div class="commercial-empty">No local commercials uploaded.</div>`;
+      }
+      return `
+        <div class="commercial-library">
+          ${categories.map(category => {
+            const videos = category.videos || [];
+            return `
+              <div class="commercial-category">
+                <div class="commercial-category-head">
+                  <span>${escapeHtml(category.name || category.id || "Commercials")} (${videos.length})</span>
+                  <button class="secondary tiny" type="button"
+                    data-commercial-delete-category="${escapeAttr(category.id || category.name || "")}">Delete</button>
+                </div>
+                ${videos.length === 0
+                  ? `<div class="commercial-empty">No videos in this category.</div>`
+                  : videos.map(video => `
+                    <div class="commercial-video-row">
+                      <span>${escapeHtml(video.title || video.name || "Commercial")}</span>
+                      <button class="secondary tiny" type="button"
+                        data-commercial-category="${escapeAttr(category.id || category.name || "")}"
+                        data-commercial-delete-file="${escapeAttr(video.name || "")}">Delete</button>
+                    </div>`).join("")}
+              </div>`;
+          }).join("")}
+        </div>`;
+    }
+
+    function renderCommercialsCard() {
+      const categories = (commercialLibrary && commercialLibrary.categories) ? commercialLibrary.categories : [];
+      const options = categories.map(category =>
+        `<option value="${escapeAttr(category.id || category.name || "")}">${escapeHtml(category.name || category.id || "Commercials")}</option>`
+      ).join("");
+      return `
+        <article class="card" data-module="__commercials">
+          <div class="card-head">
+            <img src="/setup/assets/images/tater-tube-readme.png" alt="">
+            <div>
+              <h2 class="title">Commercials</h2>
+              <div class="sub">
+                <span class="pill ok">Local Library</span>
+                <span class="pill">${categories.length} Categories</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            ${renderDetailMascot(commercialsEntry())}
+            <div class="section-label">Create Category</div>
+            <div class="field">
+              <label>Category Name</label>
+              <input data-commercial-new-category autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="actions">
+              <button type="button" data-commercial-create-category>Create Category</button>
+            </div>
+            <div class="section-label">Upload Videos</div>
+            <div class="field">
+              <label>Category</label>
+              <select data-commercial-upload-category>
+                ${options || `<option value="Commercials">Commercials</option>`}
+              </select>
+            </div>
+            <div class="field">
+              <label>Commercial Videos</label>
+              <input type="file" data-commercial-files multiple accept="video/*,.mp4,.m4v,.mkv,.mov,.webm,.avi,.mpg,.mpeg,.ts">
+            </div>
+            <div class="actions">
+              <button type="button" data-commercial-upload>Upload Videos</button>
+            </div>
+            <div class="section-label">Library</div>
+            ${renderCommercialsLibrary()}
+            <div class="message"></div>
+          </div>
+        </article>`;
+    }
+
+    function mediaKindLabel(item) {
+      const kind = text(item.kind || item.type).toLowerCase();
+      if (kind === "show") return "Series";
+      if (kind === "video") return "Video";
+      return "Movie";
+    }
+
+    function renderVodSavedChannels() {
+      const channels = (vodChannels && vodChannels.channels) ? vodChannels.channels : [];
+      if (channels.length === 0)
+        return `<div class="commercial-empty">No custom VoD channels saved.</div>`;
+      return `
+        <div class="picker-list">
+          ${channels.map(channel => `
+            <div class="picker-row">
+              <span>
+                <span class="picker-title">${escapeHtml(channel.title || "Custom Channel")}</span>
+                <span class="picker-meta">${(channel.items || []).length} selections</span>
+              </span>
+              <button class="secondary tiny" type="button" data-vod-delete-channel="${escapeAttr(channel.id || "")}">Delete</button>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function renderVodDraftItems() {
+      if (vodDraftItems.length === 0)
+        return `<div class="commercial-empty">Search and add movies or series.</div>`;
+      return `
+        <div class="picker-list">
+          ${vodDraftItems.map((item, index) => `
+            <div class="picker-row">
+              <span>
+                <span class="picker-title">${escapeHtml(item.title || "Untitled")}</span>
+                <span class="picker-meta">${escapeHtml(mediaKindLabel(item))}${item.year ? " / " + escapeHtml(item.year) : ""}</span>
+              </span>
+              <button class="secondary tiny" type="button" data-vod-remove-draft="${index}">Remove</button>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function renderVodSearchResults() {
+      if (vodSearchResults.length === 0)
+        return `<div class="commercial-empty">No search results loaded.</div>`;
+      return `
+        <div class="picker-list">
+          ${vodSearchResults.map((item, index) => `
+            <div class="picker-row">
+              <span>
+                <span class="picker-title">${escapeHtml(item.title || "Untitled")}</span>
+                <span class="picker-meta">${escapeHtml(mediaKindLabel(item))}${item.year ? " / " + escapeHtml(item.year) : ""}</span>
+              </span>
+              <button class="tiny" type="button" data-vod-add-result="${index}">Add</button>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function renderVodChannelsCard() {
+      return `
+        <article class="card" data-module="__vod_channels">
+          <div class="card-head">
+            <img src="/setup/assets/images/mascots/video-on-demand.png" alt="">
+            <div>
+              <h2 class="title">VoD Channels</h2>
+              <div class="sub">
+                <span class="pill ok">TV Mode</span>
+                <span class="pill">${((vodChannels && vodChannels.channels) || []).length} Custom</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            ${renderDetailMascot(vodChannelsEntry())}
+            <div class="section-label">Saved Channels</div>
+            ${renderVodSavedChannels()}
+            <div class="section-label">New Channel</div>
+            <div class="field">
+              <label>Channel Name</label>
+              <input data-vod-channel-name value="${escapeAttr(vodDraftTitle)}" autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="section-label">Search Movies / Series</div>
+            <div class="field">
+              <label>Search</label>
+              <input data-vod-search-query value="${escapeAttr(vodSearchQuery)}" autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="actions">
+              <button type="button" data-vod-search>Search</button>
+            </div>
+            ${renderVodSearchResults()}
+            <div class="section-label">Selected For Channel</div>
+            ${renderVodDraftItems()}
+            <div class="actions">
+              <button type="button" data-vod-save-channel>Save Channel</button>
+              <button class="secondary" type="button" data-vod-clear-draft>Clear Draft</button>
             </div>
             <div class="message"></div>
           </div>
@@ -818,7 +1123,11 @@
 
       cards.className = "detail-wrap";
       cards.innerHTML = renderDetailHeader(entry)
-        + (currentModuleId === "__app" ? renderAppCard() : renderModule(entry));
+        + (currentModuleId === "__app"
+          ? renderAppCard()
+          : (currentModuleId === "__commercials"
+            ? renderCommercialsCard()
+            : (currentModuleId === "__vod_channels" ? renderVodChannelsCard() : renderModule(entry))));
       bindCards();
       bindDetailNav();
     }
@@ -995,6 +1304,183 @@
       setTimeout(loadSetup, 900);
     }
 
+    async function loadCommercialLibrary() {
+      commercialLibrary = await api("/api/v1/setup/commercials");
+      return commercialLibrary;
+    }
+
+    async function createCommercialCategory(card) {
+      const input = card.querySelector("[data-commercial-new-category]");
+      const name = input ? input.value.trim() : "";
+      if (!name) {
+        cardMessage(card, "Enter a category name.", "err");
+        return;
+      }
+      cardMessage(card, "Creating category...");
+      const result = await api("/api/v1/setup/commercials/category", {
+        method: "POST",
+        body: JSON.stringify({ name })
+      });
+      commercialLibrary = result.library || commercialLibrary;
+      cardMessage(card, "Category created.", "ok");
+      setStatus("Commercial category created.", "ok");
+      render();
+    }
+
+    async function uploadCommercialVideos(card) {
+      const categoryInput = card.querySelector("[data-commercial-upload-category]");
+      const fileInput = card.querySelector("[data-commercial-files]");
+      const category = categoryInput ? categoryInput.value.trim() : "Commercials";
+      const files = fileInput ? Array.from(fileInput.files || []) : [];
+      if (!files.length) {
+        cardMessage(card, "Choose one or more videos.", "err");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("category", category || "Commercials");
+      files.forEach(file => formData.append("files", file, file.name));
+      cardMessage(card, "Uploading " + files.length + " video" + (files.length === 1 ? "" : "s") + "...");
+      const result = await uploadApi("/api/v1/setup/commercials/upload", formData);
+      commercialLibrary = result.library || commercialLibrary;
+      const skipped = result.skipped && result.skipped.length ? " Skipped " + result.skipped.length + "." : "";
+      cardMessage(card, "Uploaded " + (result.saved || 0) + "." + skipped, "ok");
+      setStatus("Commercial videos uploaded.", "ok");
+      render();
+    }
+
+    async function deleteCommercialFile(card, button) {
+      const category = button.dataset.commercialCategory || "";
+      const name = button.dataset.commercialDeleteFile || "";
+      if (!category || !name) return;
+      cardMessage(card, "Deleting video...");
+      const result = await api("/api/v1/setup/commercials/delete-file", {
+        method: "POST",
+        body: JSON.stringify({ category, name })
+      });
+      commercialLibrary = result.library || commercialLibrary;
+      cardMessage(card, "Video deleted.", "ok");
+      setStatus("Commercial video deleted.", "ok");
+      render();
+    }
+
+    async function deleteCommercialCategory(card, button) {
+      const category = button.dataset.commercialDeleteCategory || "";
+      if (!category) return;
+      cardMessage(card, "Deleting category...");
+      const result = await api("/api/v1/setup/commercials/delete-category", {
+        method: "POST",
+        body: JSON.stringify({ category })
+      });
+      commercialLibrary = result.library || commercialLibrary;
+      cardMessage(card, "Category deleted.", "ok");
+      setStatus("Commercial category deleted.", "ok");
+      render();
+    }
+
+    async function loadVodChannels() {
+      vodChannels = await api("/api/v1/setup/vod-tv/custom-channels");
+      return vodChannels;
+    }
+
+    function normalizeVodDraftItem(item) {
+      const kind = text(item.kind || item.type).toLowerCase() === "show" ? "show" : (text(item.kind || item.type).toLowerCase() === "video" ? "video" : "movie");
+      return {
+        ratingKey: item.ratingKey || item.rating_key || "",
+        type: kind,
+        title: item.title || "UNTITLED",
+        year: item.year || ""
+      };
+    }
+
+    async function searchVodItems(card) {
+      const input = card.querySelector("[data-vod-search-query]");
+      const titleInput = card.querySelector("[data-vod-channel-name]");
+      vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
+      const query = input ? input.value.trim() : "";
+      if (!query) {
+        cardMessage(card, "Enter a search term.", "err");
+        return;
+      }
+      vodSearchQuery = query;
+      cardMessage(card, "Searching VoD...");
+      const result = await api("/api/v1/setup/vod-tv/search", {
+        method: "POST",
+        body: JSON.stringify({ query, limit: 24 })
+      });
+      vodSearchResults = result.results || [];
+      cardMessage(card, "Search complete.", "ok");
+      render();
+    }
+
+    function addVodSearchResult(index) {
+      const card = document.querySelector('[data-module="__vod_channels"]');
+      if (card) {
+        const titleInput = card.querySelector("[data-vod-channel-name]");
+        const queryInput = card.querySelector("[data-vod-search-query]");
+        vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
+        vodSearchQuery = queryInput ? queryInput.value.trim() : vodSearchQuery;
+      }
+      const item = vodSearchResults[index];
+      if (!item) return;
+      const normalized = normalizeVodDraftItem(item);
+      if (!normalized.ratingKey) return;
+      const key = normalized.type + ":" + normalized.ratingKey;
+      if (vodDraftItems.some(existing => (existing.type + ":" + existing.ratingKey) === key))
+        return;
+      vodDraftItems.push(normalized);
+      render();
+    }
+
+    function removeVodDraftItem(index) {
+      const card = document.querySelector('[data-module="__vod_channels"]');
+      if (card) {
+        const titleInput = card.querySelector("[data-vod-channel-name]");
+        const queryInput = card.querySelector("[data-vod-search-query]");
+        vodDraftTitle = titleInput ? titleInput.value.trim() : vodDraftTitle;
+        vodSearchQuery = queryInput ? queryInput.value.trim() : vodSearchQuery;
+      }
+      vodDraftItems.splice(index, 1);
+      render();
+    }
+
+    async function saveVodChannel(card) {
+      const input = card.querySelector("[data-vod-channel-name]");
+      const title = input ? input.value.trim() : "";
+      if (!title) {
+        cardMessage(card, "Enter a channel name.", "err");
+        return;
+      }
+      if (vodDraftItems.length === 0) {
+        cardMessage(card, "Add at least one movie or series.", "err");
+        return;
+      }
+      cardMessage(card, "Saving channel...");
+      const result = await api("/api/v1/setup/vod-tv/custom-channels", {
+        method: "POST",
+        body: JSON.stringify({ title, items: vodDraftItems })
+      });
+      vodChannels = { ok: true, channels: result.channels || [] };
+      vodDraftTitle = "";
+      vodSearchQuery = "";
+      vodDraftItems = [];
+      vodSearchResults = [];
+      setStatus("VoD channel saved.", "ok");
+      render();
+    }
+
+    async function deleteVodChannel(card, button) {
+      const id = button.dataset.vodDeleteChannel || "";
+      if (!id) return;
+      cardMessage(card, "Deleting channel...");
+      const result = await api("/api/v1/setup/vod-tv/custom-channels/delete", {
+        method: "POST",
+        body: JSON.stringify({ id })
+      });
+      vodChannels = { ok: true, channels: result.channels || [] };
+      setStatus("VoD channel deleted.", "ok");
+      render();
+    }
+
     function bindPicker() {
       document.querySelectorAll("[data-open-module]").forEach(button => {
         button.onclick = () => {
@@ -1048,12 +1534,67 @@
           box.textContent = error.message;
         });
       });
+      document.querySelectorAll("[data-commercial-create-category]").forEach(button => {
+        button.onclick = () => createCommercialCategory(button.closest(".card")).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-commercial-upload]").forEach(button => {
+        button.onclick = () => uploadCommercialVideos(button.closest(".card")).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-commercial-delete-file]").forEach(button => {
+        button.onclick = () => deleteCommercialFile(button.closest(".card"), button).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-commercial-delete-category]").forEach(button => {
+        button.onclick = () => deleteCommercialCategory(button.closest(".card"), button).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-vod-search]").forEach(button => {
+        button.onclick = () => searchVodItems(button.closest(".card")).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-vod-add-result]").forEach(button => {
+        button.onclick = () => addVodSearchResult(Number(button.dataset.vodAddResult || 0));
+      });
+      document.querySelectorAll("[data-vod-remove-draft]").forEach(button => {
+        button.onclick = () => removeVodDraftItem(Number(button.dataset.vodRemoveDraft || 0));
+      });
+      document.querySelectorAll("[data-vod-save-channel]").forEach(button => {
+        button.onclick = () => saveVodChannel(button.closest(".card")).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-vod-clear-draft]").forEach(button => {
+        button.onclick = () => {
+          vodDraftTitle = "";
+          vodSearchQuery = "";
+          vodDraftItems = [];
+          vodSearchResults = [];
+          render();
+        };
+      });
+      document.querySelectorAll("[data-vod-delete-channel]").forEach(button => {
+        button.onclick = () => deleteVodChannel(button.closest(".card"), button).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
     }
 
     async function loadSetup() {
       setStatus("Loading setup...");
       showTokenPrompt(false);
-      setupData = await api("/api/v1/setup/modules");
+      const results = await Promise.all([
+        api("/api/v1/setup/modules"),
+        loadCommercialLibrary(),
+        loadVodChannels()
+      ]);
+      setupData = results[0];
       render();
       setStatus("Connected to " + (setupData.app.name || "Tater Tube") + " " + (setupData.app.version || ""), "ok");
     }

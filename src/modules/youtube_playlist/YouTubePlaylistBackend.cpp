@@ -74,6 +74,40 @@ QString fallbackPlaylistTitle(const QString &input, int index)
     return QStringLiteral("PLAYLIST %1").arg(index + 1);
 }
 
+bool isCommercialVideoFile(const QFileInfo &fileInfo)
+{
+    if (!fileInfo.isFile())
+        return false;
+
+    const QString suffix = fileInfo.suffix().toLower();
+    static const QSet<QString> videoSuffixes{
+        QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("mkv"),
+        QStringLiteral("mov"), QStringLiteral("webm"), QStringLiteral("avi"),
+        QStringLiteral("mpg"), QStringLiteral("mpeg"), QStringLiteral("ts")
+    };
+    return videoSuffixes.contains(suffix);
+}
+
+QString commercialTitleFromFile(const QFileInfo &fileInfo, int index)
+{
+    QString title = fileInfo.completeBaseName().trimmed();
+    title.replace(QRegularExpression("[._-]+"), QStringLiteral(" "));
+    title.replace(QRegularExpression("\\s+"), QStringLiteral(" "));
+    return cleanTitle(title, QStringLiteral("COMMERCIAL %1").arg(index + 1));
+}
+
+int commercialVideoCount(const QString &categoryPath)
+{
+    const QFileInfoList files = QDir(categoryPath).entryInfoList(
+        QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+    int count = 0;
+    for (const QFileInfo &fileInfo : files) {
+        if (isCommercialVideoFile(fileInfo))
+            ++count;
+    }
+    return count;
+}
+
 QString textFromYouTubeText(const QJsonValue &value);
 
 double durationFromText(const QString &raw)
@@ -505,6 +539,80 @@ QString YouTubePlaylistBackend::ytDlpPath() const
     if (!path.isEmpty())
         return path;
     return QStandardPaths::findExecutable(QStringLiteral("youtube-dl"), executableSearchPaths());
+}
+
+QString YouTubePlaylistBackend::commercialRootPath() const
+{
+    return QDir(m_dataRoot).absoluteFilePath(QStringLiteral("commercials"));
+}
+
+QVariantList YouTubePlaylistBackend::commercialCategoryOptions() const
+{
+    QVariantList options;
+    const QDir root(commercialRootPath());
+    const QFileInfoList categories = root.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+
+    for (const QFileInfo &category : categories) {
+        const QString id = category.fileName();
+        if (id.trimmed().isEmpty())
+            continue;
+        const int count = commercialVideoCount(category.absoluteFilePath());
+        options.append(QVariantMap{
+            {QStringLiteral("id"), id},
+            {QStringLiteral("label"), QStringLiteral("%1 (%2)").arg(id, QString::number(count))},
+            {QStringLiteral("count"), count}
+        });
+    }
+    return options;
+}
+
+QVariantList YouTubePlaylistBackend::commercialVideosForSelection(const QVariantMap &selection) const
+{
+    QVariantList videos;
+    const QDir root(commercialRootPath());
+    const QFileInfoList categories = root.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+
+    for (const QFileInfo &category : categories) {
+        const QString categoryId = category.fileName();
+        if (categoryId.trimmed().isEmpty())
+            continue;
+
+        const QVariant selectedValue = selection.value(categoryId, true);
+        const bool selected = selectedValue.toBool();
+        if (!selected)
+            continue;
+
+        const QFileInfoList files = QDir(category.absoluteFilePath()).entryInfoList(
+            QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+        for (const QFileInfo &fileInfo : files) {
+            if (!isCommercialVideoFile(fileInfo))
+                continue;
+
+            QVariantMap item;
+            item[QStringLiteral("id")] = QStringLiteral("%1/%2").arg(categoryId, fileInfo.fileName());
+            item[QStringLiteral("title")] = commercialTitleFromFile(fileInfo, videos.size());
+            item[QStringLiteral("url")] = QUrl::fromLocalFile(fileInfo.absoluteFilePath()).toString();
+            item[QStringLiteral("category")] = categoryId;
+            item[QStringLiteral("duration")] = 30;
+            item[QStringLiteral("commercial")] = true;
+            item[QStringLiteral("local")] = true;
+            videos.append(item);
+        }
+    }
+
+    return videos;
+}
+
+QVariantList YouTubePlaylistBackend::get_commercial_categories() const
+{
+    return commercialCategoryOptions();
+}
+
+QVariantList YouTubePlaylistBackend::get_commercial_videos_for_setting(const QString &settingKey) const
+{
+    return commercialVideosForSelection(moduleConfig().value(settingKey).toMap());
 }
 
 QString YouTubePlaylistBackend::playlistCachePath(const QString &playlistUrl) const
@@ -965,6 +1073,18 @@ void YouTubePlaylistBackend::load_playlist_rename_options()
     emit dynamicOptionsReady(QStringLiteral("rename_playlist_id"), playlistRemovalOptions());
 }
 
+void YouTubePlaylistBackend::load_public_access_commercial_category_options()
+{
+    emit dynamicOptionsReady(QStringLiteral("public_access_commercial_categories"),
+                             commercialCategoryOptions());
+}
+
+void YouTubePlaylistBackend::load_vod_commercial_category_options()
+{
+    emit dynamicOptionsReady(QStringLiteral("vod_commercial_categories"),
+                             commercialCategoryOptions());
+}
+
 void YouTubePlaylistBackend::remove_selected_playlist()
 {
     const QVariantList saved = get_saved_playlists();
@@ -1184,5 +1304,10 @@ void YouTubePlaylistBackend::onSettingChanged(const QString &moduleId,
         emit authStateChanged();
         emit dynamicOptionsReady(QStringLiteral("remove_playlist_id"), playlistRemovalOptions());
         emit dynamicOptionsReady(QStringLiteral("rename_playlist_id"), playlistRemovalOptions());
+    } else if (key == QLatin1String("commercial_library_updated_ms")) {
+        emit dynamicOptionsReady(QStringLiteral("public_access_commercial_categories"),
+                                 commercialCategoryOptions());
+        emit dynamicOptionsReady(QStringLiteral("vod_commercial_categories"),
+                                 commercialCategoryOptions());
     }
 }

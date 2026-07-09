@@ -16,6 +16,7 @@
 #include <QJsonValue>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QSet>
 #include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -28,7 +29,9 @@
 
 namespace {
 constexpr qsizetype MaxHeaderBytes = 16 * 1024;
-constexpr qsizetype MaxBodyBytes = 64 * 1024;
+constexpr qsizetype MaxBodyBytes = 256 * 1024 * 1024;
+constexpr const char *kYouTubeModuleId = "com.240mp.youtube_playlist";
+constexpr const char *kVodModuleId = "com.240mp.emby_jellyfin";
 
 QByteArray statusText(int statusCode) {
     switch (statusCode) {
@@ -54,6 +57,67 @@ int jsonInt(const QJsonObject &obj, const char *key, int fallback) {
 double jsonDouble(const QJsonObject &obj, const char *key, double fallback) {
     const QJsonValue value = obj.value(QString::fromLatin1(key));
     return value.isDouble() ? value.toDouble() : fallback;
+}
+
+bool isCommercialVideoFile(const QFileInfo &fileInfo)
+{
+    if (fileInfo.exists() && !fileInfo.isFile())
+        return false;
+    const QString suffix = fileInfo.suffix().toLower();
+    static const QSet<QString> videoSuffixes{
+        QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("mkv"),
+        QStringLiteral("mov"), QStringLiteral("webm"), QStringLiteral("avi"),
+        QStringLiteral("mpg"), QStringLiteral("mpeg"), QStringLiteral("ts")
+    };
+    return videoSuffixes.contains(suffix);
+}
+
+QString safeCommercialName(QString value, const QString &fallback)
+{
+    value = value.trimmed();
+    value.replace(QRegularExpression(QStringLiteral("[.\\\\/:*?\"<>|]")), QStringLiteral(" "));
+    value.replace(QRegularExpression(QStringLiteral("[\\x00-\\x1f]")), QString());
+    value.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    value = value.left(96).trimmed();
+    return value.isEmpty() ? fallback : value;
+}
+
+QString safeCommercialFileName(const QString &value)
+{
+    QString name = QFileInfo(value).fileName().trimmed();
+    name.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")), QStringLiteral(" "));
+    name.replace(QRegularExpression(QStringLiteral("[\\x00-\\x1f]")), QString());
+    name.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    name = name.left(140).trimmed();
+    return name.isEmpty() ? QStringLiteral("commercial.mp4") : name;
+}
+
+QString uniqueFilePath(const QDir &dir, const QString &fileName)
+{
+    const QFileInfo info(fileName);
+    const QString base = safeCommercialName(info.completeBaseName(), QStringLiteral("commercial"));
+    const QString suffix = info.suffix().isEmpty() ? QString() : QStringLiteral(".") + info.suffix();
+    QString candidate = dir.absoluteFilePath(base + suffix);
+    int index = 2;
+    while (QFileInfo::exists(candidate)) {
+        candidate = dir.absoluteFilePath(QStringLiteral("%1 %2%3").arg(base).arg(index).arg(suffix));
+        ++index;
+    }
+    return candidate;
+}
+
+QString headerParameter(const QByteArray &header, const QByteArray &name)
+{
+    const QString pattern = QStringLiteral("%1=\"([^\"]*)\"").arg(QString::fromLatin1(name));
+    QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
+    QRegularExpressionMatch match = re.match(QString::fromUtf8(header));
+    if (match.hasMatch())
+        return match.captured(1);
+
+    const QString unquotedPattern = QStringLiteral("%1=([^;]+)").arg(QString::fromLatin1(name));
+    re.setPattern(unquotedPattern);
+    match = re.match(QString::fromUtf8(header));
+    return match.hasMatch() ? match.captured(1).trimmed() : QString();
 }
 } // namespace
 
@@ -475,6 +539,15 @@ bool ControlApiServer::handleSetupApiRequest(QTcpSocket *socket,
         return true;
     }
 
+    if (request.method == "GET" && request.path == QStringLiteral("/api/v1/setup/commercials")) {
+        writeJson(socket, 200, commercialsLibrary());
+        return true;
+    }
+    if (request.method == "GET" && request.path == QStringLiteral("/api/v1/setup/vod-tv/custom-channels")) {
+        handleSetupVodCustomChannelsListRequest(socket);
+        return true;
+    }
+
     if (request.method != "POST") {
         writeJson(socket, 405, {{"ok", false}, {"error", "method_not_allowed"}});
         return true;
@@ -514,6 +587,34 @@ bool ControlApiServer::handleSetupApiRequest(QTcpSocket *socket,
     }
     if (request.path == QStringLiteral("/api/v1/setup/moonlight/status")) {
         handleSetupMoonlightStatusRequest(socket);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/commercials/category")) {
+        handleSetupCommercialCategoryRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/commercials/upload")) {
+        handleSetupCommercialUploadRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/commercials/delete-file")) {
+        handleSetupCommercialDeleteFileRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/commercials/delete-category")) {
+        handleSetupCommercialDeleteCategoryRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/vod-tv/custom-channels")) {
+        handleSetupVodCustomChannelSaveRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/vod-tv/custom-channels/delete")) {
+        handleSetupVodCustomChannelDeleteRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/vod-tv/search")) {
+        handleSetupVodSearchRequest(socket, request);
         return true;
     }
 
@@ -1088,6 +1189,482 @@ void ControlApiServer::handleSetupMoonlightStatusRequest(QTcpSocket *socket) {
         {"message", m_moonlightPairMessage},
         {"auth_state", m_appCore ? m_appCore->get_module_auth_state(QStringLiteral("com.240mp.moonlight")) : QString()}
     });
+}
+
+QString ControlApiServer::commercialsRootPath() const
+{
+    return m_appCore ? QDir(m_appCore->dataRoot()).absoluteFilePath(QStringLiteral("commercials"))
+                     : QString();
+}
+
+QJsonObject ControlApiServer::commercialsLibrary() const
+{
+    QJsonArray categories;
+    const QString rootPath = commercialsRootPath();
+    if (rootPath.isEmpty())
+        return QJsonObject{{"ok", false}, {"error", "setup_unavailable"}, {"categories", categories}};
+
+    const QDir root(rootPath);
+    const QFileInfoList categoryInfos = root.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &categoryInfo : categoryInfos) {
+        QJsonArray videos;
+        const QFileInfoList fileInfos = QDir(categoryInfo.absoluteFilePath()).entryInfoList(
+            QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+        for (const QFileInfo &fileInfo : fileInfos) {
+            if (!isCommercialVideoFile(fileInfo))
+                continue;
+            QString title = fileInfo.completeBaseName().trimmed();
+            title.replace(QRegularExpression(QStringLiteral("[._-]+")), QStringLiteral(" "));
+            title.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+            videos.append(QJsonObject{
+                {"name", fileInfo.fileName()},
+                {"title", title.isEmpty() ? fileInfo.fileName() : title},
+                {"size", QString::number(fileInfo.size())},
+                {"modified", fileInfo.lastModified().toUTC().toString(Qt::ISODate)}
+            });
+        }
+
+        categories.append(QJsonObject{
+            {"id", categoryInfo.fileName()},
+            {"name", categoryInfo.fileName()},
+            {"count", videos.size()},
+            {"videos", videos}
+        });
+    }
+
+    return QJsonObject{{"ok", true}, {"categories", categories}};
+}
+
+void ControlApiServer::notifyCommercialLibraryChanged()
+{
+    if (!m_appCore)
+        return;
+    m_appCore->save_setting(QString::fromUtf8(kYouTubeModuleId),
+                            QStringLiteral("commercial_library_updated_ms"),
+                            QDateTime::currentMSecsSinceEpoch());
+}
+
+void ControlApiServer::handleSetupCommercialCategoryRequest(QTcpSocket *socket,
+                                                           const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString category = safeCommercialName(body.value(QStringLiteral("name")).toString(),
+                                                QStringLiteral("Commercials"));
+    QDir root(commercialsRootPath());
+    if (!root.exists() && !root.mkpath(QStringLiteral("."))) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "commercial_root_create_failed"}});
+        return;
+    }
+    if (!root.mkpath(category)) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "category_create_failed"}});
+        return;
+    }
+
+    notifyCommercialLibraryChanged();
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"category", category},
+        {"library", commercialsLibrary()}
+    });
+}
+
+void ControlApiServer::handleSetupCommercialUploadRequest(QTcpSocket *socket,
+                                                         const HttpRequest &request)
+{
+    const QByteArray contentType = request.headers.value("content-type");
+    const QString boundary = headerParameter(contentType, QByteArrayLiteral("boundary"));
+    if (boundary.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_multipart_boundary"}});
+        return;
+    }
+
+    struct UploadFile {
+        QString filename;
+        QByteArray data;
+    };
+
+    QString categoryName;
+    QList<UploadFile> uploads;
+    const QByteArray delimiter = QByteArray("--") + boundary.toUtf8();
+    qsizetype cursor = 0;
+    while (true) {
+        qsizetype start = request.body.indexOf(delimiter, cursor);
+        if (start < 0)
+            break;
+        start += delimiter.size();
+        if (request.body.mid(start, 2) == QByteArrayLiteral("--"))
+            break;
+        if (request.body.mid(start, 2) == QByteArrayLiteral("\r\n"))
+            start += 2;
+
+        const qsizetype end = request.body.indexOf(QByteArrayLiteral("\r\n") + delimiter, start);
+        if (end < 0)
+            break;
+        cursor = end + 2;
+
+        const QByteArray part = request.body.mid(start, end - start);
+        const qsizetype headerEnd = part.indexOf(QByteArrayLiteral("\r\n\r\n"));
+        if (headerEnd < 0)
+            continue;
+
+        const QByteArray rawHeaders = part.left(headerEnd);
+        const QByteArray data = part.mid(headerEnd + 4);
+        QByteArray disposition;
+        const QList<QByteArray> headerLines = rawHeaders.split('\n');
+        for (const QByteArray &lineRaw : headerLines) {
+            const QByteArray line = lineRaw.trimmed();
+            const qsizetype colon = line.indexOf(':');
+            if (colon <= 0)
+                continue;
+            const QByteArray key = line.left(colon).trimmed().toLower();
+            const QByteArray value = line.mid(colon + 1).trimmed();
+            if (key == QByteArrayLiteral("content-disposition"))
+                disposition = value;
+        }
+
+        const QString fieldName = headerParameter(disposition, QByteArrayLiteral("name"));
+        const QString fileName = headerParameter(disposition, QByteArrayLiteral("filename"));
+        if (fieldName == QStringLiteral("category")) {
+            categoryName = QString::fromUtf8(data).trimmed();
+        } else if (!fileName.isEmpty()) {
+            uploads.append(UploadFile{fileName, data});
+        }
+    }
+
+    const QString category = safeCommercialName(categoryName, QStringLiteral("Commercials"));
+    if (uploads.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "no_files_uploaded"}});
+        return;
+    }
+
+    QDir root(commercialsRootPath());
+    if (!root.exists() && !root.mkpath(QStringLiteral("."))) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "commercial_root_create_failed"}});
+        return;
+    }
+    if (!root.mkpath(category)) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "category_create_failed"}});
+        return;
+    }
+
+    QDir categoryDir(root.absoluteFilePath(category));
+    int saved = 0;
+    QJsonArray skipped;
+    for (const UploadFile &upload : uploads) {
+        const QString fileName = safeCommercialFileName(upload.filename);
+        if (!isCommercialVideoFile(QFileInfo(fileName))) {
+            skipped.append(QJsonObject{{"name", fileName}, {"reason", "unsupported_file_type"}});
+            continue;
+        }
+
+        QFile file(uniqueFilePath(categoryDir, fileName));
+        if (!file.open(QIODevice::WriteOnly)) {
+            skipped.append(QJsonObject{{"name", fileName}, {"reason", "write_failed"}});
+            continue;
+        }
+        const qint64 written = file.write(upload.data);
+        file.close();
+        if (written != upload.data.size()) {
+            QFile::remove(file.fileName());
+            skipped.append(QJsonObject{{"name", fileName}, {"reason", "write_incomplete"}});
+            continue;
+        }
+        ++saved;
+    }
+
+    if (saved > 0)
+        notifyCommercialLibraryChanged();
+
+    writeJson(socket, saved > 0 ? 200 : 400, QJsonObject{
+        {"ok", saved > 0},
+        {"saved", saved},
+        {"skipped", skipped},
+        {"library", commercialsLibrary()}
+    });
+}
+
+void ControlApiServer::handleSetupCommercialDeleteFileRequest(QTcpSocket *socket,
+                                                              const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString category = safeCommercialName(body.value(QStringLiteral("category")).toString(),
+                                                QStringLiteral("Commercials"));
+    const QString fileName = safeCommercialFileName(body.value(QStringLiteral("name")).toString());
+    const QString filePath = QDir(QDir(commercialsRootPath()).absoluteFilePath(category))
+        .absoluteFilePath(fileName);
+    if (!QFileInfo(filePath).exists()) {
+        writeJson(socket, 404, {{"ok", false}, {"error", "file_not_found"}});
+        return;
+    }
+
+    if (!QFile::remove(filePath)) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "delete_failed"}});
+        return;
+    }
+
+    notifyCommercialLibraryChanged();
+    writeJson(socket, 200, QJsonObject{{"ok", true}, {"library", commercialsLibrary()}});
+}
+
+void ControlApiServer::handleSetupCommercialDeleteCategoryRequest(QTcpSocket *socket,
+                                                                  const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString category = safeCommercialName(body.value(QStringLiteral("category")).toString(),
+                                                QStringLiteral("Commercials"));
+    QDir dir(QDir(commercialsRootPath()).absoluteFilePath(category));
+    if (!dir.exists()) {
+        writeJson(socket, 404, {{"ok", false}, {"error", "category_not_found"}});
+        return;
+    }
+    if (!dir.removeRecursively()) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "delete_failed"}});
+        return;
+    }
+
+    notifyCommercialLibraryChanged();
+    writeJson(socket, 200, QJsonObject{{"ok", true}, {"library", commercialsLibrary()}});
+}
+
+QJsonArray ControlApiServer::vodCustomChannels() const
+{
+    if (!m_appCore)
+        return {};
+    const QVariant saved = m_appCore->get_setting(QString::fromUtf8(kVodModuleId),
+                                                  QStringLiteral("custom_vod_tv_channels"));
+    QJsonArray channels = QJsonArray::fromVariantList(saved.toList());
+    QJsonArray normalized;
+    for (const QJsonValue &value : channels) {
+        QJsonObject channel = value.toObject();
+        const QString title = channel.value(QStringLiteral("title")).toString(
+            channel.value(QStringLiteral("name")).toString()).trimmed();
+        const QJsonArray items = channel.value(QStringLiteral("items")).toArray();
+        if (title.isEmpty() || items.isEmpty())
+            continue;
+        if (channel.value(QStringLiteral("id")).toString().trimmed().isEmpty())
+            channel[QStringLiteral("id")] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        channel[QStringLiteral("title")] = title;
+        normalized.append(channel);
+    }
+    return normalized;
+}
+
+void ControlApiServer::saveVodCustomChannels(const QJsonArray &channels)
+{
+    if (!m_appCore)
+        return;
+    m_appCore->save_setting(QString::fromUtf8(kVodModuleId),
+                            QStringLiteral("custom_vod_tv_channels"),
+                            channels.toVariantList());
+}
+
+void ControlApiServer::handleSetupVodCustomChannelsListRequest(QTcpSocket *socket)
+{
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"channels", vodCustomChannels()}
+    });
+}
+
+void ControlApiServer::handleSetupVodCustomChannelSaveRequest(QTcpSocket *socket,
+                                                              const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString id = body.value(QStringLiteral("id")).toString().trimmed();
+    const QString title = safeCommercialName(body.value(QStringLiteral("title")).toString(
+        body.value(QStringLiteral("name")).toString()), QString()).trimmed();
+    if (title.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_channel_name"}});
+        return;
+    }
+
+    QJsonArray items;
+    QSet<QString> seen;
+    const QJsonArray rawItems = body.value(QStringLiteral("items")).toArray();
+    for (const QJsonValue &value : rawItems) {
+        const QJsonObject raw = value.toObject();
+        const QString ratingKey = raw.value(QStringLiteral("ratingKey")).toString(
+            raw.value(QStringLiteral("rating_key")).toString()).trimmed();
+        QString type = raw.value(QStringLiteral("type")).toString(
+            raw.value(QStringLiteral("kind")).toString()).trimmed().toLower();
+        if (type == QStringLiteral("series") || type == QStringLiteral("tv") ||
+            type == QStringLiteral("tv_show")) {
+            type = QStringLiteral("show");
+        }
+        if (ratingKey.isEmpty() ||
+            !(type == QStringLiteral("movie") || type == QStringLiteral("video") ||
+              type == QStringLiteral("show"))) {
+            continue;
+        }
+        const QString uniqueKey = type + QLatin1Char(':') + ratingKey;
+        if (seen.contains(uniqueKey))
+            continue;
+        seen.insert(uniqueKey);
+
+        QJsonObject item{
+            {"ratingKey", ratingKey},
+            {"type", type},
+            {"title", raw.value(QStringLiteral("title")).toString().trimmed().toUpper()}
+        };
+        if (raw.contains(QStringLiteral("year")))
+            item[QStringLiteral("year")] = raw.value(QStringLiteral("year"));
+        if (raw.contains(QStringLiteral("genres")))
+            item[QStringLiteral("genres")] = raw.value(QStringLiteral("genres"));
+        items.append(item);
+    }
+
+    if (items.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_channel_items"}});
+        return;
+    }
+
+    QJsonObject channel{
+        {"id", id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id},
+        {"title", title},
+        {"items", items},
+        {"updatedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}
+    };
+
+    QJsonArray channels = vodCustomChannels();
+    bool replaced = false;
+    for (int i = 0; i < channels.size(); ++i) {
+        if (channels.at(i).toObject().value(QStringLiteral("id")).toString() == channel.value(QStringLiteral("id")).toString()) {
+            channels.replace(i, channel);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced)
+        channels.append(channel);
+
+    saveVodCustomChannels(channels);
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"channel", channel},
+        {"channels", channels}
+    });
+}
+
+void ControlApiServer::handleSetupVodCustomChannelDeleteRequest(QTcpSocket *socket,
+                                                                const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString id = body.value(QStringLiteral("id")).toString().trimmed();
+    if (id.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_channel_id"}});
+        return;
+    }
+
+    QJsonArray next;
+    const QJsonArray channels = vodCustomChannels();
+    for (const QJsonValue &value : channels) {
+        const QJsonObject channel = value.toObject();
+        if (channel.value(QStringLiteral("id")).toString() != id)
+            next.append(channel);
+    }
+
+    saveVodCustomChannels(next);
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"channels", next}
+    });
+}
+
+void ControlApiServer::handleSetupVodSearchRequest(QTcpSocket *socket,
+                                                   const HttpRequest &request)
+{
+    if (!m_mediaBackend) {
+        writeJson(socket, 503, {{"ok", false}, {"error", "media_backend_unavailable"}});
+        return;
+    }
+    if (m_mediaBackend->get_auth_state() != QStringLiteral("authed")) {
+        writeJson(socket, 409, {{"ok", false}, {"error", "media_provider_not_configured"}});
+        return;
+    }
+
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+    const QString query = body.value(QStringLiteral("query")).toString().trimmed();
+    if (query.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_query"}});
+        return;
+    }
+    const int limit = std::max(1, std::min(jsonInt(body, "limit", 20), 50));
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QPointer<QTcpSocket> safeSocket(socket);
+    auto done = std::make_shared<bool>(false);
+
+    auto finish = [this, safeSocket, done](int statusCode, const QJsonObject &response) {
+        if (*done || !safeSocket)
+            return;
+        *done = true;
+        writeJson(safeSocket, statusCode, response);
+    };
+
+    connect(m_mediaBackend, &EmbyJellyfinBackend::apiSearchResultsReady, socket,
+            [=](const QString &finishedRequestId, const QVariantList &results) {
+        if (finishedRequestId != requestId || *done)
+            return;
+        finish(200, QJsonObject{
+            {"ok", true},
+            {"query", query},
+            {"results", QJsonArray::fromVariantList(results)}
+        });
+    });
+    connect(m_mediaBackend, &EmbyJellyfinBackend::apiRequestFailed, socket,
+            [=](const QString &finishedRequestId, const QString &message) {
+        if (finishedRequestId != requestId || *done)
+            return;
+        finish(409, QJsonObject{
+            {"ok", false},
+            {"error", "vod_search_failed"},
+            {"message", message}
+        });
+    });
+    QTimer::singleShot(12000, socket, [=]() {
+        if (*done)
+            return;
+        finish(504, QJsonObject{{"ok", false}, {"error", "vod_search_timeout"}});
+    });
+
+    m_mediaBackend->api_search_media(requestId, query,
+                                     QStringList{QStringLiteral("movie"), QStringLiteral("show")},
+                                     limit);
 }
 
 void ControlApiServer::handleSearchRequest(QTcpSocket *socket, const HttpRequest &request) {

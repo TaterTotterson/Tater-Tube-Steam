@@ -262,6 +262,10 @@ private:
     void buildVodTvChannels(bool notifyRefresh);
     void buildVodTvChannelsFromLibraries(const QVariantList &libraries,
                                          bool notifyRefresh);
+    QVariantList customVodTvChannelDefinitions() const;
+    void finishVodTvChannels(const QVariantList &autoChannels, bool notifyRefresh);
+    void buildCustomVodTvChannels(const QVariantList &definitions,
+                                  std::function<void(QVariantList)> callback);
     void fetchVodTvShowGroups(const QVariantList &shows,
                               std::function<void(QVariantList)> callback);
     void fetchPlexEpisodesForSeries(const QString &seriesId,

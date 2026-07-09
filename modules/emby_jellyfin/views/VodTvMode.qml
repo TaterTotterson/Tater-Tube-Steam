@@ -11,10 +11,7 @@ FocusScope {
     property string youtubeModuleId: "com.240mp.youtube_playlist"
     property var sourceChannels: []
     property var channels: []
-    property var commercialPlaylists: []
     property var commercialPool: []
-    property var commercialLoadQueue: []
-    property var currentCommercialLoad: ({})
     property int currentIndex: -1
     property int previousIndex: -1
     property int currentScheduleIndex: -1
@@ -26,7 +23,6 @@ FocusScope {
     property bool stoppingForTune: false
     property bool streamStarted: false
     property bool streamRequestActive: false
-    property bool loadingCommercials: false
     property string pendingRequestId: ""
     property var pendingPlayback: ({})
     property int requestSerial: 0
@@ -61,32 +57,6 @@ FocusScope {
     function commercialsEnabled() {
         var value = sharedSettingValue("tv_mode_commercials", true)
         return value === true || value === "ON" || value === "true" || value === "1"
-    }
-
-    function publicAccessPlaybackQuality() {
-        return sharedSettingValue("playback_quality", "360p")
-    }
-
-    function listSetting(key) {
-        var value = appCore.get_setting(youtubeModuleId, key)
-        return Array.isArray(value) ? value : []
-    }
-
-    function loadCommercialPlaylists() {
-        var saved = listSetting("commercial_playlists")
-        var rows = []
-        var seen = ({})
-        for (var i = 0; i < saved.length; i++) {
-            var item = Object.assign({}, saved[i] || ({}))
-            var input = (item.input || item.url || "").trim()
-            if (input === "" || seen[input] === true)
-                continue
-            seen[input] = true
-            item.input = input
-            item.title = item.title || ("COMMERCIALS " + (rows.length + 1))
-            rows.push(item)
-        }
-        commercialPlaylists = rows
     }
 
     function durationSeconds(item, fallback) {
@@ -196,14 +166,77 @@ FocusScope {
         return { schedule: schedule, totalDuration: total }
     }
 
+    function buildCustomSchedule(programs) {
+        var schedule = []
+        var total = 0
+        var movies = []
+        var states = []
+        var totalSlots = 0
+
+        for (var i = 0; i < (programs || []).length; i++) {
+            var program = programs[i] || ({})
+            var episodes = program.episodes || []
+            if (episodes.length > 0) {
+                states.push({
+                    group: program,
+                    episodes: episodes,
+                    nextIndex: Math.floor(Math.random() * episodes.length)
+                })
+                totalSlots += episodes.length
+            } else if (program.ratingKey) {
+                movies.push(program)
+                totalSlots += 1
+            }
+        }
+
+        if (totalSlots <= 0)
+            return { schedule: [], totalDuration: 0 }
+
+        var shuffledMovies = shuffleList(movies)
+        var movieIndex = 0
+        var previousState = -1
+        for (var slot = 0; slot < totalSlots; slot++) {
+            var useSeries = states.length > 0 && (movieIndex >= shuffledMovies.length || Math.random() < 0.55)
+            if (useSeries) {
+                var stateIndex = Math.floor(Math.random() * states.length)
+                if (previousState >= 0 && Math.random() < 0.34)
+                    stateIndex = previousState
+                var state = states[stateIndex]
+                var episode = state.episodes[state.nextIndex % state.episodes.length]
+                state.nextIndex++
+                total = appendScheduleItem(schedule, episode, "episode", total)
+                total = appendCommercialBreak(schedule, total)
+                previousState = stateIndex
+            } else if (movieIndex < shuffledMovies.length) {
+                total = appendScheduleItem(schedule, shuffledMovies[movieIndex], "movie", total)
+                total = appendCommercialBreak(schedule, total)
+                movieIndex++
+                previousState = -1
+            }
+        }
+
+        return { schedule: schedule, totalDuration: total }
+    }
+
     function buildReadyChannels(loadedChannels) {
         var ready = []
-        var shuffled = shuffleList(loadedChannels || [])
+        var customChannels = []
+        var generatedChannels = []
+        for (var s = 0; s < (loadedChannels || []).length; s++) {
+            var channelSource = loadedChannels[s] || ({})
+            if (channelSource.channelType === "custom")
+                customChannels.push(channelSource)
+            else
+                generatedChannels.push(channelSource)
+        }
+        var shuffled = customChannels.concat(shuffleList(generatedChannels))
         for (var i = 0; i < shuffled.length; i++) {
             var source = shuffled[i] || ({})
-            var scheduleData = source.channelType === "tv"
+            var scheduleData = source.channelType === "custom"
+                ? buildCustomSchedule(source.programs || [])
+                : (source.channelType === "tv"
                 ? buildTvSchedule(source.programs || [])
-                : buildMovieSchedule(source.programs || [])
+                : buildMovieSchedule(source.programs || []))
             if (!scheduleData.schedule || scheduleData.schedule.length === 0 ||
                     scheduleData.totalDuration <= 0) {
                 continue
@@ -236,56 +269,10 @@ FocusScope {
 
     function startCommercialLoad(loadedChannels) {
         sourceChannels = loadedChannels || []
-        loadCommercialPlaylists()
-        commercialPool = []
-        commercialLoadQueue = []
-        currentCommercialLoad = ({})
-
-        if (!commercialsEnabled() || commercialPlaylists.length === 0) {
-            buildReadyChannels(sourceChannels)
-            return
-        }
-
-        for (var i = 0; i < commercialPlaylists.length; i++)
-            commercialLoadQueue.push(commercialPlaylists[i])
-
-        loadingCommercials = true
-        loading = true
-        tuningStaticVisible = true
-        statusText = "LOADING COMMERCIALS"
-        loadNextCommercialPlaylist()
-    }
-
-    function loadNextCommercialPlaylist() {
-        if (!loadingCommercials)
-            return
-        if (commercialLoadQueue.length === 0) {
-            loadingCommercials = false
-            buildReadyChannels(sourceChannels)
-            return
-        }
-
-        currentCommercialLoad = commercialLoadQueue.shift() || ({})
-        statusText = "LOADING " + (currentCommercialLoad.title || "COMMERCIALS")
-        youtubePlaylistBackend.load_playlist(currentCommercialLoad.input || currentCommercialLoad.url || "")
-    }
-
-    function handleCommercialPlaylistLoaded(items) {
-        var playlistItems = items || []
-        for (var i = 0; i < playlistItems.length; i++) {
-            var commercial = Object.assign({}, playlistItems[i])
-            if (!commercial.url)
-                continue
-            commercial.commercial = true
-            commercialPool.push(commercial)
-        }
-        currentCommercialLoad = ({})
-        loadNextCommercialPlaylist()
-    }
-
-    function handleCommercialPlaylistError() {
-        currentCommercialLoad = ({})
-        loadNextCommercialPlaylist()
+        commercialPool = commercialsEnabled()
+            ? youtubePlaylistBackend.get_commercial_videos_for_setting("vod_commercial_categories")
+            : []
+        buildReadyChannels(sourceChannels)
     }
 
     function selectedChannel() {
@@ -357,11 +344,10 @@ FocusScope {
             label: label
         }
         if (resolved.item.kind === "commercial") {
-            var format = youtubePlaylistBackend.ytdl_format_for_quality(publicAccessPlaybackQuality())
-            youtubePlaylistBackend.resolve_video_stream(requestId,
-                                                        resolved.item.url || "",
-                                                        publicAccessPlaybackQuality())
-            pendingPlayback.format = format
+            pendingRequestId = ""
+            pendingPlayback = ({})
+            launchPlayback(resolved.item.url || "", "", resolved.offset || 0.0,
+                           label, false, "")
         } else {
             embyBackend.prepare_vod_tv_stream(requestId, resolved.item)
         }
@@ -524,54 +510,6 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV FAILED"
-        }
-    }
-
-    Connections {
-        target: youtubePlaylistBackend
-
-        function onPlaylistLoaded(title, items) {
-            if (!tvRoot.loadingCommercials)
-                return
-            tvRoot.handleCommercialPlaylistLoaded(items || [])
-        }
-
-        function onErrorOccurred(message) {
-            if (tvRoot.loadingCommercials) {
-                tvRoot.handleCommercialPlaylistError()
-                return
-            }
-
-            if (tvRoot.pendingRequestId === "")
-                return
-            tvRoot.pendingRequestId = ""
-            tvRoot.pendingPlayback = ({})
-            tvRoot.streamRequestActive = false
-            tvRoot.tuningStaticVisible = false
-            tvRoot.noSignalVisible = true
-            tvRoot.statusText = message || "COMMERCIAL PLAYBACK FAILED"
-        }
-
-        function onVideoStreamResolved(requestId, result) {
-            if (requestId !== tvRoot.pendingRequestId)
-                return
-
-            var pending = tvRoot.pendingPlayback || ({})
-            tvRoot.pendingRequestId = ""
-            tvRoot.pendingPlayback = ({})
-
-            var directUrl = result && result.ok === true ? (result.url || "") : ""
-            if (directUrl !== "") {
-                tvRoot.launchPlayback(directUrl, "", pending.offset || 0.0,
-                                      pending.label || tvRoot.statusText,
-                                      false, "")
-                return
-            }
-
-            var item = pending.item || ({})
-            tvRoot.launchPlayback(item.url || "", "", pending.offset || 0.0,
-                                  pending.label || tvRoot.statusText,
-                                  true, pending.format || "")
         }
     }
 

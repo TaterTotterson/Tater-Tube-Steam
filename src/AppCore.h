@@ -27,6 +27,7 @@ public:
 
     QString appVersion() const { return QCoreApplication::applicationVersion(); }
     QString appRoot() const { return m_appRoot; }
+    QString dataRoot() const { return m_dataRoot; }
 
     // True when launched by the autostart systemd service (which injects MP240_AUTOSTART=1).
     // Gates the quit overlay's "Exit to Terminal" option, which only makes sense on a

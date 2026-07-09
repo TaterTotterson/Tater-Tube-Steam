@@ -1,15 +1,15 @@
 {
-  "version": "v1.2.8",
-  "app_version": "1.2.8",
+  "version": "v1.2.9",
+  "app_version": "1.2.9",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.8/Tater-Tube-v1.2.8-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.8.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.2.9/Tater-Tube-v1.2.9-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.2.9.tar.gz",
   "notes": [
-    "Adds a mobile-friendly Web Setup UI at /setup for module logins, API keys, and appliance settings.",
-    "Adds setup API endpoints that save through the same AppCore settings path as the TV UI.",
-    "Refreshes open setup/settings screens when module settings are changed from the Web Setup UI.",
-    "Uses a module picker and mascot-focused module detail pages for easier phone setup."
+    "Adds local commercial categories in Web Setup with multi-video upload and delete controls.",
+    "Uses uploaded local commercials in Public Access and Video on Demand TV Mode instead of YouTube commercial playlists.",
+    "Adds per-mode commercial category selection in the TV UI and settings UI.",
+    "Adds a Web Setup custom VoD channel maker for Plex, Emby, and Jellyfin movie/series channels."
   ]
 }

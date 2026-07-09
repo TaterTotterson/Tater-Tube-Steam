@@ -3449,9 +3449,13 @@ void EmbyJellyfinBackend::load_next_episode(const QString &currentRatingKey) {
 }
 
 QJsonObject EmbyJellyfinBackend::vodTvCacheIdentity() const {
+    const QJsonObject moduleConfig = loadConfig().value(QStringLiteral("modules")).toObject()
+        .value(kModuleId).toObject();
     QJsonObject identity{
         {QStringLiteral("provider"), mediaProvider()},
-        {QStringLiteral("schema"), QStringLiteral("vod-tv-themed-channels-v2")}
+        {QStringLiteral("schema"), QStringLiteral("vod-tv-themed-channels-v3")},
+        {QStringLiteral("customChannels"),
+         moduleConfig.value(QStringLiteral("custom_vod_tv_channels")).toArray()}
     };
     if (mediaProvider() == kProviderPlex) {
         const QJsonObject auth = loadPlexAuth();
@@ -3622,11 +3626,7 @@ void EmbyJellyfinBackend::buildVodTvChannelsFromLibraries(const QVariantList &li
 
     *processNext = [this, libraries, notifyRefresh, channels, index, processNext]() {
         if (*index >= libraries.size()) {
-            saveVodTvChannelsCache(*channels);
-            if (notifyRefresh)
-                qInfo("[EmbyJellyfinBackend] VoD TV cache refreshed with %d channels",
-                      int(channels->size()));
-            emit vodTvChannelsLoaded(*channels);
+            finishVodTvChannels(*channels, notifyRefresh);
             return;
         }
 
@@ -3729,6 +3729,118 @@ void EmbyJellyfinBackend::buildVodTvChannelsFromLibraries(const QVariantList &li
                 .object()[QStringLiteral("Items")].toArray();
             finishItems(formatItems(items));
         });
+    };
+
+    (*processNext)();
+}
+
+QVariantList EmbyJellyfinBackend::customVodTvChannelDefinitions() const
+{
+    const QJsonObject moduleConfig = loadConfig().value(QStringLiteral("modules")).toObject()
+        .value(kModuleId).toObject();
+    QVariantList result;
+    const QJsonArray raw = moduleConfig.value(QStringLiteral("custom_vod_tv_channels")).toArray();
+    for (const QJsonValue &value : raw) {
+        const QVariantMap channel = value.toObject().toVariantMap();
+        const QString title = channel.value(QStringLiteral("title"),
+                                            channel.value(QStringLiteral("name"))).toString().trimmed();
+        const QVariantList items = channel.value(QStringLiteral("items")).toList();
+        if (title.isEmpty() || items.isEmpty())
+            continue;
+        result.append(channel);
+    }
+    return result;
+}
+
+void EmbyJellyfinBackend::finishVodTvChannels(const QVariantList &autoChannels,
+                                              bool notifyRefresh)
+{
+    const QVariantList definitions = customVodTvChannelDefinitions();
+    if (definitions.isEmpty()) {
+        saveVodTvChannelsCache(autoChannels);
+        if (notifyRefresh) {
+            qInfo("[EmbyJellyfinBackend] VoD TV cache refreshed with %d channels",
+                  int(autoChannels.size()));
+        }
+        emit vodTvChannelsLoaded(autoChannels);
+        return;
+    }
+
+    buildCustomVodTvChannels(definitions, [this, autoChannels, notifyRefresh](QVariantList customChannels) {
+        QVariantList channels = customChannels;
+        for (const QVariant &channel : autoChannels)
+            channels.append(channel);
+
+        saveVodTvChannelsCache(channels);
+        if (notifyRefresh) {
+            qInfo("[EmbyJellyfinBackend] VoD TV cache refreshed with %d channels",
+                  int(channels.size()));
+        }
+        emit vodTvChannelsLoaded(channels);
+    });
+}
+
+void EmbyJellyfinBackend::buildCustomVodTvChannels(
+    const QVariantList &definitions,
+    std::function<void(QVariantList)> callback)
+{
+    auto channels = std::make_shared<QVariantList>();
+    auto index = std::make_shared<int>(0);
+    auto processNext = std::make_shared<std::function<void()>>();
+
+    *processNext = [this, definitions, channels, index, processNext, callback]() {
+        if (*index >= definitions.size()) {
+            callback(*channels);
+            return;
+        }
+
+        const QVariantMap definition = definitions.at(*index).toMap();
+        const QString title = definition.value(QStringLiteral("title"),
+                                               definition.value(QStringLiteral("name"))).toString().trimmed();
+        const QVariantList savedItems = definition.value(QStringLiteral("items")).toList();
+        QVariantList movies;
+        QVariantList shows;
+        for (const QVariant &value : savedItems) {
+            QVariantMap item = value.toMap();
+            QString ratingKey = item.value(QStringLiteral("ratingKey")).toString().trimmed();
+            if (ratingKey.isEmpty())
+                ratingKey = item.value(QStringLiteral("rating_key")).toString().trimmed();
+            QString type = item.value(QStringLiteral("type"),
+                                      item.value(QStringLiteral("kind"))).toString().trimmed().toLower();
+            if (ratingKey.isEmpty())
+                continue;
+            if (type == QStringLiteral("series") || type == QStringLiteral("tv") ||
+                type == QStringLiteral("tv_show")) {
+                type = QStringLiteral("show");
+            }
+            item[QStringLiteral("ratingKey")] = ratingKey;
+            item[QStringLiteral("type")] = type;
+            item[QStringLiteral("title")] = item.value(QStringLiteral("title")).toString().toUpper();
+            if (isVodMovieType(type)) {
+                movies.append(vodProgramFromItem(item));
+            } else if (isVodShowType(type)) {
+                shows.append(vodProgramFromItem(item));
+            }
+        }
+
+        const auto finishOne = [title, movies, channels, index, processNext](const QVariantList &showGroups) {
+            QVariantList programs = movies;
+            for (const QVariant &group : showGroups)
+                programs.append(group);
+
+            if (!title.isEmpty() && !programs.isEmpty())
+                channels->append(vodChannel(title, QStringLiteral("custom"), programs));
+
+            ++(*index);
+            (*processNext)();
+        };
+
+        if (shows.isEmpty()) {
+            finishOne(QVariantList{});
+            return;
+        }
+
+        fetchVodTvShowGroups(shows, finishOne);
     };
 
     (*processNext)();

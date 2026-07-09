@@ -24,7 +24,7 @@ FocusScope {
         rows = [
             { key: "start", title: "START TV MODE" },
             { key: "commercials", title: "COMMERCIALS " + (commercialsEnabled() ? "ON" : "OFF") },
-            { key: "add_commercial", title: "+ ADD COMMERCIAL PLAYLIST" }
+            { key: "commercial_categories", title: "COMMERCIAL CATEGORIES" }
         ]
     }
 
@@ -38,8 +38,12 @@ FocusScope {
             appCore.save_setting(youtubeModuleId, "tv_mode_commercials",
                                  commercialsEnabled() ? "OFF" : "ON")
             rebuildRows()
-        } else if (row.key === "add_commercial") {
-            navigateTo("CommercialPlaylistAdd.qml", {}, { currentIndex: menuList.currentIndex })
+        } else if (row.key === "commercial_categories") {
+            navigateTo("../../../views/MultiSelectSettings.qml", {
+                moduleId: youtubeModuleId,
+                settingKey: "vod_commercial_categories",
+                settingLabel: "VOD COMMERCIALS"
+            }, { currentIndex: menuList.currentIndex })
         }
     }
 
