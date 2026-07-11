@@ -8,6 +8,7 @@
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QDebug>
+#include <QtGlobal>
 
 #ifdef Q_OS_LINUX
 #include <fcntl.h>
@@ -89,6 +90,18 @@ static bool readSavedMpvVolume(double *volumeOut)
     return true;
 }
 
+static void writeSavedMpvVolume(double volume)
+{
+    if (volume < 0.0)
+        volume = 0.0;
+    if (volume > 200.0)
+        volume = 200.0;
+
+    QFile f(mpvVolumeStatePath());
+    if (f.open(QFile::WriteOnly | QFile::Text))
+        f.write(QString("%1\n").arg(volume, 0, 'f', 3).toUtf8());
+}
+
 static QString connectedPiHdmiAudioCard()
 {
 #ifdef Q_OS_LINUX
@@ -141,6 +154,10 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
         f.close();
     }
 
+    double savedVolume = 0.0;
+    if (readSavedMpvVolume(&savedVolume))
+        m_volume = savedVolume;
+
     m_ipc = new QLocalSocket(this);
     connect(m_ipc, &QLocalSocket::connected, this, [this] {
         m_connectTimer->stop();
@@ -150,6 +167,8 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
         sendCommand({"observe_property", 2, "duration"});
         sendCommand({"observe_property", 3, "playlist-pos"});
         sendCommand({"observe_property", 4, "pause"});
+        sendCommand({"observe_property", 5, "volume"});
+        sendCommand({"observe_property", 6, "mute"});
     });
     connect(m_ipc, &QLocalSocket::readyRead, this, &MpvController::onIpcReadyRead);
 
@@ -228,6 +247,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     m_position    = 0;
     m_duration    = 0;
     m_playlistPos = -1;
+    setAudioLevel(0.0);
     if (m_paused) {
         m_paused = false;
         emit pausedChanged(m_paused);
@@ -277,9 +297,10 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << (hasOscScript ? "--osc=no" : "--osc=yes")
          << "--osd-level=0";
 
-    double savedVolume = 0.0;
-    if (readSavedMpvVolume(&savedVolume))
-        args << QString("--volume=%1").arg(savedVolume, 0, 'f', 3);
+    args << QStringLiteral("--volume-max=200")
+         << QString("--volume=%1").arg(m_volume, 0, 'f', 3);
+    if (m_muted)
+        args << QStringLiteral("--mute=yes");
 
     if (hasOscScript)
         args << QString("--script=%1").arg(oscScript);
@@ -293,6 +314,12 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     const QString vcrOsdScript = m_appRoot + "/scripts/vcr-osd.lua";
     if (!audioOnly && !isOtaMode && QFile::exists(vcrOsdScript))
         args << QString("--script=%1").arg(vcrOsdScript);
+
+    const QString audioVuScript = m_appRoot + "/scripts/audio-vu.lua";
+    if (audioOnly && QFile::exists(audioVuScript)) {
+        args << QString("--script=%1").arg(audioVuScript)
+             << QStringLiteral("--af-add=@240mp_vu:lavfi=[astats=metadata=1:reset=0.08]");
+    }
 
     if (playlistStart >= 0)
         args << QString("--playlist-start=%1").arg(playlistStart);
@@ -479,6 +506,18 @@ void MpvController::seekTo(int positionMs) {
 }
 
 void MpvController::sendKey(const QString &key) {
+    if (key == QStringLiteral("VOLUME_UP")) {
+        adjustVolume(5.0);
+        return;
+    }
+    if (key == QStringLiteral("VOLUME_DOWN")) {
+        adjustVolume(-5.0);
+        return;
+    }
+    if (key == QStringLiteral("MUTE")) {
+        toggleMute();
+        return;
+    }
     sendCommand({"keypress", key});
 }
 
@@ -498,6 +537,18 @@ void MpvController::setPaused(bool paused) {
 
 void MpvController::togglePause() {
     sendCommand({"cycle", "pause"});
+}
+
+void MpvController::adjustVolume(double delta) {
+    setVolumeLevel(m_volume + delta, true, true);
+    sendCommand({"set_property", "volume", m_volume});
+    showMpvVolumeOverlay();
+}
+
+void MpvController::toggleMute() {
+    setMutedState(!m_muted, true);
+    sendCommand({"set_property", "mute", m_muted});
+    showMpvVolumeOverlay();
 }
 
 void MpvController::setPlaybackSpeed(double speed) {
@@ -539,6 +590,12 @@ void MpvController::onIpcReadyRead() {
                 const QJsonArray args = obj["args"].toArray();
                 const QString message = args.size() > 0 ? args.at(0).toString() : QString();
                 const QString arg = args.size() > 1 ? args.at(1).toString() : QString();
+                if (message == QStringLiteral("240mp-audio-level")) {
+                    bool ok = false;
+                    const double level = arg.toDouble(&ok);
+                    if (ok)
+                        setAudioLevel(level);
+                }
                 if (!message.isEmpty())
                     emit scriptMessageReceived(message, arg);
             }
@@ -566,6 +623,10 @@ void MpvController::onIpcReadyRead() {
                 m_paused = paused;
                 emit pausedChanged(m_paused);
             }
+        } else if (name == "volume") {
+            setVolumeLevel(val, true, false);
+        } else if (name == "mute") {
+            setMutedState(data.toBool(), false);
         }
     }
 }
@@ -630,6 +691,7 @@ void MpvController::onProcessFinished() {
     const int dur = m_duration;
     m_position = 0;
     m_duration = 0;
+    setAudioLevel(0.0);
     if (m_paused) {
         m_paused = false;
         emit pausedChanged(m_paused);
@@ -688,6 +750,41 @@ void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof, bool pl
         emit playbackFinishedNaturally(pos, dur);
     else
         emit playbackFinished(pos, dur);
+}
+
+void MpvController::setAudioLevel(double level) {
+    const double bounded = qBound(0.0, level, 1.0);
+    if (qAbs(m_audioLevel - bounded) < 0.005)
+        return;
+    m_audioLevel = bounded;
+    emit audioLevelChanged(m_audioLevel);
+}
+
+void MpvController::setVolumeLevel(double volume, bool persist, bool showOverlay) {
+    const double bounded = qBound(0.0, volume, volumeMax());
+    const bool changed = qAbs(m_volume - bounded) >= 0.005;
+
+    if (changed) {
+        m_volume = bounded;
+        emit volumeChanged(m_volume);
+    }
+    if (persist)
+        writeSavedMpvVolume(m_volume);
+    if (showOverlay)
+        emit volumeOverlayRequested();
+}
+
+void MpvController::setMutedState(bool muted, bool showOverlay) {
+    if (m_muted != muted) {
+        m_muted = muted;
+        emit mutedChanged(m_muted);
+    }
+    if (showOverlay)
+        emit volumeOverlayRequested();
+}
+
+void MpvController::showMpvVolumeOverlay() {
+    sendCommand({"script-message", "240mp-osd-volume-show"});
 }
 
 bool MpvController::shouldRetryPi3SoftwareFallback(bool playbackError) const {

@@ -274,6 +274,7 @@ Window {
     // engine invalidates the root context itself.
     readonly property var hints: inputManager ? inputManager.hints : ({})
     readonly property string appVersion: appCore ? appCore.appVersion : ""
+    property bool volumeOverlayVisible: false
 
     // --- APP-LEVEL NAV STACK ---
     property var appNavStack: []
@@ -285,6 +286,18 @@ Window {
         root.appNavStack = []
         root.appCurrentParams = {}
         moduleLoader.setSource("views/ModuleList.qml", { "navParams": {}, "navListState": {} })
+    }
+
+    function showAppVolumeOverlay() {
+        root.volumeOverlayVisible = true
+        volumeOverlayTimer.restart()
+    }
+
+    Connections {
+        target: mpvController
+        function onVolumeOverlayRequested() {
+            root.showAppVolumeOverlay()
+        }
     }
 
     // --- MODULE LOADER ---
@@ -365,5 +378,65 @@ Window {
                 font.pixelSize: root.sh * 0.05
             }
         }
+    }
+
+    Item {
+        id: volumeOverlay
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: root.sw * 0.12
+        anchors.rightMargin: root.sw * 0.12
+        anchors.bottomMargin: root.sh * 0.11
+        height: root.sh * 0.20
+        visible: opacity > 0.01
+        opacity: root.volumeOverlayVisible ? 1 : 0
+        z: 900
+
+        readonly property int tickCount: Math.max(1, Math.round(((mpvController && mpvController.volumeMax) || 200) / 5))
+        readonly property int filledTicks: Math.max(0, Math.min(tickCount, Math.round(((mpvController && mpvController.volume) || 0) / 5)))
+
+        Behavior on opacity {
+            NumberAnimation { duration: 120 }
+        }
+
+        Text {
+            id: volumeLabel
+            anchors.left: parent.left
+            anchors.bottom: volumeTicks.top
+            anchors.bottomMargin: root.sh * 0.01
+            text: mpvController && mpvController.muted ? "MUTE" : "VOLUME"
+            color: root.primaryColor
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            font.pixelSize: root.sh * 0.10
+        }
+
+        Row {
+            id: volumeTicks
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: root.sh * 0.055
+            spacing: Math.max(1, root.sw * 0.004)
+
+            Repeater {
+                model: volumeOverlay.tickCount
+                Rectangle {
+                    width: Math.max(1, (volumeTicks.width - volumeTicks.spacing * (volumeOverlay.tickCount - 1)) / volumeOverlay.tickCount)
+                    height: index < volumeOverlay.filledTicks ? volumeTicks.height : Math.max(2, volumeTicks.height * 0.15)
+                    y: (volumeTicks.height - height) / 2
+                    color: root.primaryColor
+                    opacity: index < volumeOverlay.filledTicks ? 1.0 : 0.35
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: volumeOverlayTimer
+        interval: 1500
+        repeat: false
+        onTriggered: root.volumeOverlayVisible = false
     }
 }

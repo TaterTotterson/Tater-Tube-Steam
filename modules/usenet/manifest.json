@@ -24,6 +24,20 @@
       "default": ""
     },
     {
+      "key": "tube_transcode_mode",
+      "label": "TRANSCODING",
+      "type": "list_single",
+      "options": ["On", "Off"],
+      "default": "On"
+    },
+    {
+      "key": "tube_transcode_quality",
+      "label": "TRANSCODE QUALITY",
+      "type": "list_single",
+      "options": ["Auto", "CRT 480p", "HDMI 1080p", "HDMI 4K"],
+      "default": "Auto"
+    },
+    {
       "key": "browse_limit",
       "label": "BROWSE LIMIT",
       "type": "list_single",

@@ -30,6 +30,10 @@ class MpvController : public QObject {
     Q_PROPERTY(int playlistPos READ playlistPos NOTIFY playlistPosChanged)
     Q_PROPERTY(bool running    READ isRunning   NOTIFY runningChanged)
     Q_PROPERTY(bool paused     READ paused      NOTIFY pausedChanged)
+    Q_PROPERTY(double audioLevel READ audioLevel NOTIFY audioLevelChanged)
+    Q_PROPERTY(double volume READ volume NOTIFY volumeChanged)
+    Q_PROPERTY(double volumeMax READ volumeMax CONSTANT)
+    Q_PROPERTY(bool muted READ muted NOTIFY mutedChanged)
 
 public:
     explicit MpvController(const QString &appRoot, AppCore *appCore = nullptr,
@@ -41,6 +45,10 @@ public:
     int playlistPos() const { return m_playlistPos; }
     bool isRunning() const;
     bool paused() const { return m_paused; }
+    double audioLevel() const { return m_audioLevel; }
+    double volume() const { return m_volume; }
+    double volumeMax() const { return 200.0; }
+    bool muted() const { return m_muted; }
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,
                                   int audioTrack, int subTrack,
@@ -66,6 +74,8 @@ public:
     Q_INVOKABLE void sendScriptMessage(const QString &message, const QString &arg = {});
     Q_INVOKABLE void setPaused(bool paused);
     Q_INVOKABLE void togglePause();
+    Q_INVOKABLE void adjustVolume(double delta);
+    Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void setPlaybackSpeed(double speed);
     Q_INVOKABLE void setAudioPitchCorrection(bool enabled);
 
@@ -75,6 +85,10 @@ signals:
     void playlistPosChanged(int pos);
     void runningChanged(bool running);
     void pausedChanged(bool paused);
+    void audioLevelChanged(double level);
+    void volumeChanged(double volume);
+    void mutedChanged(bool muted);
+    void volumeOverlayRequested();
     // Emitted when mpv exits because the user quit/stopped playback before the end.
     void playbackFinished(int finalPositionMs, int finalDurationMs);
     // Emitted when mpv exits because the file played to its natural end (mpv's
@@ -125,6 +139,10 @@ private:
     // app-level "mpv_video_args" override) to a forming mpv argument list.
     void appendVideoArgs(QStringList &args) const;
     void appendAudioArgs(QStringList &args) const;
+    void setAudioLevel(double level);
+    void setVolumeLevel(double volume, bool persist, bool showOverlay);
+    void setMutedState(bool muted, bool showOverlay);
+    void showMpvVolumeOverlay();
     int  getActiveVt() const;
     int  findFreeVt() const;
     int  findQtDrmFd() const;
@@ -150,6 +168,9 @@ private:
     int           m_position     = 0;
     int           m_duration     = 0;
     int           m_playlistPos  = -1;
+    double        m_audioLevel   = 0.0;
+    double        m_volume       = 100.0;
+    bool          m_muted        = false;
     bool          m_paused       = false;
     bool          m_headlessMode = false;
     int           m_previousVt   = -1;

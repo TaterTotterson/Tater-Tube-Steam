@@ -147,6 +147,8 @@ local function show_volume_bar()
     bar_timer = mp.add_timeout(BAR_TIMEOUT, hide_bar)
 end
 
+mp.register_script_message("240mp-osd-volume-show", show_volume_bar)
+
 local function change_volume(delta)
     mp.command("no-osd add volume " .. delta)
     save_volume_state()

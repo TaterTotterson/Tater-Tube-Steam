@@ -279,7 +279,8 @@ FocusScope {
         playbackStarted = true
         mode = "playing"
         statusText = "PLAYING " + (title || stream.title || "THE TUBE")
-        mpvController.loadAndPlay(stream.url, 0.0, 0, -1, [], false, -1, 0.0,
+        var playbackUrl = usenetBackend.playback_url(stream.url, Math.round(root.sw), Math.round(root.sh))
+        mpvController.loadAndPlay(playbackUrl, 0.0, 0, -1, [], false, -1, 0.0,
                                   "", false, "", false, title || stream.title || "THE TUBE")
     }
 

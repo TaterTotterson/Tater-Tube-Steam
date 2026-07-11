@@ -27,6 +27,8 @@ public:
     Q_INVOKABLE void load_trending(const QString &category, const QString &timePeriod,
                                    const QString &title);
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
+    Q_INVOKABLE QString playback_url(const QString &url, int screenWidth, int screenHeight) const;
+    Q_INVOKABLE bool uses_server_seek() const;
     Q_INVOKABLE QVariantList get_commercial_videos_for_setting(const QString &settingKey) const;
     Q_INVOKABLE QVariantList get_commercial_videos_for_category(const QString &categoryId) const;
     Q_INVOKABLE void load_tube_commercial_category_options();
@@ -61,6 +63,7 @@ private:
     QString ensureNewznabApiKey(const QString &url) const;
     int browseLimit() const;
     int streamTimeout() const;
+    QString playbackTranscodeProfile(int screenWidth, int screenHeight) const;
 
     void handleCategoriesReply(QNetworkReply *reply);
     void handleItemsReply(QNetworkReply *reply, const QString &categoryTitle);

@@ -904,7 +904,7 @@ FocusScope {
             offset = 0.0
         if (resolved.item.kind === "commercial" && resolved.item.local === true)
             offset = 0.0
-        if (resolved.item.kind !== "commercial" && usesServerSeek(resolved.item)) {
+        if (resolved.item.kind !== "commercial" && usenetBackend.uses_server_seek()) {
             url = urlWithStartOffset(url, offset)
             offset = 0.0
         }
@@ -924,7 +924,10 @@ FocusScope {
         stoppingForTune = false
         stoppingForScheduleAdvance = false
         noSignalVisible = false
-        mpvController.loadAndPlay(url, offset || 0.0, 0, -1, [], false, -1, 0.0,
+        var playbackUrl = item && item.kind !== "commercial"
+            ? usenetBackend.playback_url(url, Math.round(root.sw), Math.round(root.sh))
+            : url
+        mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
                                   "", false, "ota", false, label || statusText)
 
         scheduleAdvanceTimer.stop()

@@ -12,6 +12,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QXmlStreamReader>
+#include <QtGlobal>
 
 namespace {
 constexpr const char *kModuleId = "com.240mp.usenet";
@@ -288,6 +289,60 @@ int UsenetBackend::streamTimeout() const
     if (!ok)
         timeout = 300;
     return qBound(60, timeout, 900);
+}
+
+QString UsenetBackend::playbackTranscodeProfile(int screenWidth, int screenHeight) const
+{
+    const QString quality = setting(QStringLiteral("tube_transcode_quality"),
+                                    QStringLiteral("Auto")).trimmed().toLower();
+    if (quality == QStringLiteral("crt 480p") || quality == QStringLiteral("crt_480p"))
+        return QStringLiteral("crt_480p");
+    if (quality == QStringLiteral("hdmi 1080p") || quality == QStringLiteral("hdmi_1080p"))
+        return QStringLiteral("hdmi_1080p");
+    if (quality == QStringLiteral("hdmi 4k") || quality == QStringLiteral("hdmi_4k"))
+        return QStringLiteral("hdmi_4k");
+
+    const int longEdge = qMax(screenWidth, screenHeight);
+    const int shortEdge = qMin(screenWidth, screenHeight);
+    if (longEdge >= 3000 || shortEdge >= 1800)
+        return QStringLiteral("hdmi_4k");
+    if (longEdge >= 1280 || shortEdge >= 720)
+        return QStringLiteral("hdmi_1080p");
+    return QStringLiteral("crt_480p");
+}
+
+QString UsenetBackend::playback_url(const QString &rawUrl, int screenWidth, int screenHeight) const
+{
+    QUrl url(rawUrl.trimmed());
+    if (!url.isValid() || url.scheme().isEmpty())
+        return rawUrl.trimmed();
+
+    const QString mode = setting(QStringLiteral("tube_transcode_mode"),
+                                 QStringLiteral("On")).trimmed().toLower();
+    QUrlQuery query(url);
+    query.removeAllQueryItems(QStringLiteral("direct"));
+    query.removeAllQueryItems(QStringLiteral("transcode"));
+    query.removeAllQueryItems(QStringLiteral("profile"));
+    query.removeAllQueryItems(QStringLiteral("hwaccel"));
+
+    if (mode == QStringLiteral("off")) {
+        query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("0"));
+    } else {
+        query.addQueryItem(QStringLiteral("profile"),
+                           playbackTranscodeProfile(screenWidth, screenHeight));
+        query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("1"));
+        query.addQueryItem(QStringLiteral("hwaccel"), QStringLiteral("auto"));
+    }
+
+    url.setQuery(query);
+    return url.toString();
+}
+
+bool UsenetBackend::uses_server_seek() const
+{
+    const QString mode = setting(QStringLiteral("tube_transcode_mode"),
+                                 QStringLiteral("On")).trimmed().toLower();
+    return mode != QStringLiteral("off");
 }
 
 QVariantList UsenetBackend::get_commercial_videos_for_setting(const QString &settingKey) const

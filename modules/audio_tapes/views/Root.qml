@@ -57,6 +57,25 @@ FocusScope {
         return m + ":" + (s < 10 ? "0" + s : "" + s)
     }
 
+    function vuLift(index) {
+        if (!playing)
+            return 0.06
+        if (paused)
+            return 0.10
+
+        var level = Math.max(0, Math.min(1, mpvController.audioLevel || 0))
+        var driven = Math.pow(Math.min(1, level * 1.35), 0.78)
+        var bandShape = 0.48 + Math.abs(Math.sin(index * 0.42)) * 0.52
+        var flicker = 0.88 + Math.abs(Math.sin((visualTick * 0.26) + index * 0.55)) * 0.12
+        var floor = fastForwarding ? 0.28 : 0.07
+        var lift = floor + driven * bandShape * flicker
+
+        if (fastForwarding)
+            lift = Math.max(lift, 0.45 + Math.abs(Math.sin((visualTick * 0.35) + index * 0.65)) * 0.40)
+
+        return Math.min(1.0, lift)
+    }
+
     function loadLibraries() {
         if (embyBackend.get_auth_state() !== "authed") {
             mode = "message"
@@ -734,12 +753,15 @@ FocusScope {
                 Rectangle {
                     width: root.sw * 0.018
                     height: {
-                        var wave = Math.abs(Math.sin((visualTick + index * 5) * 0.22))
-                        var lift = paused ? 0.15 : 0.25 + wave * 0.75
-                        return root.sh * (0.025 + lift * 0.12)
+                        var lift = vuLift(index)
+                        return root.sh * (0.022 + lift * 0.13)
                     }
                     anchors.bottom: parent.bottom
-                    color: index > 19 ? root.accentColor : root.primaryColor
+                    color: index > 19 || vuLift(index) > 0.82 ? root.accentColor : root.primaryColor
+
+                    Behavior on height {
+                        NumberAnimation { duration: 70; easing.type: Easing.OutQuad }
+                    }
                 }
             }
         }

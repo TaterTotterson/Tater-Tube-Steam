@@ -758,6 +758,8 @@ QJsonObject ControlApiServer::playbackStatus() const {
             {"position_ms", m_player ? m_player->position() : 0},
             {"duration_ms", m_player ? m_player->duration() : 0},
             {"playlist_pos", m_player ? m_player->playlistPos() : -1},
+            {"volume", m_player ? m_player->volume() : 0},
+            {"muted", m_player && m_player->muted()},
             {"game_running", m_retroBackend && m_retroBackend->isRunning()}
         }}
     };

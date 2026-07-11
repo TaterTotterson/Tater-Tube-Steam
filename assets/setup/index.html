@@ -1091,7 +1091,7 @@
         "com.240mp.ota": "HDHomeRun address and over-the-air setup.",
         "com.240mp.emby_jellyfin": "Emby, Jellyfin, Plex, playback, and library settings.",
         "com.240mp.youtube_playlist": "Public Access playlists, quality, and cache refresh.",
-        "com.240mp.usenet": "The Tube connection to Tater Tube Server.",
+        "com.240mp.usenet": "The Tube server pairing, playback quality, and TV Mode settings.",
         "com.240mp.audio_tapes": "Tape Deck module visibility.",
         "com.240mp.retro": "RetroNAS share, local ROM path, core install, and game cache.",
         "com.240mp.local_files": "Local media folder, loop, shuffle, and resume behavior.",
@@ -1142,7 +1142,11 @@
     }
 
     function setupEntries() {
-      return [appEntry(), commercialsEntry(), vodChannelsEntry(), tubeChannelsEntry()].concat(setupData.modules || []);
+      const modules = setupData.modules || [];
+      const tube = modules.find(module => module.id === "com.240mp.usenet");
+      const rest = modules.filter(module => module.id !== "com.240mp.usenet");
+      const top = tube ? [tube, tubeChannelsEntry(), appEntry()] : [appEntry(), tubeChannelsEntry()];
+      return top.concat([commercialsEntry(), vodChannelsEntry()], rest);
     }
 
     function findEntry(id) {
@@ -1742,11 +1746,12 @@
       const unsupported = visibleSchema.filter(item => !supportedField(item) && item.type !== "action").map(unsupportedHtml).join("");
       const actions = schema.map(item => actionHtml(module.id, item)).filter(Boolean).join("");
       const fields = fieldItems.map(item => fieldHtml(module.id, module.values || {}, item)).join("");
-      let special = "";
-      if (module.id === "com.240mp.emby_jellyfin") special = renderVodPanel(module);
-      if (module.id === "com.240mp.retro") special += renderRetroPanel(module);
-      if (module.id === "com.240mp.moonlight") special += renderMoonlightPanel(module);
-      if (module.id === "com.240mp.usenet") special += renderTheTubePanel(module);
+      let specialBefore = "";
+      let specialAfter = "";
+      if (module.id === "com.240mp.emby_jellyfin") specialAfter = renderVodPanel(module);
+      if (module.id === "com.240mp.retro") specialAfter += renderRetroPanel(module);
+      if (module.id === "com.240mp.moonlight") specialAfter += renderMoonlightPanel(module);
+      if (module.id === "com.240mp.usenet") specialBefore += renderTheTubePanel(module);
 
       return `
         <article class="card" data-module="${escapeAttr(module.id)}">
@@ -1762,10 +1767,11 @@
           </div>
           <div class="card-body">
             ${renderDetailMascot(module)}
+            ${specialBefore}
             <div class="section-label">Settings</div>
             ${fields || `<div class="note">No simple settings for this module.</div>`}
             ${unsupported}
-            ${special}
+            ${specialAfter}
             <div class="actions">
               <button type="button" data-save-card>Save Settings</button>
               ${actions}

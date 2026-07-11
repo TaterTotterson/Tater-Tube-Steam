@@ -1,15 +1,15 @@
 {
-  "version": "v1.3.5",
-  "app_version": "1.3.5",
+  "version": "v1.3.7",
+  "app_version": "1.3.7",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.5/Tater-Tube-v1.3.5-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.5.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.7/Tater-Tube-v1.3.7-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.7.tar.gz",
   "notes": [
-    "Fixes The Tube Local TV Mode custom channels created in Web Setup not appearing at launch.",
-    "Keeps saved The Tube custom channels first, ahead of auto-generated Local TV channels.",
-    "Makes The Tube TV Mode custom-channel loading more tolerant of Qt/Web Setup saved data shapes.",
-    "Skips failed Local source scans while still building any valid custom or auto channels."
+    "Adds app-wide volume controls and a VHS-style volume overlay across the player.",
+    "Adds audio-reactive Tape Deck VU bars driven by the currently playing track.",
+    "Adds The Tube transcoding controls so Tater Tube Server can choose CRT, 1080p, or 4K output per player.",
+    "Moves The Tube setup to the top of Web Setup and keeps server pairing, quality, and TV Mode settings together."
   ]
 }
