@@ -81,6 +81,11 @@ FocusScope {
         return value === true || value === "ON" || value === "true" || value === "1"
     }
 
+    function tvAutoChannelsEnabled() {
+        var value = settingValue("public_access_auto_channels", true)
+        return value === true || value === "ON" || value === "true" || value === "1"
+    }
+
     function playbackQuality() {
         return settingValue("playback_quality", "360p")
     }
@@ -135,6 +140,7 @@ FocusScope {
     function buildTvMenuRows() {
         tvMenuRows = [
             { rowType: "start", title: "START TV MODE" },
+            { rowType: "auto_channels", title: "AUTO CHANNELS " + (tvAutoChannelsEnabled() ? "ON" : "OFF") },
             { rowType: "commercials", title: "COMMERCIALS " + (tvCommercialsEnabled() ? "ON" : "OFF") },
             { rowType: "commercial_categories", title: "COMMERCIAL CATEGORIES" }
         ]
@@ -358,11 +364,19 @@ FocusScope {
         buildTvMenuRows()
     }
 
+    function toggleTvAutoChannels() {
+        appCore.save_setting(moduleId, "public_access_auto_channels",
+                             tvAutoChannelsEnabled() ? "OFF" : "ON")
+        buildTvMenuRows()
+    }
+
     function selectTvMenu(index) {
         if (index < 0 || index >= tvMenuRows.length) return
         var row = tvMenuRows[index] || ({})
         if (row.rowType === "start") {
             startTvMode()
+        } else if (row.rowType === "auto_channels") {
+            toggleTvAutoChannels()
         } else if (row.rowType === "commercials") {
             toggleTvCommercials()
         } else if (row.rowType === "commercial_categories") {
@@ -723,7 +737,7 @@ FocusScope {
             tvLoading = false
             tvTuningStaticVisible = false
             mode = "message"
-            statusText = "TV MODE HAS NO VIDEOS"
+            statusText = "NO CHANNELS AVAILABLE"
             return
         }
 
@@ -737,9 +751,9 @@ FocusScope {
     }
 
     function startTvMode() {
-        if (playlists.length === 0) {
+        if (!tvAutoChannelsEnabled() || playlists.length === 0) {
             mode = "message"
-            statusText = "ADD PLAYLISTS FIRST"
+            statusText = !tvAutoChannelsEnabled() ? "NO CHANNELS AVAILABLE" : "ADD PLAYLISTS FIRST"
             return
         }
 

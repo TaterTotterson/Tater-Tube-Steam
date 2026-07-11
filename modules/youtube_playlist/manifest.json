@@ -31,6 +31,12 @@
       "default": "ON"
     },
     {
+      "key": "public_access_auto_channels",
+      "label": "TV AUTO CHANNELS",
+      "type": "toggle",
+      "default": "ON"
+    },
+    {
       "key": "public_access_commercial_categories",
       "label": "PUBLIC ACCESS COMMERCIALS",
       "type": "multiselect_submenu",

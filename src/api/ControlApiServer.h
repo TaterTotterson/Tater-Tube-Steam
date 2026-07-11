@@ -80,6 +80,13 @@ private:
     void handleSetupVodCustomChannelSaveRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleSetupVodCustomChannelDeleteRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleSetupVodSearchRequest(QTcpSocket *socket, const HttpRequest &request);
+    QJsonArray tubeCustomChannels() const;
+    void saveTubeCustomChannels(const QJsonArray &channels);
+    void handleSetupTubeCustomChannelsListRequest(QTcpSocket *socket);
+    void handleSetupTubeCustomChannelSaveRequest(QTcpSocket *socket, const HttpRequest &request);
+    void handleSetupTubeCustomChannelDeleteRequest(QTcpSocket *socket, const HttpRequest &request);
+    void handleSetupTubeLocalCatalogRequest(QTcpSocket *socket);
+    void handleSetupTubeLocalItemsRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleSearchRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleLaunchRequest(QTcpSocket *socket, const HttpRequest &request);
     QString normalizedKey(const QString &key) const;

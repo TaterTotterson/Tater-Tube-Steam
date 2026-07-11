@@ -4,6 +4,7 @@
 #include "../modules/emby_jellyfin/EmbyJellyfinBackend.h"
 #include "../modules/moonlight/MoonlightBackend.h"
 #include "../modules/retro/RetroBackend.h"
+#include "../media/CommercialLibrary.h"
 #include "../player/MpvController.h"
 
 #include <QCoreApplication>
@@ -24,6 +25,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QDebug>
 #include <QUuid>
 #include <QVariantList>
@@ -35,6 +37,7 @@ constexpr qsizetype MaxHeaderBytes = 16 * 1024;
 constexpr qsizetype MaxBodyBytes = 256 * 1024 * 1024;
 constexpr const char *kYouTubeModuleId = "com.240mp.youtube_playlist";
 constexpr const char *kVodModuleId = "com.240mp.emby_jellyfin";
+constexpr const char *kTubeModuleId = "com.240mp.usenet";
 
 QByteArray statusText(int statusCode) {
     switch (statusCode) {
@@ -60,19 +63,6 @@ int jsonInt(const QJsonObject &obj, const char *key, int fallback) {
 double jsonDouble(const QJsonObject &obj, const char *key, double fallback) {
     const QJsonValue value = obj.value(QString::fromLatin1(key));
     return value.isDouble() ? value.toDouble() : fallback;
-}
-
-bool isCommercialVideoFile(const QFileInfo &fileInfo)
-{
-    if (fileInfo.exists() && !fileInfo.isFile())
-        return false;
-    const QString suffix = fileInfo.suffix().toLower();
-    static const QSet<QString> videoSuffixes{
-        QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("mkv"),
-        QStringLiteral("mov"), QStringLiteral("webm"), QStringLiteral("avi"),
-        QStringLiteral("mpg"), QStringLiteral("mpeg"), QStringLiteral("ts")
-    };
-    return videoSuffixes.contains(suffix);
 }
 
 QString safeCommercialName(QString value, const QString &fallback)
@@ -609,6 +599,14 @@ bool ControlApiServer::handleSetupApiRequest(QTcpSocket *socket,
         handleSetupVodCustomChannelsListRequest(socket);
         return true;
     }
+    if (request.method == "GET" && request.path == QStringLiteral("/api/v1/setup/tube-tv/custom-channels")) {
+        handleSetupTubeCustomChannelsListRequest(socket);
+        return true;
+    }
+    if (request.method == "GET" && request.path == QStringLiteral("/api/v1/setup/tube-tv/local-catalog")) {
+        handleSetupTubeLocalCatalogRequest(socket);
+        return true;
+    }
 
     if (request.method != "POST") {
         writeJson(socket, 405, {{"ok", false}, {"error", "method_not_allowed"}});
@@ -681,6 +679,18 @@ bool ControlApiServer::handleSetupApiRequest(QTcpSocket *socket,
     }
     if (request.path == QStringLiteral("/api/v1/setup/vod-tv/search")) {
         handleSetupVodSearchRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/tube-tv/custom-channels")) {
+        handleSetupTubeCustomChannelSaveRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/tube-tv/custom-channels/delete")) {
+        handleSetupTubeCustomChannelDeleteRequest(socket, request);
+        return true;
+    }
+    if (request.path == QStringLiteral("/api/v1/setup/tube-tv/local-items")) {
+        handleSetupTubeLocalItemsRequest(socket, request);
         return true;
     }
 
@@ -1410,56 +1420,28 @@ void ControlApiServer::handleSetupTubePairRequest(QTcpSocket *socket,
 
 QString ControlApiServer::commercialsRootPath() const
 {
-    return m_appCore ? QDir(m_appCore->dataRoot()).absoluteFilePath(QStringLiteral("commercials"))
+    return m_appCore ? CommercialLibrary(m_appCore->dataRoot()).rootPath()
                      : QString();
 }
 
 QJsonObject ControlApiServer::commercialsLibrary() const
 {
-    QJsonArray categories;
-    const QString rootPath = commercialsRootPath();
-    if (rootPath.isEmpty())
-        return QJsonObject{{"ok", false}, {"error", "setup_unavailable"}, {"categories", categories}};
-
-    const QDir root(rootPath);
-    const QFileInfoList categoryInfos = root.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name | QDir::IgnoreCase);
-    for (const QFileInfo &categoryInfo : categoryInfos) {
-        QJsonArray videos;
-        const QFileInfoList fileInfos = QDir(categoryInfo.absoluteFilePath()).entryInfoList(
-            QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
-        for (const QFileInfo &fileInfo : fileInfos) {
-            if (!isCommercialVideoFile(fileInfo))
-                continue;
-            QString title = fileInfo.completeBaseName().trimmed();
-            title.replace(QRegularExpression(QStringLiteral("[._-]+")), QStringLiteral(" "));
-            title.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
-            videos.append(QJsonObject{
-                {"name", fileInfo.fileName()},
-                {"title", title.isEmpty() ? fileInfo.fileName() : title},
-                {"size", QString::number(fileInfo.size())},
-                {"modified", fileInfo.lastModified().toUTC().toString(Qt::ISODate)}
-            });
-        }
-
-        categories.append(QJsonObject{
-            {"id", categoryInfo.fileName()},
-            {"name", categoryInfo.fileName()},
-            {"count", videos.size()},
-            {"videos", videos}
-        });
-    }
-
-    return QJsonObject{{"ok", true}, {"categories", categories}};
+    if (!m_appCore)
+        return QJsonObject{{"ok", false}, {"error", "setup_unavailable"}, {"categories", QJsonArray{}}};
+    return CommercialLibrary(m_appCore->dataRoot()).setupLibrary();
 }
 
 void ControlApiServer::notifyCommercialLibraryChanged()
 {
     if (!m_appCore)
         return;
+    const qint64 updatedMs = QDateTime::currentMSecsSinceEpoch();
     m_appCore->save_setting(QString::fromUtf8(kYouTubeModuleId),
                             QStringLiteral("commercial_library_updated_ms"),
-                            QDateTime::currentMSecsSinceEpoch());
+                            updatedMs);
+    m_appCore->save_setting(QString::fromUtf8(kTubeModuleId),
+                            QStringLiteral("commercial_library_updated_ms"),
+                            updatedMs);
 }
 
 void ControlApiServer::handleSetupCommercialCategoryRequest(QTcpSocket *socket,
@@ -1576,7 +1558,7 @@ void ControlApiServer::handleSetupCommercialUploadRequest(QTcpSocket *socket,
     QJsonArray skipped;
     for (const UploadFile &upload : uploads) {
         const QString fileName = safeCommercialFileName(upload.filename);
-        if (!isCommercialVideoFile(QFileInfo(fileName))) {
+        if (!CommercialLibrary::isVideoFile(QFileInfo(fileName))) {
             skipped.append(QJsonObject{{"name", fileName}, {"reason", "unsupported_file_type"}});
             continue;
         }
@@ -1886,6 +1868,408 @@ void ControlApiServer::handleSetupVodSearchRequest(QTcpSocket *socket,
     m_mediaBackend->api_search_media(requestId, query,
                                      QStringList{QStringLiteral("movie"), QStringLiteral("show")},
                                      limit);
+}
+
+QJsonArray ControlApiServer::tubeCustomChannels() const
+{
+    if (!m_appCore)
+        return {};
+    const QVariant saved = m_appCore->get_setting(QString::fromUtf8(kTubeModuleId),
+                                                  QStringLiteral("tube_custom_tv_channels"));
+    QJsonArray channels = QJsonArray::fromVariantList(saved.toList());
+    QJsonArray normalized;
+    for (const QJsonValue &value : channels) {
+        QJsonObject channel = value.toObject();
+        const QString title = channel.value(QStringLiteral("title")).toString(
+            channel.value(QStringLiteral("name")).toString()).trimmed();
+        const QJsonArray items = channel.value(QStringLiteral("items")).toArray();
+        if (title.isEmpty() || items.isEmpty())
+            continue;
+        if (channel.value(QStringLiteral("id")).toString().trimmed().isEmpty())
+            channel[QStringLiteral("id")] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        channel[QStringLiteral("title")] = title;
+        normalized.append(channel);
+    }
+    return normalized;
+}
+
+void ControlApiServer::saveTubeCustomChannels(const QJsonArray &channels)
+{
+    if (!m_appCore)
+        return;
+    m_appCore->save_setting(QString::fromUtf8(kTubeModuleId),
+                            QStringLiteral("tube_custom_tv_channels"),
+                            channels.toVariantList());
+}
+
+void ControlApiServer::handleSetupTubeCustomChannelsListRequest(QTcpSocket *socket)
+{
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"channels", tubeCustomChannels()}
+    });
+}
+
+void ControlApiServer::handleSetupTubeCustomChannelSaveRequest(QTcpSocket *socket,
+                                                               const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString id = body.value(QStringLiteral("id")).toString().trimmed();
+    const QString title = safeCommercialName(body.value(QStringLiteral("title")).toString(
+        body.value(QStringLiteral("name")).toString()), QString()).trimmed();
+    if (title.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_channel_name"}});
+        return;
+    }
+
+    QJsonArray items;
+    QSet<QString> seen;
+    const QJsonArray rawItems = body.value(QStringLiteral("items")).toArray();
+    for (const QJsonValue &value : rawItems) {
+        const QJsonObject raw = value.toObject();
+        QString categoryId = raw.value(QStringLiteral("categoryId")).toString(
+            raw.value(QStringLiteral("id")).toString()).trimmed();
+        if (!categoryId.isEmpty() && !categoryId.startsWith(QStringLiteral("local:")))
+            categoryId = QStringLiteral("local:") + categoryId;
+        if (categoryId.isEmpty())
+            continue;
+
+        const QString path = raw.value(QStringLiteral("path")).toString().trimmed();
+        const int sourceIndex = raw.value(QStringLiteral("sourceIndex")).isDouble()
+            ? raw.value(QStringLiteral("sourceIndex")).toInt(-1)
+            : -1;
+        const QString streamUrl = raw.value(QStringLiteral("streamUrl")).toString().trimmed();
+        const QString uniqueKey = categoryId + QLatin1Char(':') +
+            QString::number(sourceIndex) + QLatin1Char(':') + path + QLatin1Char(':') + streamUrl;
+        if (seen.contains(uniqueKey))
+            continue;
+        seen.insert(uniqueKey);
+
+        QJsonObject item{
+            {"categoryId", categoryId},
+            {"title", safeCommercialName(raw.value(QStringLiteral("title")).toString(
+                raw.value(QStringLiteral("name")).toString()), QStringLiteral("Local"))},
+            {"type", raw.value(QStringLiteral("type")).toString(QStringLiteral("local"))},
+            {"mediaType", raw.value(QStringLiteral("mediaType")).toString(QStringLiteral("category"))}
+        };
+        if (!path.isEmpty())
+            item[QStringLiteral("path")] = path;
+        if (sourceIndex >= 0)
+            item[QStringLiteral("sourceIndex")] = sourceIndex;
+        if (!streamUrl.isEmpty())
+            item[QStringLiteral("streamUrl")] = streamUrl;
+        if (raw.value(QStringLiteral("duration")).isDouble())
+            item[QStringLiteral("duration")] = raw.value(QStringLiteral("duration")).toDouble();
+        if (raw.value(QStringLiteral("durationSeconds")).isDouble())
+            item[QStringLiteral("durationSeconds")] = raw.value(QStringLiteral("durationSeconds")).toDouble();
+        const QString detail = raw.value(QStringLiteral("detail")).toString().trimmed();
+        if (!detail.isEmpty())
+            item[QStringLiteral("detail")] = detail;
+        items.append(item);
+    }
+
+    if (items.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_channel_items"}});
+        return;
+    }
+
+    QJsonObject channel{
+        {"id", id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id},
+        {"title", title},
+        {"items", items},
+        {"updatedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}
+    };
+    const QString commercialCategory = safeCommercialName(
+        body.value(QStringLiteral("commercialCategory")).toString(), QString()).trimmed();
+    if (!commercialCategory.isEmpty())
+        channel[QStringLiteral("commercialCategory")] = commercialCategory;
+
+    QJsonArray channels = tubeCustomChannels();
+    bool replaced = false;
+    for (int i = 0; i < channels.size(); ++i) {
+        if (channels.at(i).toObject().value(QStringLiteral("id")).toString()
+            == channel.value(QStringLiteral("id")).toString()) {
+            channels.replace(i, channel);
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced)
+        channels.append(channel);
+
+    saveTubeCustomChannels(channels);
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"channel", channel},
+        {"channels", channels}
+    });
+}
+
+void ControlApiServer::handleSetupTubeCustomChannelDeleteRequest(QTcpSocket *socket,
+                                                                 const HttpRequest &request)
+{
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    const QString id = body.value(QStringLiteral("id")).toString().trimmed();
+    if (id.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_channel_id"}});
+        return;
+    }
+
+    QJsonArray next;
+    const QJsonArray channels = tubeCustomChannels();
+    for (const QJsonValue &value : channels) {
+        const QJsonObject channel = value.toObject();
+        if (channel.value(QStringLiteral("id")).toString() != id)
+            next.append(channel);
+    }
+
+    saveTubeCustomChannels(next);
+    writeJson(socket, 200, QJsonObject{
+        {"ok", true},
+        {"channels", next}
+    });
+}
+
+void ControlApiServer::handleSetupTubeLocalCatalogRequest(QTcpSocket *socket)
+{
+    if (!m_appCore) {
+        writeJson(socket, 503, {{"ok", false}, {"error", "setup_unavailable"}});
+        return;
+    }
+
+    const QString serverUrl = m_appCore->get_setting(QString::fromUtf8(kTubeModuleId),
+                                                     QStringLiteral("tater_server_url"))
+        .toString().trimmed();
+    const QString playerToken = m_appCore->get_setting(QString::fromUtf8(kTubeModuleId),
+                                                       QStringLiteral("tater_server_token"))
+        .toString().trimmed();
+    if (serverUrl.isEmpty() || playerToken.isEmpty()) {
+        writeJson(socket, 409, {{"ok", false}, {"error", "tube_not_paired"},
+                                {"message", "Pair The Tube with Tater Tube Server first."}});
+        return;
+    }
+
+    const QUrl catalogUrl = taterApiUrlFromBase(serverUrl, QStringLiteral("/api/tater/usenet/catalog"));
+    if (!catalogUrl.isValid() || catalogUrl.host().isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_server_url"}});
+        return;
+    }
+
+    auto *manager = new QNetworkAccessManager(socket);
+    QNetworkRequest catalogRequest(catalogUrl);
+    catalogRequest.setRawHeader("Authorization", QStringLiteral("Bearer %1").arg(playerToken).toUtf8());
+    QNetworkReply *reply = manager->get(catalogRequest);
+
+    QPointer<QTcpSocket> safeSocket(socket);
+    QPointer<QNetworkReply> safeReply(reply);
+    auto done = std::make_shared<bool>(false);
+    auto finish = [this, safeSocket, safeReply, manager, done](
+                      int statusCode, const QJsonObject &response) {
+        if (*done || !safeSocket)
+            return;
+        *done = true;
+        if (safeReply) {
+            if (safeReply->isRunning())
+                safeReply->abort();
+            safeReply->deleteLater();
+        }
+        manager->deleteLater();
+        writeJson(safeSocket, statusCode, response);
+    };
+
+    connect(reply, &QNetworkReply::finished, socket, [=]() {
+        if (*done)
+            return;
+
+        const QByteArray responseBody = reply->readAll();
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(responseBody, &parseError);
+        const QJsonObject obj = doc.isObject() ? doc.object() : QJsonObject{};
+        if (reply->error() != QNetworkReply::NoError || httpStatus >= 400) {
+            finish(409, QJsonObject{
+                {"ok", false},
+                {"error", "tube_catalog_failed"},
+                {"message", jsonErrorMessage(obj, QStringLiteral("Failed to load Local catalog."))}
+            });
+            return;
+        }
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            finish(409, QJsonObject{
+                {"ok", false},
+                {"error", "tube_catalog_invalid"},
+                {"message", "Local catalog response was not valid JSON."}
+            });
+            return;
+        }
+
+        QJsonObject payload = obj;
+        if (payload.value(QStringLiteral("data")).isObject())
+            payload = payload.value(QStringLiteral("data")).toObject();
+
+        QJsonArray localCategories;
+        const QJsonArray categories = payload.value(QStringLiteral("categories")).toArray();
+        for (const QJsonValue &value : categories) {
+            const QJsonObject row = value.toObject();
+            if (row.value(QStringLiteral("type")).toString() != QStringLiteral("localRoot"))
+                continue;
+            localCategories = row.value(QStringLiteral("children")).toArray();
+            break;
+        }
+
+        finish(200, QJsonObject{
+            {"ok", true},
+            {"categories", localCategories}
+        });
+    });
+
+    QTimer::singleShot(12000, socket, [=]() {
+        finish(504, QJsonObject{
+            {"ok", false},
+            {"error", "tube_catalog_timeout"},
+            {"message", "Tater Tube Server Local catalog timed out."}
+        });
+    });
+}
+
+void ControlApiServer::handleSetupTubeLocalItemsRequest(QTcpSocket *socket,
+                                                        const HttpRequest &request)
+{
+    if (!m_appCore) {
+        writeJson(socket, 503, {{"ok", false}, {"error", "setup_unavailable"}});
+        return;
+    }
+
+    bool ok = false;
+    const QJsonObject body = parseBodyObject(request, ok);
+    if (!ok) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_json"}});
+        return;
+    }
+
+    QString categoryId = body.value(QStringLiteral("categoryId")).toString(
+        body.value(QStringLiteral("id")).toString()).trimmed();
+    if (!categoryId.isEmpty() && !categoryId.startsWith(QStringLiteral("local:")))
+        categoryId = QStringLiteral("local:") + categoryId;
+    if (categoryId.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_category_id"}});
+        return;
+    }
+
+    const QString serverUrl = m_appCore->get_setting(QString::fromUtf8(kTubeModuleId),
+                                                     QStringLiteral("tater_server_url"))
+        .toString().trimmed();
+    const QString playerToken = m_appCore->get_setting(QString::fromUtf8(kTubeModuleId),
+                                                       QStringLiteral("tater_server_token"))
+        .toString().trimmed();
+    if (serverUrl.isEmpty() || playerToken.isEmpty()) {
+        writeJson(socket, 409, {{"ok", false}, {"error", "tube_not_paired"},
+                                {"message", "Pair The Tube with Tater Tube Server first."}});
+        return;
+    }
+
+    QUrl itemsUrl = taterApiUrlFromBase(serverUrl, QStringLiteral("/api/tater/usenet/items"));
+    if (!itemsUrl.isValid() || itemsUrl.host().isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_server_url"}});
+        return;
+    }
+
+    const QString title = body.value(QStringLiteral("title")).toString(QStringLiteral("Local"));
+    const QString path = body.value(QStringLiteral("path")).toString().trimmed();
+    const int sourceIndex = body.value(QStringLiteral("sourceIndex")).isDouble()
+        ? body.value(QStringLiteral("sourceIndex")).toInt(-1)
+        : -1;
+
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("category_id"), categoryId);
+    query.addQueryItem(QStringLiteral("title"), title);
+    if (!path.isEmpty())
+        query.addQueryItem(QStringLiteral("path"), path);
+    if (sourceIndex >= 0)
+        query.addQueryItem(QStringLiteral("source"), QString::number(sourceIndex));
+    itemsUrl.setQuery(query);
+
+    auto *manager = new QNetworkAccessManager(socket);
+    QNetworkRequest itemsRequest(itemsUrl);
+    itemsRequest.setRawHeader("Authorization", QStringLiteral("Bearer %1").arg(playerToken).toUtf8());
+    QNetworkReply *reply = manager->get(itemsRequest);
+
+    QPointer<QTcpSocket> safeSocket(socket);
+    QPointer<QNetworkReply> safeReply(reply);
+    auto done = std::make_shared<bool>(false);
+    auto finish = [this, safeSocket, safeReply, manager, done](
+                      int statusCode, const QJsonObject &response) {
+        if (*done || !safeSocket)
+            return;
+        *done = true;
+        if (safeReply) {
+            if (safeReply->isRunning())
+                safeReply->abort();
+            safeReply->deleteLater();
+        }
+        manager->deleteLater();
+        writeJson(safeSocket, statusCode, response);
+    };
+
+    connect(reply, &QNetworkReply::finished, socket, [=]() {
+        if (*done)
+            return;
+
+        const QByteArray responseBody = reply->readAll();
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        QJsonParseError parseError;
+        const QJsonDocument doc = QJsonDocument::fromJson(responseBody, &parseError);
+        const QJsonObject obj = doc.isObject() ? doc.object() : QJsonObject{};
+        if (reply->error() != QNetworkReply::NoError || httpStatus >= 400) {
+            finish(409, QJsonObject{
+                {"ok", false},
+                {"error", "tube_items_failed"},
+                {"message", jsonErrorMessage(obj, QStringLiteral("Failed to load Local items."))}
+            });
+            return;
+        }
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            finish(409, QJsonObject{
+                {"ok", false},
+                {"error", "tube_items_invalid"},
+                {"message", "Local items response was not valid JSON."}
+            });
+            return;
+        }
+
+        QJsonObject payload = obj;
+        if (payload.value(QStringLiteral("data")).isObject())
+            payload = payload.value(QStringLiteral("data")).toObject();
+
+        finish(200, QJsonObject{
+            {"ok", true},
+            {"title", payload.value(QStringLiteral("title")).toString(title)},
+            {"categoryId", categoryId},
+            {"path", path},
+            {"sourceIndex", sourceIndex},
+            {"items", payload.value(QStringLiteral("items")).toArray()}
+        });
+    });
+
+    QTimer::singleShot(12000, socket, [=]() {
+        finish(504, QJsonObject{
+            {"ok", false},
+            {"error", "tube_items_timeout"},
+            {"message", "Tater Tube Server Local items timed out."}
+        });
+    });
 }
 
 void ControlApiServer::handleSearchRequest(QTcpSocket *socket, const HttpRequest &request) {

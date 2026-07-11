@@ -463,6 +463,13 @@
       background: #000;
     }
 
+    .inline-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
     .picker-title {
       display: block;
       color: var(--text);
@@ -542,11 +549,18 @@
     let setupData = null;
     let commercialLibrary = null;
     let vodChannels = null;
+    let tubeChannels = null;
+    let tubeLocalCatalog = null;
     let vodDraftTitle = "";
     let vodDraftCommercialCategory = "";
     let vodSearchQuery = "";
     let vodDraftItems = [];
     let vodSearchResults = [];
+    let tubeDraftTitle = "";
+    let tubeDraftCommercialCategory = "";
+    let tubeDraftItems = [];
+    let tubeLocalBrowser = null;
+    let tubeLocalStack = [];
     let currentModuleId = "";
     let plexPollTimer = null;
     let moonlightPollTimer = null;
@@ -720,6 +734,7 @@
       if (!entry || entry.id === "__app") return "Theme, sleep timer, and global appliance settings.";
       if (entry.id === "__commercials") return "Local commercial categories for Public Access and VoD TV Mode.";
       if (entry.id === "__vod_channels") return "Custom movie and TV series channels for VoD TV Mode.";
+      if (entry.id === "__tube_channels") return "Custom Local TV Mode channels for The Tube.";
       const summaries = {
         "com.240mp.ota": "HDHomeRun address and over-the-air setup.",
         "com.240mp.emby_jellyfin": "Emby, Jellyfin, Plex, playback, and library settings.",
@@ -765,14 +780,24 @@
       };
     }
 
+    function tubeChannelsEntry() {
+      return {
+        id: "__tube_channels",
+        name: "The Tube Channels",
+        icon: "/setup/assets/images/mascots/usenet.png",
+        auth_state: "authed"
+      };
+    }
+
     function setupEntries() {
-      return [appEntry(), commercialsEntry(), vodChannelsEntry()].concat(setupData.modules || []);
+      return [appEntry(), commercialsEntry(), vodChannelsEntry(), tubeChannelsEntry()].concat(setupData.modules || []);
     }
 
     function findEntry(id) {
       if (id === "__app") return appEntry();
       if (id === "__commercials") return commercialsEntry();
       if (id === "__vod_channels") return vodChannelsEntry();
+      if (id === "__tube_channels") return tubeChannelsEntry();
       return (setupData.modules || []).find(module => module.id === id) || null;
     }
 
@@ -1036,6 +1061,141 @@
         </article>`;
     }
 
+    function renderTubeSavedChannels() {
+      const channels = (tubeChannels && tubeChannels.channels) ? tubeChannels.channels : [];
+      if (channels.length === 0)
+        return `<div class="commercial-empty">No custom The Tube channels saved.</div>`;
+      return `
+        <div class="picker-list">
+          ${channels.map(channel => `
+            <div class="picker-row">
+              <span>
+                <span class="picker-title">${escapeHtml(channel.title || "Custom Channel")}</span>
+                <span class="picker-meta">${(channel.items || []).length} local sources${channel.commercialCategory ? " / " + escapeHtml(channel.commercialCategory) : ""}</span>
+              </span>
+              <button class="secondary tiny" type="button" data-tube-delete-channel="${escapeAttr(channel.id || "")}">Delete</button>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function renderTubeCommercialCategoryOptions() {
+      const categories = (commercialLibrary && commercialLibrary.categories) ? commercialLibrary.categories : [];
+      return [
+        `<option value="">Use The Tube Commercials Setting</option>`
+      ].concat(categories.map(category => {
+        const id = category.id || category.name || "";
+        const label = category.name || category.id || "Commercials";
+        const selected = id === tubeDraftCommercialCategory ? " selected" : "";
+        return `<option value="${escapeAttr(id)}"${selected}>${escapeHtml(label)}</option>`;
+      })).join("");
+    }
+
+    function renderTubeLocalSources() {
+      if (tubeLocalBrowser) {
+        const items = tubeLocalBrowser.items || [];
+        return `
+          <div class="actions compact">
+            <button class="secondary" type="button" data-tube-local-back>Back</button>
+            <button type="button" data-tube-add-current-local>Add This Folder</button>
+          </div>
+          <div class="note">${escapeHtml(tubeLocalBrowser.title || "Local")}</div>
+          ${items.length === 0 ? `<div class="commercial-empty">No Local items found here.</div>` : `
+            <div class="picker-list">
+              ${items.map((item, index) => {
+                const type = item.type || "";
+                const canBrowse = type === "localFolder";
+                return `
+                  <div class="picker-row">
+                    <span>
+                      <span class="picker-title">${escapeHtml(item.title || "Local")}</span>
+                      <span class="picker-meta">${escapeHtml(item.detail || localKindLabel(item))}</span>
+                    </span>
+                    <span class="inline-actions">
+                      ${canBrowse ? `<button class="secondary tiny" type="button" data-tube-browse-item="${index}">Browse</button>` : ""}
+                      <button class="tiny" type="button" data-tube-add-item="${index}">Add</button>
+                    </span>
+                  </div>`;
+              }).join("")}
+            </div>`}`;
+      }
+
+      const categories = (tubeLocalCatalog && tubeLocalCatalog.categories) ? tubeLocalCatalog.categories : [];
+      if (categories.length === 0)
+        return `<div class="commercial-empty">No Tater Tube Server Local categories loaded.</div>`;
+      return `
+        <div class="picker-list">
+          ${categories.map((item, index) => `
+            <div class="picker-row">
+              <span>
+                <span class="picker-title">${escapeHtml(item.title || "Local")}</span>
+                <span class="picker-meta">${escapeHtml(item.detail || item.id || "LOCAL")}</span>
+              </span>
+              <span class="inline-actions">
+                <button class="secondary tiny" type="button" data-tube-browse-source="${index}">Browse</button>
+                <button class="tiny" type="button" data-tube-add-source="${index}">Add</button>
+              </span>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function renderTubeDraftItems() {
+      if (tubeDraftItems.length === 0)
+        return `<div class="commercial-empty">Add one or more Tater Tube Server Local categories.</div>`;
+      return `
+        <div class="picker-list">
+          ${tubeDraftItems.map((item, index) => `
+            <div class="picker-row">
+              <span>
+                <span class="picker-title">${escapeHtml(item.title || "Local")}</span>
+                <span class="picker-meta">${escapeHtml(localKindLabel(item))}${item.path ? " / " + escapeHtml(item.path) : ""}</span>
+              </span>
+              <button class="secondary tiny" type="button" data-tube-remove-draft="${index}">Remove</button>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function renderTubeChannelsCard() {
+      return `
+        <article class="card" data-module="__tube_channels">
+          <div class="card-head">
+            <img src="/setup/assets/images/mascots/usenet.png" alt="">
+            <div>
+              <h2 class="title">The Tube Channels</h2>
+              <div class="sub">
+                <span class="pill ok">Local TV Mode</span>
+                <span class="pill">${((tubeChannels && tubeChannels.channels) || []).length} Custom</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            ${renderDetailMascot(tubeChannelsEntry())}
+            <div class="section-label">Saved Channels</div>
+            ${renderTubeSavedChannels()}
+            <div class="section-label">New Channel</div>
+            <div class="field">
+              <label>Channel Name</label>
+              <input data-tube-channel-name value="${escapeAttr(tubeDraftTitle)}" autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label>Commercial Category</label>
+              <select data-tube-commercial-category>
+                ${renderTubeCommercialCategoryOptions()}
+              </select>
+            </div>
+            <div class="section-label">Tater Tube Server Local Sources</div>
+            ${renderTubeLocalSources()}
+            <div class="section-label">Selected For Channel</div>
+            ${renderTubeDraftItems()}
+            <div class="actions">
+              <button type="button" data-tube-save-channel>Save Channel</button>
+              <button class="secondary" type="button" data-tube-clear-draft>Clear Draft</button>
+              <button class="secondary" type="button" data-tube-refresh-local>Refresh Local Sources</button>
+            </div>
+            <div class="message"></div>
+          </div>
+        </article>`;
+    }
+
     function renderVodPanel(module) {
       const values = module.values || {};
       const provider = text(values.media_provider || "EMBY/JELLYFIN").toUpperCase();
@@ -1180,7 +1340,9 @@
           ? renderAppCard()
           : (currentModuleId === "__commercials"
             ? renderCommercialsCard()
-            : (currentModuleId === "__vod_channels" ? renderVodChannelsCard() : renderModule(entry))));
+            : (currentModuleId === "__vod_channels"
+              ? renderVodChannelsCard()
+              : (currentModuleId === "__tube_channels" ? renderTubeChannelsCard() : renderModule(entry)))));
       bindCards();
       bindDetailNav();
     }
@@ -1561,6 +1723,222 @@
       render();
     }
 
+    async function loadTubeChannels() {
+      tubeChannels = await api("/api/v1/setup/tube-tv/custom-channels");
+      return tubeChannels;
+    }
+
+    async function loadTubeLocalCatalog() {
+      try {
+        tubeLocalCatalog = await api("/api/v1/setup/tube-tv/local-catalog");
+      } catch (error) {
+        tubeLocalCatalog = { ok: false, categories: [], message: error.message };
+      }
+      tubeLocalBrowser = null;
+      tubeLocalStack = [];
+      return tubeLocalCatalog;
+    }
+
+    async function loadTubeLocalItems(source, pushStack = true) {
+      const normalized = normalizeTubeSource(source || {});
+      if (!normalized.categoryId)
+        throw new Error("Missing Local category.");
+
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      captureTubeDraftForm(card);
+      if (pushStack && tubeLocalBrowser)
+        tubeLocalStack.push(tubeLocalBrowser);
+
+      const result = await api("/api/v1/setup/tube-tv/local-items", {
+        method: "POST",
+        body: JSON.stringify({
+          categoryId: normalized.categoryId,
+          path: normalized.path || "",
+          sourceIndex: normalized.sourceIndex,
+          title: normalized.title || "Local"
+        })
+      });
+      tubeLocalBrowser = {
+        categoryId: result.categoryId || normalized.categoryId,
+        path: result.path || normalized.path || "",
+        sourceIndex: result.sourceIndex === undefined ? normalized.sourceIndex : result.sourceIndex,
+        title: result.title || normalized.title || "Local",
+        items: result.items || []
+      };
+      render();
+      return tubeLocalBrowser;
+    }
+
+    function captureTubeDraftForm(card) {
+      if (!card) return;
+      const titleInput = card.querySelector("[data-tube-channel-name]");
+      const categoryInput = card.querySelector("[data-tube-commercial-category]");
+      tubeDraftTitle = titleInput ? titleInput.value.trim() : tubeDraftTitle;
+      tubeDraftCommercialCategory = categoryInput ? categoryInput.value.trim() : tubeDraftCommercialCategory;
+    }
+
+    function normalizeTubeSource(item) {
+      const fallback = tubeLocalBrowser || {};
+      const sourceIndexValue = item.sourceIndex !== undefined && item.sourceIndex !== null
+        ? Number(item.sourceIndex)
+        : (fallback.sourceIndex !== undefined && fallback.sourceIndex !== null ? Number(fallback.sourceIndex) : -1);
+      return {
+        categoryId: item.categoryId || item.id || fallback.categoryId || "",
+        path: item.path || "",
+        sourceIndex: Number.isFinite(sourceIndexValue) ? sourceIndexValue : -1,
+        type: item.type || "local",
+        mediaType: item.mediaType || "category",
+        title: item.title || "LOCAL",
+        detail: item.detail || "",
+        streamUrl: item.streamUrl || "",
+        duration: item.duration,
+        durationSeconds: item.durationSeconds
+      };
+    }
+
+    function localKindLabel(item) {
+      const type = text(item.type || "").toLowerCase();
+      const mediaType = text(item.mediaType || "").toLowerCase();
+      if (type === "localfile") return "File";
+      if (mediaType === "show") return "Series";
+      if (mediaType === "movie") return "Movie";
+      if (type === "localfolder") return "Folder";
+      return "Local";
+    }
+
+    function addTubeLocalSource(index) {
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      captureTubeDraftForm(card);
+      const categories = (tubeLocalCatalog && tubeLocalCatalog.categories) ? tubeLocalCatalog.categories : [];
+      const item = categories[index];
+      addTubeItemToDraft(item);
+      render();
+    }
+
+    function addTubeCurrentLocal() {
+      if (!tubeLocalBrowser) return;
+      addTubeItemToDraft({
+        categoryId: tubeLocalBrowser.categoryId,
+        path: tubeLocalBrowser.path || "",
+        sourceIndex: tubeLocalBrowser.sourceIndex,
+        type: tubeLocalBrowser.path ? "localFolder" : "local",
+        mediaType: tubeLocalBrowser.path ? "folder" : "category",
+        title: tubeLocalBrowser.title || "Local"
+      });
+    }
+
+    function addTubeBrowserItem(index) {
+      const items = tubeLocalBrowser && tubeLocalBrowser.items ? tubeLocalBrowser.items : [];
+      addTubeItemToDraft(items[index]);
+    }
+
+    function addTubeItemToDraft(item) {
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      captureTubeDraftForm(card);
+      if (!item) return;
+      const normalized = normalizeTubeSource(item);
+      if (!normalized.categoryId) return;
+      const key = [
+        normalized.categoryId,
+        normalized.sourceIndex,
+        normalized.path || "",
+        normalized.streamUrl || "",
+        normalized.type || ""
+      ].join("|");
+      if (tubeDraftItems.some(existing => [
+        existing.categoryId || "",
+        existing.sourceIndex === undefined ? -1 : existing.sourceIndex,
+        existing.path || "",
+        existing.streamUrl || "",
+        existing.type || ""
+      ].join("|") === key))
+        return;
+      tubeDraftItems.push(normalized);
+      render();
+    }
+
+    function browseTubeLocalSource(index) {
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      const categories = (tubeLocalCatalog && tubeLocalCatalog.categories) ? tubeLocalCatalog.categories : [];
+      const item = categories[index];
+      if (!item) return;
+      cardMessage(card, "Loading Local source...");
+      loadTubeLocalItems(item, false).then(() => {
+        cardMessage(card, "Local source loaded.", "ok");
+      }).catch(error => cardMessage(card, error.message, "err"));
+    }
+
+    function browseTubeBrowserItem(index) {
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      const items = tubeLocalBrowser && tubeLocalBrowser.items ? tubeLocalBrowser.items : [];
+      const item = items[index];
+      if (!item) return;
+      cardMessage(card, "Loading Local folder...");
+      loadTubeLocalItems(item, true).then(() => {
+        cardMessage(card, "Local folder loaded.", "ok");
+      }).catch(error => cardMessage(card, error.message, "err"));
+    }
+
+    function backTubeLocalBrowser() {
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      captureTubeDraftForm(card);
+      if (tubeLocalStack.length > 0) {
+        tubeLocalBrowser = tubeLocalStack.pop();
+      } else {
+        tubeLocalBrowser = null;
+      }
+      render();
+    }
+
+    function removeTubeDraftItem(index) {
+      const card = document.querySelector('[data-module="__tube_channels"]');
+      captureTubeDraftForm(card);
+      tubeDraftItems.splice(index, 1);
+      render();
+    }
+
+    async function saveTubeChannel(card) {
+      captureTubeDraftForm(card);
+      const input = card.querySelector("[data-tube-channel-name]");
+      const title = input ? input.value.trim() : "";
+      if (!title) {
+        cardMessage(card, "Enter a channel name.", "err");
+        return;
+      }
+      if (tubeDraftItems.length === 0) {
+        cardMessage(card, "Add at least one Local source.", "err");
+        return;
+      }
+      cardMessage(card, "Saving channel...");
+      const result = await api("/api/v1/setup/tube-tv/custom-channels", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          commercialCategory: tubeDraftCommercialCategory,
+          items: tubeDraftItems
+        })
+      });
+      tubeChannels = { ok: true, channels: result.channels || [] };
+      tubeDraftTitle = "";
+      tubeDraftCommercialCategory = "";
+      tubeDraftItems = [];
+      setStatus("The Tube channel saved.", "ok");
+      render();
+    }
+
+    async function deleteTubeChannel(card, button) {
+      const id = button.dataset.tubeDeleteChannel || "";
+      if (!id) return;
+      cardMessage(card, "Deleting channel...");
+      const result = await api("/api/v1/setup/tube-tv/custom-channels/delete", {
+        method: "POST",
+        body: JSON.stringify({ id })
+      });
+      tubeChannels = { ok: true, channels: result.channels || [] };
+      setStatus("The Tube channel deleted.", "ok");
+      render();
+    }
+
     function bindPicker() {
       document.querySelectorAll("[data-open-module]").forEach(button => {
         button.onclick = () => {
@@ -1670,6 +2048,56 @@
           cardMessage(button.closest(".card"), error.message, "err");
         });
       });
+      document.querySelectorAll("[data-tube-add-source]").forEach(button => {
+        button.onclick = () => addTubeLocalSource(Number(button.dataset.tubeAddSource || 0));
+      });
+      document.querySelectorAll("[data-tube-browse-source]").forEach(button => {
+        button.onclick = () => browseTubeLocalSource(Number(button.dataset.tubeBrowseSource || 0));
+      });
+      document.querySelectorAll("[data-tube-browse-item]").forEach(button => {
+        button.onclick = () => browseTubeBrowserItem(Number(button.dataset.tubeBrowseItem || 0));
+      });
+      document.querySelectorAll("[data-tube-add-item]").forEach(button => {
+        button.onclick = () => addTubeBrowserItem(Number(button.dataset.tubeAddItem || 0));
+      });
+      document.querySelectorAll("[data-tube-add-current-local]").forEach(button => {
+        button.onclick = () => addTubeCurrentLocal();
+      });
+      document.querySelectorAll("[data-tube-local-back]").forEach(button => {
+        button.onclick = () => backTubeLocalBrowser();
+      });
+      document.querySelectorAll("[data-tube-remove-draft]").forEach(button => {
+        button.onclick = () => removeTubeDraftItem(Number(button.dataset.tubeRemoveDraft || 0));
+      });
+      document.querySelectorAll("[data-tube-save-channel]").forEach(button => {
+        button.onclick = () => saveTubeChannel(button.closest(".card")).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-tube-clear-draft]").forEach(button => {
+        button.onclick = () => {
+          tubeDraftTitle = "";
+          tubeDraftCommercialCategory = "";
+          tubeDraftItems = [];
+          render();
+        };
+      });
+      document.querySelectorAll("[data-tube-refresh-local]").forEach(button => {
+        button.onclick = () => {
+          const card = button.closest(".card");
+          captureTubeDraftForm(card);
+          cardMessage(card, "Refreshing Local sources...");
+          loadTubeLocalCatalog().then(() => {
+            cardMessage(card, "Local sources refreshed.", "ok");
+            render();
+          }).catch(error => cardMessage(card, error.message, "err"));
+        };
+      });
+      document.querySelectorAll("[data-tube-delete-channel]").forEach(button => {
+        button.onclick = () => deleteTubeChannel(button.closest(".card"), button).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
     }
 
     async function loadSetup() {
@@ -1678,7 +2106,9 @@
       const results = await Promise.all([
         api("/api/v1/setup/modules"),
         loadCommercialLibrary(),
-        loadVodChannels()
+        loadVodChannels(),
+        loadTubeChannels(),
+        loadTubeLocalCatalog()
       ]);
       setupData = results[0];
       render();

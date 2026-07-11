@@ -59,6 +59,13 @@
       "requires_auth": true
     },
     {
+      "key": "vod_auto_channels",
+      "label": "TV Auto Channels",
+      "type": "toggle",
+      "default": "ON",
+      "requires_auth": true
+    },
+    {
       "key": "vod_midroll_commercials",
       "label": "TV Mid-Roll Commercials",
       "type": "toggle",

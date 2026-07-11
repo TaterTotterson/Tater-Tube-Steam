@@ -10,24 +10,23 @@ FocusScope {
     signal navigateTo(string path, var params, var listState)
     signal goBack()
 
-    property string youtubeModuleId: "com.240mp.youtube_playlist"
-    property string vodModuleId: "com.240mp.emby_jellyfin"
+    property string tubeModuleId: "com.240mp.usenet"
     property var rows: []
 
     function commercialsEnabled() {
-        var value = appCore.get_setting(youtubeModuleId, "tv_mode_commercials")
+        var value = appCore.get_setting(tubeModuleId, "tube_tv_mode_commercials")
         if (value === undefined || value === null || value === "")
             return true
         return value === true || value === "ON" || value === "true" || value === "1"
     }
 
     function midrollCommercialsEnabled() {
-        var value = appCore.get_setting(vodModuleId, "vod_midroll_commercials")
+        var value = appCore.get_setting(tubeModuleId, "tube_midroll_commercials")
         return value === true || value === "ON" || value === "true" || value === "1"
     }
 
     function autoChannelsEnabled() {
-        var value = appCore.get_setting(vodModuleId, "vod_auto_channels")
+        var value = appCore.get_setting(tubeModuleId, "tube_auto_channels")
         if (value === undefined || value === null || value === "")
             return true
         return value === true || value === "ON" || value === "true" || value === "1"
@@ -48,24 +47,26 @@ FocusScope {
             return
         var row = rows[index] || ({})
         if (row.key === "start") {
-            navigateTo("VodTvMode.qml", {}, { currentIndex: menuList.currentIndex })
+            navigateTo("TubeTvMode.qml", {
+                categories: navParams.categories || []
+            }, { currentIndex: menuList.currentIndex })
         } else if (row.key === "auto_channels") {
-            appCore.save_setting(vodModuleId, "vod_auto_channels",
+            appCore.save_setting(tubeModuleId, "tube_auto_channels",
                                  autoChannelsEnabled() ? "OFF" : "ON")
             rebuildRows()
         } else if (row.key === "commercials") {
-            appCore.save_setting(youtubeModuleId, "tv_mode_commercials",
+            appCore.save_setting(tubeModuleId, "tube_tv_mode_commercials",
                                  commercialsEnabled() ? "OFF" : "ON")
             rebuildRows()
         } else if (row.key === "midroll") {
-            appCore.save_setting(vodModuleId, "vod_midroll_commercials",
+            appCore.save_setting(tubeModuleId, "tube_midroll_commercials",
                                  midrollCommercialsEnabled() ? "OFF" : "ON")
             rebuildRows()
         } else if (row.key === "commercial_categories") {
             navigateTo("../../../views/MultiSelectSettings.qml", {
-                moduleId: youtubeModuleId,
-                settingKey: "vod_commercial_categories",
-                settingLabel: "VOD COMMERCIALS"
+                moduleId: tubeModuleId,
+                settingKey: "tube_commercial_categories",
+                settingLabel: "THE TUBE COMMERCIALS"
             }, { currentIndex: menuList.currentIndex })
         }
     }
@@ -93,7 +94,7 @@ FocusScope {
         iconSource: moduleRoot.moduleIcon
         iconHeight: root.sh * 0.075
         title: moduleRoot.moduleName
-        subtitle: "TV MODE"
+        subtitle: "LOCAL TV MODE"
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.125

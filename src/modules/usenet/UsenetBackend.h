@@ -27,6 +27,9 @@ public:
     Q_INVOKABLE void load_trending(const QString &category, const QString &timePeriod,
                                    const QString &title);
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
+    Q_INVOKABLE QVariantList get_commercial_videos_for_setting(const QString &settingKey) const;
+    Q_INVOKABLE QVariantList get_commercial_videos_for_category(const QString &categoryId) const;
+    Q_INVOKABLE void load_tube_commercial_category_options();
 
 signals:
     void authStateChanged();
@@ -35,6 +38,7 @@ signals:
     void streamsReady(const QString &requestId, const QString &title, const QVariantList &streams);
     void pairingSucceeded(const QString &serverUrl, const QString &token, const QString &playerName);
     void errorOccurred(const QString &message);
+    void dynamicOptionsReady(const QString &key, const QVariant &options);
 
 public slots:
     void onSettingChanged(const QString &moduleId, const QString &key, const QVariant &value);

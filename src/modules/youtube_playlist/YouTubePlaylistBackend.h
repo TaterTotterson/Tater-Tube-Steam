@@ -54,10 +54,6 @@ private:
     QVariantMap moduleConfig() const;
     QString setting(const QString &key, const QString &fallback = QString()) const;
     QString ytDlpPath() const;
-    QString commercialRootPath() const;
-    QVariantList commercialCategoryOptions() const;
-    QVariantList commercialVideosForCategoryId(const QString &categoryId, int startIndex = 0) const;
-    QVariantList commercialVideosForSelection(const QVariantMap &selection) const;
     QVariantList playlistRemovalOptions() const;
     QString playlistCachePath(const QString &playlistUrl) const;
     QVariantMap loadPlaylistCache(const QString &playlistUrl) const;

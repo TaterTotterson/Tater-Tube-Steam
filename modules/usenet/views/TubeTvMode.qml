@@ -8,11 +8,14 @@ FocusScope {
 
     signal goBack()
 
-    property string youtubeModuleId: "com.240mp.youtube_playlist"
-    property string vodModuleId: "com.240mp.emby_jellyfin"
-    property var sourceChannels: []
+    property string tubeModuleId: "com.240mp.usenet"
+    property var sourceCategories: navParams.categories || []
     property var channels: []
     property var commercialPool: []
+    property var tvLoadQueue: []
+    property var tvCurrentLoad: ({})
+    property var tvChannelMap: ({})
+    property var tvChannelOrder: []
     property int currentIndex: -1
     property int previousIndex: -1
     property int currentScheduleIndex: -1
@@ -24,10 +27,6 @@ FocusScope {
     property bool stoppingForTune: false
     property bool stoppingForScheduleAdvance: false
     property bool streamStarted: false
-    property bool streamRequestActive: false
-    property string pendingRequestId: ""
-    property var pendingPlayback: ({})
-    property int requestSerial: 0
     property int tuneDelayMs: 1200
     property string statusText: "LOADING TV MODE"
 
@@ -49,21 +48,19 @@ FocusScope {
         return shuffled
     }
 
-    function sharedSettingValue(key, fallback) {
-        var value = appCore.get_setting(youtubeModuleId, key)
+    function settingEnabled(moduleId, key, fallback) {
+        var value = appCore.get_setting(moduleId, key)
         if (value === undefined || value === null || value === "")
             return fallback
-        return value
+        return value === true || value === "ON" || value === "true" || value === "1"
     }
 
     function commercialsEnabled() {
-        var value = sharedSettingValue("tv_mode_commercials", true)
-        return value === true || value === "ON" || value === "true" || value === "1"
+        return settingEnabled(tubeModuleId, "tube_tv_mode_commercials", true)
     }
 
     function midrollCommercialsEnabled() {
-        var value = appCore.get_setting(vodModuleId, "vod_midroll_commercials")
-        return value === true || value === "ON" || value === "true" || value === "1"
+        return settingEnabled(tubeModuleId, "tube_midroll_commercials", false)
     }
 
     function durationSeconds(item, fallback) {
@@ -80,6 +77,38 @@ FocusScope {
         if (!channel) return "CH --"
         var title = String(channel.title || "").trim()
         return "CH " + (channel.number || "--") + (title !== "" ? " " + title : "")
+    }
+
+    function mediaKind(row) {
+        return String((row && (row.mediaType || row.type)) || "").toLowerCase()
+    }
+
+    function intOrDefault(value, fallback) {
+        if (value === undefined || value === null || value === "")
+            return fallback
+        var parsed = parseInt(value)
+        return isNaN(parsed) ? fallback : parsed
+    }
+
+    function localCategoryRows() {
+        for (var i = 0; i < sourceCategories.length; i++) {
+            var row = sourceCategories[i] || ({})
+            if (row.type === "localRoot")
+                return (row.children || []).filter(function(child) { return child.type === "local" })
+        }
+        return []
+    }
+
+    function savedCustomChannels() {
+        var saved = appCore.get_setting(tubeModuleId, "tube_custom_tv_channels")
+        return Array.isArray(saved) ? saved : []
+    }
+
+    function autoChannelsEnabled() {
+        var value = appCore.get_setting(tubeModuleId, "tube_auto_channels")
+        if (value === undefined || value === null || value === "")
+            return true
+        return value === true || value === "ON" || value === "true" || value === "1"
     }
 
     function commercialStatePool(state) {
@@ -99,15 +128,13 @@ FocusScope {
     }
 
     function commercialStateForChannel(channelSource, states) {
-        var category = ""
-        if (channelSource && channelSource.channelType === "custom")
-            category = String(channelSource.commercialCategory || "").trim()
+        var category = String((channelSource && channelSource.commercialCategory) || "").trim()
         var key = category === "" ? "__global__" : ("category:" + category)
         if (!states[key]) {
             states[key] = {
                 pool: category === ""
                       ? commercialPool
-                      : youtubePlaylistBackend.get_commercial_videos_for_category(category),
+                      : usenetBackend.get_commercial_videos_for_category(category),
                 deck: []
             }
         }
@@ -120,7 +147,7 @@ FocusScope {
         if (kind === "commercial") {
             if (!source.url)
                 return startAt
-        } else if (!source.ratingKey) {
+        } else if (!source.streamUrl) {
             return startAt
         }
 
@@ -155,7 +182,7 @@ FocusScope {
         return total
     }
 
-    function midrollOffsetsFor(source, kind, duration, commercialState) {
+    function midrollOffsetsFor(kind, duration, commercialState) {
         if (!midrollCommercialsEnabled() || !commercialsEnabled() ||
                 commercialStatePool(commercialState).length === 0)
             return []
@@ -164,13 +191,9 @@ FocusScope {
         if (duration < 1200)
             return []
 
-        var count = 1
-        if (kind === "movie") {
-            count = duration >= 7200 ? 3 : (duration >= 3600 ? 2 : 1)
-        } else {
-            count = duration >= 2700 ? 2 : 1
-        }
-
+        var count = kind === "movie"
+            ? (duration >= 7200 ? 3 : (duration >= 3600 ? 2 : 1))
+            : (duration >= 2700 ? 2 : 1)
         var guard = Math.min(900, Math.max(420, duration * 0.15))
         var jitter = Math.min(360, Math.max(90, duration * 0.06))
         var minGap = Math.min(900, Math.max(420, duration / (count + 2)))
@@ -190,7 +213,7 @@ FocusScope {
     function appendProgramWithMidroll(schedule, source, kind, startAt, commercialState) {
         var fallback = kind === "movie" ? 5400 : 1500
         var fullDuration = durationSeconds(source, fallback)
-        var offsets = midrollOffsetsFor(source, kind, fullDuration, commercialState)
+        var offsets = midrollOffsetsFor(kind, fullDuration, commercialState)
         if (offsets.length === 0)
             return appendScheduleItem(schedule, source, kind, startAt)
 
@@ -259,37 +282,30 @@ FocusScope {
         return { schedule: schedule, totalDuration: total }
     }
 
-    function buildCustomSchedule(programs, commercialState) {
+    function buildMixedSchedule(programs, groups, commercialState) {
         var schedule = []
         var total = 0
-        var movies = []
+        var movies = shuffleList(programs || [])
         var states = []
-        var totalSlots = 0
+        var totalSlots = movies.length
 
-        for (var i = 0; i < (programs || []).length; i++) {
-            var program = programs[i] || ({})
-            var episodes = program.episodes || []
+        for (var i = 0; i < (groups || []).length; i++) {
+            var group = groups[i] || ({})
+            var episodes = group.episodes || []
             if (episodes.length > 0) {
                 states.push({
-                    group: program,
+                    group: group,
                     episodes: episodes,
                     nextIndex: Math.floor(Math.random() * episodes.length)
                 })
                 totalSlots += episodes.length
-            } else if (program.ratingKey) {
-                movies.push(program)
-                totalSlots += 1
             }
         }
 
-        if (totalSlots <= 0)
-            return { schedule: [], totalDuration: 0 }
-
-        var shuffledMovies = shuffleList(movies)
         var movieIndex = 0
         var previousState = -1
         for (var slot = 0; slot < totalSlots; slot++) {
-            var useSeries = states.length > 0 && (movieIndex >= shuffledMovies.length || Math.random() < 0.55)
+            var useSeries = states.length > 0 && (movieIndex >= movies.length || Math.random() < 0.55)
             if (useSeries) {
                 var stateIndex = Math.floor(Math.random() * states.length)
                 if (previousState >= 0 && Math.random() < 0.34)
@@ -300,48 +316,195 @@ FocusScope {
                 total = appendProgramWithMidroll(schedule, episode, "episode", total, commercialState)
                 total = appendCommercialBreak(schedule, total, commercialState)
                 previousState = stateIndex
-            } else if (movieIndex < shuffledMovies.length) {
-                total = appendProgramWithMidroll(schedule, shuffledMovies[movieIndex], "movie", total, commercialState)
+            } else if (movieIndex < movies.length) {
+                total = appendProgramWithMidroll(schedule, movies[movieIndex], "movie", total, commercialState)
                 total = appendCommercialBreak(schedule, total, commercialState)
                 movieIndex++
                 previousState = -1
             }
         }
-
         return { schedule: schedule, totalDuration: total }
     }
 
-    function buildReadyChannels(loadedChannels) {
-        var ready = []
-        var customChannels = []
-        var generatedChannels = []
-        var commercialStates = ({})
-        var allowGeneratedChannels = autoChannelsEnabled()
-        for (var s = 0; s < (loadedChannels || []).length; s++) {
-            var channelSource = loadedChannels[s] || ({})
-            if (channelSource.channelType === "custom")
-                customChannels.push(channelSource)
-            else if (allowGeneratedChannels)
-                generatedChannels.push(channelSource)
+    function ensureChannel(load) {
+        var key = load.channelKey || load.categoryId || load.title || "local"
+        if (!tvChannelMap[key]) {
+            tvChannelMap[key] = {
+                key: key,
+                title: load.channelTitle || load.title || "LOCAL",
+                commercialCategory: load.commercialCategory || "",
+                programs: [],
+                groups: []
+            }
+            tvChannelOrder.push(key)
         }
-        var shuffled = customChannels.concat(shuffleList(generatedChannels))
-        for (var i = 0; i < shuffled.length; i++) {
-            var source = shuffled[i] || ({})
-            var commercialState = commercialStateForChannel(source, commercialStates)
-            var scheduleData = source.channelType === "custom"
-                ? buildCustomSchedule(source.programs || [], commercialState)
-                : (source.channelType === "tv"
-                ? buildTvSchedule(source.programs || [], commercialState)
-                : buildMovieSchedule(source.programs || [], commercialState))
+        return tvChannelMap[key]
+    }
+
+    function addFileToChannel(load, row) {
+        if (!row || !row.streamUrl)
+            return
+        var channel = ensureChannel(load)
+        var item = Object.assign({}, row)
+        item.title = row.title || "LOCAL"
+        var kind = mediaKind(row)
+        if (kind === "episode") {
+            var showTitle = load.showTitle || channel.title || "TV"
+            var group = null
+            for (var i = 0; i < channel.groups.length; i++) {
+                if (channel.groups[i].title === showTitle) {
+                    group = channel.groups[i]
+                    break
+                }
+            }
+            if (!group) {
+                group = { title: showTitle, episodes: [] }
+                channel.groups.push(group)
+            }
+            group.episodes.push(item)
+        } else {
+            channel.programs.push(item)
+        }
+    }
+
+    function enqueueLoad(load) {
+        if (!load || !load.categoryId)
+            return
+        tvLoadQueue.push(load)
+    }
+
+    function enqueueFolder(load, row) {
+        var kind = mediaKind(row)
+        var next = Object.assign({}, load, {
+            title: row.title || load.title,
+            path: row.path || "",
+            sourceIndex: intOrDefault(row.sourceIndex, intOrDefault(load.sourceIndex, -1))
+        })
+        if (kind === "show")
+            next.showTitle = row.title || load.showTitle || load.title
+        enqueueLoad(next)
+    }
+
+    function processLoadedRows(rows) {
+        var load = tvCurrentLoad || ({})
+        for (var i = 0; i < (rows || []).length; i++) {
+            var row = rows[i] || ({})
+            if (row.type === "localFile")
+                addFileToChannel(load, row)
+            else if (row.type === "localFolder")
+                enqueueFolder(load, row)
+        }
+    }
+
+    function loadNextLocalBatch() {
+        if (tvLoadQueue.length === 0) {
+            buildReadyChannels()
+            return
+        }
+        tvCurrentLoad = tvLoadQueue.shift()
+        statusText = "SCANNING " + (tvCurrentLoad.title || tvCurrentLoad.channelTitle || "LOCAL")
+        usenetBackend.load_local_items(tvCurrentLoad.categoryId || "",
+                                       tvCurrentLoad.path || "",
+                                       intOrDefault(tvCurrentLoad.sourceIndex, -1),
+                                       tvCurrentLoad.title || tvCurrentLoad.channelTitle || "LOCAL")
+    }
+
+    function queueCustomChannels() {
+        var custom = savedCustomChannels()
+        for (var i = 0; i < custom.length; i++) {
+            var channel = custom[i] || ({})
+            var channelKey = "custom:" + (channel.id || channel.title || i)
+            var items = channel.items || []
+            ensureChannel({
+                channelKey: channelKey,
+                channelTitle: channel.title || "CUSTOM",
+                commercialCategory: channel.commercialCategory || ""
+            })
+            for (var j = 0; j < items.length; j++) {
+                var item = items[j] || ({})
+                var load = {
+                    channelKey: channelKey,
+                    channelTitle: channel.title || "CUSTOM",
+                    commercialCategory: channel.commercialCategory || "",
+                    categoryId: item.categoryId || item.id || "",
+                    path: item.path || "",
+                    sourceIndex: intOrDefault(item.sourceIndex, -1),
+                    title: item.title || channel.title || "CUSTOM",
+                    showTitle: item.mediaType === "show" ? item.title : ""
+                }
+                if (item.type === "localFile" && item.streamUrl)
+                    addFileToChannel(load, item)
+                else
+                    enqueueLoad(load)
+            }
+        }
+    }
+
+    function startLocalLoad() {
+        loading = true
+        noSignalVisible = false
+        tuningStaticVisible = true
+        statusText = "SCANNING LOCAL"
+        tvLoadQueue = []
+        tvCurrentLoad = ({})
+        tvChannelMap = ({})
+        tvChannelOrder = []
+        channels = []
+
+        queueCustomChannels()
+
+        if (autoChannelsEnabled()) {
+            var localRows = localCategoryRows()
+            for (var i = 0; i < localRows.length; i++) {
+                var row = localRows[i] || ({})
+                enqueueLoad({
+                    channelKey: "auto:" + (row.id || row.categoryId || row.title || i),
+                    channelTitle: row.title || "LOCAL",
+                    categoryId: row.id || row.categoryId || "",
+                    path: "",
+                    sourceIndex: -1,
+                    title: row.title || "LOCAL"
+                })
+            }
+        }
+
+        if (tvLoadQueue.length === 0 && tvChannelOrder.length === 0) {
+            loading = false
+            tuningStaticVisible = false
+            noSignalVisible = true
+            statusText = "NO CHANNELS AVAILABLE"
+            return
+        }
+        loadNextLocalBatch()
+    }
+
+    function buildReadyChannels() {
+        var ready = []
+        var commercialStates = ({})
+        var orderedSources = []
+        for (var i = 0; i < tvChannelOrder.length; i++) {
+            var source = tvChannelMap[tvChannelOrder[i]]
+            if (source)
+                orderedSources.push(source)
+        }
+
+        for (var s = 0; s < orderedSources.length; s++) {
+            var channelSource = orderedSources[s] || ({})
+            var commercialState = commercialStateForChannel(channelSource, commercialStates)
+            var groups = channelSource.groups || []
+            var programs = channelSource.programs || []
+            var scheduleData = groups.length > 0 && programs.length === 0
+                ? buildTvSchedule(groups, commercialState)
+                : (groups.length > 0
+                   ? buildMixedSchedule(programs, groups, commercialState)
+                   : buildMovieSchedule(programs, commercialState))
             if (!scheduleData.schedule || scheduleData.schedule.length === 0 ||
                     scheduleData.totalDuration <= 0) {
                 continue
             }
-
             ready.push({
                 number: padChannelNumber(ready.length + 2),
-                title: source.title || "VIDEO",
-                channelType: source.channelType || "movie",
+                title: channelSource.title || "LOCAL",
                 schedule: scheduleData.schedule,
                 totalDuration: scheduleData.totalDuration
             })
@@ -363,19 +526,11 @@ FocusScope {
         tuneIndex(0, false)
     }
 
-    function startCommercialLoad(loadedChannels) {
-        sourceChannels = loadedChannels || []
+    function startCommercialLoad() {
         commercialPool = commercialsEnabled()
-            ? youtubePlaylistBackend.get_commercial_videos_for_setting("vod_commercial_categories")
+            ? usenetBackend.get_commercial_videos_for_setting("tube_commercial_categories")
             : []
-        buildReadyChannels(sourceChannels)
-    }
-
-    function autoChannelsEnabled() {
-        var value = appCore.get_setting(vodModuleId, "vod_auto_channels")
-        if (value === undefined || value === null || value === "")
-            return true
-        return value === true || value === "ON" || value === "true" || value === "1"
+        startLocalLoad()
     }
 
     function selectedChannel() {
@@ -415,11 +570,7 @@ FocusScope {
         tuningStaticVisible = true
         noSignalVisible = false
         streamStarted = false
-        streamRequestActive = false
         stoppingForScheduleAdvance = false
-        pendingRequestId = ""
-        pendingPlayback = ({})
-        youtubePlaylistBackend.cancel_video_stream_resolve()
         statusText = channelLabel(channel)
 
         if (mpvController.running) {
@@ -438,53 +589,37 @@ FocusScope {
         if (!resolved || !resolved.item ||
                 (resolved.item.kind === "commercial"
                  ? !resolved.item.url
-                 : !resolved.item.ratingKey)) {
+                 : !resolved.item.streamUrl)) {
             tuningStaticVisible = false
             noSignalVisible = true
-            statusText = "VOD TV CHANNEL EMPTY"
+            statusText = "LOCAL TV CHANNEL EMPTY"
             return
         }
 
         currentScheduleIndex = resolved.index
-        streamRequestActive = true
         var label = channelLabel(channel)
         statusText = label
-
-        var requestId = "vodtv-" + (++requestSerial)
-        pendingRequestId = requestId
-        pendingPlayback = {
-            item: resolved.item,
-            offset: resolved.offset || 0.0,
-            segmentRemaining: resolved.segmentRemaining || 0.0,
-            label: label
-        }
-        if (resolved.item.kind === "commercial") {
-            pendingRequestId = ""
-            pendingPlayback = ({})
-            launchPlayback(resolved.item.url || "", "", resolved.offset || 0.0,
-                           label, false, "", resolved.segmentRemaining || 0.0, resolved.item)
-        } else {
-            embyBackend.prepare_vod_tv_stream(requestId, resolved.item)
-        }
+        var url = resolved.item.kind === "commercial"
+            ? resolved.item.url
+            : resolved.item.streamUrl
+        launchPlayback(url, resolved.offset || 0.0, label,
+                       resolved.segmentRemaining || 0.0, resolved.item)
     }
 
-    function launchPlayback(url, httpHeaderFields, offset, label, allowYtdl, format, segmentRemaining, item) {
+    function launchPlayback(url, offset, label, segmentRemaining, item) {
         if (!url) {
             noSignalVisible = true
             tuningStaticVisible = false
-            streamRequestActive = false
-            statusText = "VOD TV PLAYBACK FAILED"
+            statusText = "LOCAL TV PLAYBACK FAILED"
             return
         }
 
         streamStarted = true
         stoppingForTune = false
         stoppingForScheduleAdvance = false
-        streamRequestActive = false
         noSignalVisible = false
         mpvController.loadAndPlay(url, offset || 0.0, 0, -1, [], false, -1, 0.0,
-                                  httpHeaderFields || "", false, "ota", false, label || statusText,
-                                  false, !!allowYtdl, format || "")
+                                  "", false, "ota", false, label || statusText)
 
         scheduleAdvanceTimer.stop()
         if (item && item.forceAdvance === true && (segmentRemaining || 0) > 1.0) {
@@ -553,8 +688,6 @@ FocusScope {
         leaving = true
         tuneTimer.stop()
         scheduleAdvanceTimer.stop()
-        pendingRequestId = ""
-        youtubePlaylistBackend.cancel_video_stream_resolve()
         if (mpvController.running)
             mpvController.stop()
         goBack()
@@ -609,38 +742,13 @@ FocusScope {
     }
 
     Connections {
-        target: embyBackend
+        target: usenetBackend
 
-        function onVodTvChannelsLoaded(loadedChannels) {
-            if (tvRoot.leaving)
+        function onItemsLoaded(categoryTitle, rows) {
+            if (!tvRoot.loading)
                 return
-            tvRoot.startCommercialLoad(loadedChannels || [])
-        }
-
-        function onVodTvStreamReady(requestId, item, url, httpHeaderFields) {
-            if (requestId !== tvRoot.pendingRequestId)
-                return
-            var pending = tvRoot.pendingPlayback || ({})
-            tvRoot.pendingRequestId = ""
-            tvRoot.pendingPlayback = ({})
-            tvRoot.launchPlayback(url, httpHeaderFields,
-                                  pending.offset || 0.0,
-                                  pending.label || tvRoot.statusText,
-                                  false,
-                                  "",
-                                  pending.segmentRemaining || 0.0,
-                                  pending.item || ({}))
-        }
-
-        function onVodTvStreamFailed(requestId, message) {
-            if (requestId !== tvRoot.pendingRequestId)
-                return
-            tvRoot.pendingRequestId = ""
-            tvRoot.pendingPlayback = ({})
-            tvRoot.streamRequestActive = false
-            tvRoot.tuningStaticVisible = false
-            tvRoot.noSignalVisible = true
-            tvRoot.statusText = message || "VOD TV PLAYBACK FAILED"
+            tvRoot.processLoadedRows(rows || [])
+            tvRoot.loadNextLocalBatch()
         }
 
         function onErrorOccurred(message) {
@@ -649,7 +757,7 @@ FocusScope {
             tvRoot.loading = false
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
-            tvRoot.statusText = message || "VOD TV FAILED"
+            tvRoot.statusText = message || "LOCAL TV FAILED"
         }
     }
 
@@ -687,11 +795,10 @@ FocusScope {
                 tvRoot.stoppingForTune = false
                 return
             }
-            tvRoot.streamRequestActive = false
             scheduleAdvanceTimer.stop()
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
-            tvRoot.statusText = "VOD TV PLAYBACK FAILED"
+            tvRoot.statusText = "LOCAL TV PLAYBACK FAILED"
         }
 
         function onScriptMessageReceived(message, arg) {
@@ -721,9 +828,7 @@ FocusScope {
         }
     }
 
-    Component.onCompleted: {
-        embyBackend.load_vod_tv_channels(false)
-    }
+    Component.onCompleted: startCommercialLoad()
 
     Component.onDestruction: {
         if (!leaving && mpvController.running)

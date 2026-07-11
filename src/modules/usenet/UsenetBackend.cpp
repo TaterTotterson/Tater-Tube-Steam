@@ -1,5 +1,7 @@
 #include "UsenetBackend.h"
 
+#include "../../media/CommercialLibrary.h"
+
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -286,6 +288,22 @@ int UsenetBackend::streamTimeout() const
     if (!ok)
         timeout = 300;
     return qBound(60, timeout, 900);
+}
+
+QVariantList UsenetBackend::get_commercial_videos_for_setting(const QString &settingKey) const
+{
+    return CommercialLibrary(m_dataRoot).videosForSetting(moduleConfig(), settingKey);
+}
+
+QVariantList UsenetBackend::get_commercial_videos_for_category(const QString &categoryId) const
+{
+    return CommercialLibrary(m_dataRoot).videosForCategory(categoryId);
+}
+
+void UsenetBackend::load_tube_commercial_category_options()
+{
+    emit dynamicOptionsReady(QStringLiteral("tube_commercial_categories"),
+                             CommercialLibrary(m_dataRoot).categoryOptions());
 }
 
 QString UsenetBackend::get_auth_state()
@@ -941,5 +959,8 @@ void UsenetBackend::onSettingChanged(const QString &moduleId, const QString &key
         || key == QStringLiteral("newznab_api_key")
         || key == QStringLiteral("omg_username")) {
         emit authStateChanged();
+    } else if (key == QStringLiteral("commercial_library_updated_ms")) {
+        emit dynamicOptionsReady(QStringLiteral("tube_commercial_categories"),
+                                 CommercialLibrary(m_dataRoot).categoryOptions());
     }
 }
