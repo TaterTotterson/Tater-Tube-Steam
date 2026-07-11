@@ -26,6 +26,9 @@ public:
     Q_INVOKABLE void load_discover(const QString &catalogId, const QString &title);
     Q_INVOKABLE void load_trending(const QString &category, const QString &timePeriod,
                                    const QString &title);
+    Q_INVOKABLE void load_music_libraries();
+    Q_INVOKABLE void load_music_albums(const QString &categoryId);
+    Q_INVOKABLE void load_music_tracks(const QString &albumId);
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
     Q_INVOKABLE QString playback_url(const QString &url, int screenWidth, int screenHeight) const;
     Q_INVOKABLE bool uses_server_seek() const;
@@ -37,6 +40,9 @@ signals:
     void authStateChanged();
     void categoriesLoaded(const QVariantList &categories);
     void itemsLoaded(const QString &categoryTitle, const QVariantList &items);
+    void musicLibrariesLoaded(const QVariant &libraries);
+    void musicAlbumsLoaded(const QVariant &albums);
+    void musicTracksLoaded(const QVariant &tracks);
     void streamsReady(const QString &requestId, const QString &title, const QVariantList &streams);
     void pairingSucceeded(const QString &serverUrl, const QString &token, const QString &playerName);
     void errorOccurred(const QString &message);
@@ -67,6 +73,8 @@ private:
 
     void handleCategoriesReply(QNetworkReply *reply);
     void handleItemsReply(QNetworkReply *reply, const QString &categoryTitle);
+    void handleMusicRowsReply(QNetworkReply *reply, const QString &arrayKey,
+                              const QString &failureMessage);
     void handleStreamsReply(QNetworkReply *reply, const QString &requestId,
                             const QString &fallbackTitle);
     void handlePairingReply(QNetworkReply *reply, const QString &serverUrl);

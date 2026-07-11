@@ -10,139 +10,98 @@
 
 Tater Tube is a retro VCR-style media frontend for Raspberry Pi appliance builds.
 
-For The Tube streaming, local media libraries, server-side transcoding, and Newznab-backed playback, pair Tater Tube with the companion [Tater Tube Server](https://github.com/TaterTotterson/tater-tube-server).
+It ships as ready-to-flash Raspberry Pi images for:
 
-This fork is focused on two appliance-style setups:
+- Raspberry Pi 4 composite NTSC
+- Raspberry Pi 4 composite PAL
+- Raspberry Pi 5 HDMI auto-resolution
 
-- Raspberry Pi 4 with CRT display over composite output
-- Raspberry Pi 5 with HDMI output using the display's preferred EDID mode
-- Ready-to-flash SD card images
-- Boot screen and automatic launch straight into Tater Tube
-- Argon IR remote support through a GPIO IR receiver on GPIO23
-- Local Emby/Jellyfin or Plex browsing and playback
-- Emby/Jellyfin or Plex music playback through the Tape Deck module
-- HDHomeRun Over The Air playback
-- YouTube playlist playback through Public Access
-- Server-backed streaming through The Tube, including Newsgroups and Tater Tube Server Local media
-- Game Center ROM browsing from RetroNAS/MiSTer shares with clean RetroArch game launch
-- PC Link game streaming from Sunshine/Moonlight hosts
-- Bluetooth controller pairing from Settings
-- Mobile web setup UI for module logins, API keys, local commercials, and custom VoD TV channels
-- NTSC composite, PAL composite, and Pi 5 HDMI auto image builds
+The image boots straight into Tater Tube with the boot screen, Argon IR defaults, Bluetooth gamepad pairing, SSH for debugging, RetroArch support, yt-dlp support, and the module runtime already installed.
 
-The easiest way to use it is to download the ready-to-flash `.img.xz` for your display from the latest GitHub release, flash it to an SD card, and boot the Pi.
-
-## Features
-
-### Video on Demand
-- Local Emby/Jellyfin server sign in
-- Plex PIN sign in with a code shown on the CRT and entered at `https://plex.tv/link`
-- Movies, TV Shows, and Other Videos library browsing
-- Resume playback, with Continue Watching for Emby/Jellyfin
-- Autoplay next episode
-- Playlist and Collection support for Emby/Jellyfin
-- TV Mode builds extra movie, cartoon, genre, and decade channels when library metadata is available
-- Custom TV Mode channels can be built from selected movies and TV series in the Web Setup UI
-- Custom TV Mode channels can use a specific local commercial category
-- TV Mode can use local commercial categories, optional mid-roll breaks, and no-repeat commercial rotation
-- Audio and subtitle track selection
-- H.264/AAC transcode playback with display-adaptive Auto plus 4K, 1440p, 1080p, 720p, and 480p quality targets
-
-### Tape Deck
-- Streams music from Emby/Jellyfin or Plex music libraries
-- Shows each album as its own tape for easier browsing
-- Cassette-deck playback screen
-- Lightweight old-school VU meter visuals
-- Next track uses a short tape-style fast-forward effect before starting
-- Album track list browsing with play/pause and next/previous track controls
-
-### Over The Air
-- Connects directly to HDHomeRun tuners
-- Opens directly into TV playback, no guide screen
-- Up/down changes channels while video is playing
-- Old-TV channel overlay inside mpv
-
-### Public Access
-- Plays saved public YouTube playlists
-- Accepts a full playlist URL or just the playlist `list` code
-- Looks up playlist names when available
-- Shows each video in the VHS-style list
-- Uses mpv with yt-dlp streaming, defaulting to CRT-friendly 360p
-- Optional autoplay next video
-- TV Mode shuffles playlist channels and can use shared local commercial categories uploaded through the Web Setup UI
-- TV Mode rotates commercials without repeating until the selected pool has played
+## Modules
 
 ### The Tube
-- Connects to the companion [Tater Tube Server](https://github.com/TaterTotterson/tater-tube-server)
-- The player only needs the server URL and a short pairing PIN generated in the server web UI
-- Keeps Newznab provider credentials, browse limits, Local media paths, and transcoding settings on the server instead of on the Pi
-- Shows separate Stream and Local areas so Newsgroups browsing and server-hosted local libraries stay cleanly separated
-- Stream browses media-only Newznab category groups for movies, TV, and music
-- Stream includes search plus provider-backed trending for movies and TV with today, week, month, and year views
-- Local browses movie, TV, and folder libraries configured on Tater Tube Server
-- Local TV Mode can build custom and automatic channels from server Local media
-- Themed Local TV Mode channels include movie, TV, genre, cartoon, classic, and decade-style channels when metadata or filenames allow it
-- Server-side transcoding can target CRT-friendly 480p, HD, or 4K profiles so the Pi receives a stream matched to the display
-- Channel changes in Local TV Mode keep the live timeline position, including server-transcoded streams
 
-### Tater Tube Server
-- Runs separately from the player, usually as a Docker container on a NAS, desktop, or home server
-- Provides The Tube streaming, Local media libraries, Newznab provider access, and optional hardware transcoding
-- Supports Docker hardware mappings for Intel/AMD VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox on macOS builds, and V4L2 M2M where available
-- Has its own mobile-friendly web UI for pairing players, adding Newznab providers, configuring Local media folders, and selecting transcoding profiles
-- Can serve local media folders to multiple Tater Tube players without putting media files on the Pi SD card
-- Release and setup details live in the [Tater Tube Server repo](https://github.com/TaterTotterson/tater-tube-server)
+The Tube connects Tater Tube to [Tater Tube Server](https://github.com/TaterTotterson/tater-tube-server). This is the server-backed module for Newznab streaming, local server libraries, server-side transcoding, and custom Local TV Mode channels.
+
+- Pair with a short PIN from the Tater Tube Server web UI
+- Browse Stream and Local sections separately
+- Stream includes Newznab movie, TV, music, search, and trending views
+- Local includes movie, TV, and folder libraries configured on the server
+- Local TV Mode supports custom channels, automatic channels, commercials, and live timeline channel switching
+- Player-side quality options can request Auto, CRT 480p, HDMI 1080p, or HDMI 4K transcoding
+- Server keeps Newznab credentials, local media paths, hardware transcoding settings, and library scanning off the Pi
+
+Run Tater Tube Server on a NAS, desktop, or home server, usually through Docker. Map `/config` for server settings, map any local media folders you want to expose, and pass hardware devices such as `/dev/dri` when using hardware transcoding. Full server setup lives in the [server repo](https://github.com/TaterTotterson/tater-tube-server).
+
+### Video on Demand
+
+- Emby, Jellyfin, and Plex library browsing
+- Plex PIN sign in through `https://plex.tv/link`
+- Movies, TV, Other Videos, resume playback, autoplay next episode, audio tracks, and subtitles
+- TV Mode creates movie, TV, genre, cartoon, classic, and decade-style channels when metadata is available
+- Custom TV Mode channels can be created in Web Setup from selected movies and series
+- Local commercial categories can be used between videos and as optional mid-roll breaks
+
+### Tape Deck
+
+- Streams music from Emby/Jellyfin, Plex, or Tater Tube Server
+- Shows each album as a tape
+- Cassette-style playback screen with audio-reactive VU bars
+- Next track uses a short tape-style fast-forward effect
+
+### Over The Air
+
+- Direct HDHomeRun playback
+- No guide required
+- Opens like an old TV tuner
+- Up/down changes channels during playback
+
+### Public Access
+
+- Plays saved YouTube playlists through mpv and yt-dlp
+- Accepts a full playlist URL or just the playlist code
+- Supports multiple playlists, playlist refresh, autoplay next, and shuffle
+- TV Mode turns playlists into shuffled channels with optional local commercials
 
 ### Game Center
-- Connects to a RetroNAS share using the MiSTer `games` folder layout
-- Shows only systems with a supported installed RetroArch core and matching ROM folder
-- Supports NES, Master System, Genesis, Game Boy, Game Boy Color, Game Boy Advance, SNES, and PlayStation when the matching cores are available
-- Launches games directly into RetroArch with no RetroArch menu browsing
-- Remote Home stops RetroArch and returns to the Tater Tube menu
-- Bluetooth controllers can be paired from Settings and then used by SDL/RetroArch
-- VHS-style controller mapper saves one global RetroPad layout for all cores
+
+- Browses RetroNAS/MiSTer-style ROM folders
+- Launches directly into RetroArch
+- Supports common Pi-friendly systems up through PlayStation when matching cores are available
+- Uses one global RetroPad controller map across cores
 
 ### PC Link
-- Pairs with Sunshine hosts through Moonlight PIN setup
-- Lists Sunshine apps from the host and caches them for faster launch
-- Defaults to a CRT-friendly `640x480`, `15 FPS`, `1000 Kbps`, H.264 stream
-- Includes CRT, HD, 1440p, and 4K stream presets up to `3840x2160`
-- The stream resolution is requested by Tater Tube; the host desktop or game should also be set to a matching 4:3 resolution in Sunshine or the game settings
-- Controller streaming needs host-side virtual gamepad support. Sunshine on Windows requires ViGEmBus; Sunshine on macOS currently does not support gamepads
+
+- Pairs with Sunshine hosts through Moonlight
+- Lists and launches Sunshine apps
+- Includes CRT, HD, 1440p, and 4K stream presets
+- Controller streaming depends on host-side virtual gamepad support
 
 ### Local Files
-- Browse folders on the Pi
-- Play common video formats
-- `m3u` and `m3u8` playlist support
-- Loop and shuffle playback
 
-### Appliance Image
-- Boots straight into Tater Tube
-- Separate NTSC composite, PAL composite, and Pi 5 HDMI auto images
-- Tater Tube image boot screen and compact one-line update splash
-- SSH enabled for debugging
-- Argon IR remote defaults
-- Argon ONE fan Auto, Off, and fixed-speed settings
-- GPIO IR receiver default: GPIO23, physical pin 16
-- Analog audio defaults for the Pi composite/3.5mm setup
-- HDMI/KMS defaults for the Pi 5 auto-resolution setup
-- RetroArch and RetroNAS mount support
-- yt-dlp support for Public Access playlist streaming
-- Tater Tube Server settings for The Tube
-- Bluetooth controller support through BlueZ
+- Browses folders on the Pi
+- Plays common video formats
+- Supports `m3u` and `m3u8` playlists
+- Loop and shuffle options
 
-### Controls
-- Keyboard navigation
-- USB remote/controller navigation
-- Bluetooth controller navigation after pairing
-- Global controller mapper for Tater Tube navigation and RetroArch cores
-- Argon IR remote support
-- Media keys during playback
-- Local HTTP playback and launch API for companion apps
+## Web Setup
 
-### Local Control API
+Open this from a phone or computer on the same network:
 
-Tater Tube includes a small HTTP API for companion apps and voice-assistant bridges. It is enabled by default on the Pi image at port `24024`.
+```text
+http://tatertube.local:24024/setup
+```
+
+Use Web Setup for module logins, API keys, HDHomeRun setup, Tater Tube Server pairing, RetroNAS paths, Sunshine pairing, Bluetooth/gamepad settings, local commercial uploads, and custom TV Mode channels.
+
+Commercials are local files uploaded into categories. Video on Demand, Public Access TV Mode, and The Tube Local TV Mode can all use the selected commercial categories without relying on YouTube playlists.
+
+If `MP240_API_TOKEN` is set, Web Setup and API calls require `Authorization: Bearer <token>` or `X-240MP-Token: <token>`.
+
+## Local API
+
+Tater Tube includes a small HTTP API for companion apps and voice-assistant bridges. It runs on port `24024` in the Pi image.
 
 ```bash
 curl http://tatertube.local:24024/api/v1/status
@@ -167,31 +126,24 @@ POST /api/v1/library/search       {"query": "batman", "types": ["movie", "show",
 POST /api/v1/library/launch       {"id": "vod:movie:ITEM_ID"}
 ```
 
-Search results include normalized IDs such as `vod:movie:...`, `vod:show:...`, and `game:nes:...`. Pass the selected result `id` back to `/api/v1/library/launch` to start Video on Demand playback or a Game Center game.
-
-### Web Setup UI
-
-Open `http://tatertube.local:24024/setup` from a phone or computer on the same network to update module settings, logins, API keys, RetroNAS settings, Sunshine pairing, Tater Tube Server pairing, local commercial categories, and custom VoD/The Tube TV channels without typing everything on the TV.
-
-The Commercials page lets you create categories and upload local video files. Public Access TV Mode and Video on Demand TV Mode can then pick which categories to use, so commercials do not depend on YouTube playlists. Commercial playback rotates through the selected pool before repeating.
-
-The VoD Channels page lets you build named TV Mode channels from Plex, Emby, or Jellyfin movies and series. Custom channels are placed first when VoD TV Mode starts and can optionally use a specific commercial category.
-
-The Tube Channels page lets you build named Local TV Mode channels from Tater Tube Server Local categories, folders, and files. These channels can also use local commercial categories and can run alongside The Tube's automatic Local TV Mode channels.
-
-The Web Setup UI uses the same API port as the Local Control API. If `MP240_API_TOKEN` is set, the page prompts for the token before loading or saving settings.
-
-Set `MP240_API_TOKEN` to require `Authorization: Bearer <token>` or `X-240MP-Token: <token>`. See [INSTALL.md](INSTALL.md#local-control-api) for the full API settings.
+Search results return launch IDs such as `vod:movie:...`, `vod:show:...`, and `game:nes:...`.
 
 ## Install
 
 - [Flash the ready-to-flash Raspberry Pi image](INSTALL.md#flash-the-ready-to-flash-image)
+- [Update an existing Tater Tube image](INSTALL.md#update-an-existing-tater-tube-image)
 - [Build a custom image](INSTALL.md#build-a-custom-image)
 - [Development builds](BUILDING.md)
 
-## Hardware Target
+Download the latest `.img.xz` for your display from the GitHub release page, flash it with Raspberry Pi Imager or Balena Etcher, and boot the Pi.
 
-This project targets Raspberry Pi appliance builds: Pi 4 composite output for CRTs, plus a Pi 5 HDMI auto-resolution image for modern displays. Media modules cover Emby/Jellyfin, Plex, HDHomeRun OTA, YouTube playlists, The Tube, RetroNAS-backed games, and Sunshine/Moonlight PC Link.
+## Hardware Notes
+
+- Pi 4 composite images default to analog video and analog audio
+- Pi 5 HDMI image uses the display's preferred EDID mode
+- Argon IR receiver default is GPIO23, physical pin 16
+- Argon ONE fan control supports Auto, Off, and fixed-speed settings
+- SSH is enabled for debugging on the ready-to-flash images
 
 ## License
 
@@ -201,4 +153,4 @@ You are free to use, study, and modify this code. If you distribute a modified v
 
 ## Credits
 
-Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This fork is focused on appliance-style Pi images, Emby/Jellyfin and Plex support, HDHomeRun OTA, Public Access playlists, The Tube, RetroNAS games, PC Link, and Argon IR defaults.
+Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This fork is focused on appliance-style Pi images, The Tube, Emby/Jellyfin and Plex playback, HDHomeRun OTA, Public Access playlists, Tape Deck, RetroNAS games, PC Link, and Argon IR defaults.

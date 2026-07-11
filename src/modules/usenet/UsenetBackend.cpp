@@ -546,6 +546,70 @@ void UsenetBackend::load_trending(const QString &category, const QString &timePe
     });
 }
 
+void UsenetBackend::load_music_libraries()
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit errorOccurred(QStringLiteral("PAIR TATER TUBE SERVER"));
+        return;
+    }
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/music/libraries")));
+    addTaterAuthHeader(request);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleMusicRowsReply(reply, QStringLiteral("libraries"),
+                             QStringLiteral("LOAD MUSIC LIBRARIES FAILED"));
+    });
+}
+
+void UsenetBackend::load_music_albums(const QString &categoryId)
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit errorOccurred(QStringLiteral("PAIR TATER TUBE SERVER"));
+        return;
+    }
+
+    const QString cleanId = categoryId.trimmed();
+    if (cleanId.isEmpty()) {
+        emit errorOccurred(QStringLiteral("MUSIC LIBRARY INVALID"));
+        return;
+    }
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/music/albums"), {
+        {QStringLiteral("category_id"), cleanId}
+    }));
+    addTaterAuthHeader(request);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleMusicRowsReply(reply, QStringLiteral("albums"),
+                             QStringLiteral("LOAD MUSIC ALBUMS FAILED"));
+    });
+}
+
+void UsenetBackend::load_music_tracks(const QString &albumId)
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit errorOccurred(QStringLiteral("PAIR TATER TUBE SERVER"));
+        return;
+    }
+
+    const QString cleanId = albumId.trimmed();
+    if (cleanId.isEmpty()) {
+        emit errorOccurred(QStringLiteral("MUSIC ALBUM INVALID"));
+        return;
+    }
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/music/tracks"), {
+        {QStringLiteral("album_id"), cleanId}
+    }));
+    addTaterAuthHeader(request);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleMusicRowsReply(reply, QStringLiteral("tracks"),
+                             QStringLiteral("LOAD MUSIC TRACKS FAILED"));
+    });
+}
+
 void UsenetBackend::request_streams(const QString &requestId, const QVariantMap &item)
 {
     const QString nzbUrl = item.value(QStringLiteral("nzbUrl")).toString().trimmed();
@@ -666,6 +730,38 @@ void UsenetBackend::handleItemsReply(QNetworkReply *reply, const QString &catego
         return;
     }
     emit itemsLoaded(categoryTitle, items);
+}
+
+void UsenetBackend::handleMusicRowsReply(QNetworkReply *reply, const QString &arrayKey,
+                                         const QString &failureMessage)
+{
+    reply->deleteLater();
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (isRedirectStatus(status)) {
+        emit errorOccurred(QStringLiteral("SERVER URL NEEDS HTTPS"));
+        return;
+    }
+    if (reply->error() != QNetworkReply::NoError || status >= 400) {
+        QString error;
+        parseJsonRows(body, arrayKey, &error);
+        emit errorOccurred(error.isEmpty() ? failureMessage : error);
+        return;
+    }
+
+    QString error;
+    const QVariantList rows = parseJsonRows(body, arrayKey, &error);
+    if (!error.isEmpty()) {
+        emit errorOccurred(error);
+        return;
+    }
+
+    if (arrayKey == QStringLiteral("libraries"))
+        emit musicLibrariesLoaded(rows);
+    else if (arrayKey == QStringLiteral("albums"))
+        emit musicAlbumsLoaded(rows);
+    else if (arrayKey == QStringLiteral("tracks"))
+        emit musicTracksLoaded(rows);
 }
 
 void UsenetBackend::handleStreamsReply(QNetworkReply *reply, const QString &requestId,

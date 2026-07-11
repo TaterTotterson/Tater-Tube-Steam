@@ -27,6 +27,7 @@ FocusScope {
     property bool ignoringPreviousTrackExit: false
     property int fastForwardTargetIndex: -1
     property int visualTick: 0
+    property string musicProvider: "Video on Demand"
 
     focus: true
 
@@ -48,6 +49,15 @@ FocusScope {
     function currentAlbum() {
         var track = currentTrack()
         return track.album || currentAlbumTitle || "TAPE"
+    }
+
+    function refreshProvider() {
+        var provider = appCore.get_setting(moduleId, "music_provider") || "Video on Demand"
+        musicProvider = provider
+    }
+
+    function usesTaterServer() {
+        return String(musicProvider).toLowerCase() === "tater tube server"
     }
 
     function formatTime(ms) {
@@ -77,6 +87,21 @@ FocusScope {
     }
 
     function loadLibraries() {
+        refreshProvider()
+        if (usesTaterServer()) {
+            if (usenetBackend.get_auth_state() !== "authed") {
+                mode = "message"
+                statusText = "PAIR TATER TUBE SERVER"
+                return
+            }
+
+            mode = "loading"
+            statusText = "LOADING SERVER TAPES..."
+            skippedLibraryPicker = false
+            usenetBackend.load_music_libraries()
+            return
+        }
+
         if (embyBackend.get_auth_state() !== "authed") {
             mode = "message"
             statusText = "SIGN IN FROM VIDEO ON DEMAND"
@@ -99,7 +124,10 @@ FocusScope {
         tracks = []
         mode = "loading"
         statusText = "SCANNING TAPES..."
-        embyBackend.load_music_albums(library.sectionId || library.key || "")
+        if (usesTaterServer())
+            usenetBackend.load_music_albums(library.sectionId || library.key || library.ratingKey || "")
+        else
+            embyBackend.load_music_albums(library.sectionId || library.key || "")
     }
 
     function selectAlbum(index) {
@@ -112,7 +140,10 @@ FocusScope {
         tracks = []
         mode = "loading"
         statusText = "LOADING " + currentAlbumTitle
-        embyBackend.load_music_tracks(album.ratingKey || album.key || "")
+        if (usesTaterServer())
+            usenetBackend.load_music_tracks(album.ratingKey || album.key || "")
+        else
+            embyBackend.load_music_tracks(album.ratingKey || album.key || "")
     }
 
     function playTrack(index) {
@@ -123,10 +154,23 @@ FocusScope {
         trackIndex = index
         trackList.currentIndex = index
         var track = currentTrack()
-        pendingItemId = track.ratingKey || ""
+        pendingItemId = track.ratingKey || track.key || ""
         if (pendingItemId === "") return
         statusText = "THREADING TAPE..."
-        embyBackend.build_audio_stream_url(pendingItemId, track.partKey || "")
+        if (usesTaterServer()) {
+            if (!track.streamUrl) {
+                mode = "message"
+                statusText = "TAPE STREAM MISSING"
+                return
+            }
+            mode = "deck"
+            playing = true
+            paused = false
+            ignoringPreviousTrackExit = false
+            mpvController.loadAudioAndPlay(track.streamUrl, 0.0, "", track.title || "TAPE")
+        } else {
+            embyBackend.build_audio_stream_url(pendingItemId, track.partKey || "")
+        }
     }
 
     function stopDeck(returnToTracks) {
@@ -369,6 +413,73 @@ FocusScope {
                 mode = "message"
                 statusText = message || "TAPE ERROR"
             }
+        }
+    }
+
+    Connections {
+        target: usenetBackend
+
+        function onMusicLibrariesLoaded(items) {
+            if (!usesTaterServer()) return
+            libraries = items || []
+            if (libraries.length === 0) {
+                mode = "message"
+                statusText = "NO SERVER MUSIC FOUND"
+                return
+            }
+            if (libraries.length === 1) {
+                skippedLibraryPicker = true
+                selectLibrary(0)
+                return
+            }
+            mode = "libraries"
+            libraryList.currentIndex = Math.min(currentLibraryIndex, libraries.length - 1)
+        }
+
+        function onMusicAlbumsLoaded(items) {
+            if (!usesTaterServer()) return
+            albums = items || []
+            if (albums.length === 0) {
+                mode = "message"
+                statusText = "NO SERVER ALBUMS FOUND"
+                return
+            }
+            mode = "albums"
+            currentAlbumIndex = Math.min(currentAlbumIndex, albums.length - 1)
+            albumList.currentIndex = currentAlbumIndex
+        }
+
+        function onMusicTracksLoaded(items) {
+            if (!usesTaterServer()) return
+            tracks = items || []
+            if (tracks.length === 0) {
+                mode = "message"
+                statusText = "NO SERVER TRACKS FOUND"
+                return
+            }
+            mode = "tracks"
+            trackIndex = 0
+            trackList.currentIndex = 0
+        }
+
+        function onErrorOccurred(message) {
+            if (!usesTaterServer()) return
+            ignoringPreviousTrackExit = false
+            if (mode === "loading" || mode === "deck") {
+                playing = false
+                mode = "message"
+                statusText = message || "TATER SERVER ERROR"
+            }
+        }
+    }
+
+    Connections {
+        target: appCore
+
+        function onModuleSettingChanged(mid, key, value) {
+            if (mid !== tapeRoot.moduleId || key !== "music_provider")
+                return
+            loadLibraries()
         }
     }
 

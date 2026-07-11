@@ -1,15 +1,15 @@
 {
-  "version": "v1.3.7",
-  "app_version": "1.3.7",
+  "version": "v1.3.8",
+  "app_version": "1.3.8",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.7/Tater-Tube-v1.3.7-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.7.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.8/Tater-Tube-v1.3.8-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.8.tar.gz",
   "notes": [
-    "Adds app-wide volume controls and a VHS-style volume overlay across the player.",
-    "Adds audio-reactive Tape Deck VU bars driven by the currently playing track.",
-    "Adds The Tube transcoding controls so Tater Tube Server can choose CRT, 1080p, or 4K output per player.",
-    "Moves The Tube setup to the top of Web Setup and keeps server pairing, quality, and TV Mode settings together."
+    "Adds Tater Tube Server as a Tape Deck music provider.",
+    "Tape Deck can browse server music libraries, albums, and tracks without sharing the Video on Demand provider.",
+    "Updates Web Setup so Tape Deck and The Tube setup states track their own providers.",
+    "Refreshes the README around The Tube, Tape Deck, and server setup."
   ]
 }

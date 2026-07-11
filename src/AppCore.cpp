@@ -783,8 +783,13 @@ QString AppCore::get_module_auth_state(const QString &moduleId) {
                 ? QStringLiteral("none")
                 : QStringLiteral("authed");
         }
-        if (moduleId == QStringLiteral("com.240mp.audio_tapes"))
+        if (moduleId == QStringLiteral("com.240mp.audio_tapes")) {
+            const QString provider = get_setting(moduleId, QStringLiteral("music_provider"))
+                .toString().trimmed().toLower();
+            if (provider == QStringLiteral("tater tube server"))
+                return get_module_auth_state(QStringLiteral("com.240mp.usenet"));
             return get_module_auth_state(QStringLiteral("com.240mp.emby_jellyfin"));
+        }
         return QString{};
     }
     QString result;
