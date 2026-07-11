@@ -83,6 +83,37 @@ FocusScope {
         return String((row && (row.mediaType || row.type)) || "").toLowerCase()
     }
 
+    function rowType(row) {
+        return String((row && row.type) || "").toLowerCase()
+    }
+
+    function asList(value) {
+        if (!value)
+            return []
+        if (Array.isArray(value))
+            return value
+        if (typeof value.length === "number") {
+            var list = []
+            for (var i = 0; i < value.length; i++)
+                list.push(value[i])
+            return list
+        }
+        if (typeof value === "object") {
+            var keys = Object.keys(value).filter(function(key) {
+                return /^\d+$/.test(key)
+            }).sort(function(left, right) {
+                return parseInt(left) - parseInt(right)
+            })
+            if (keys.length > 0) {
+                var mapped = []
+                for (var k = 0; k < keys.length; k++)
+                    mapped.push(value[keys[k]])
+                return mapped
+            }
+        }
+        return []
+    }
+
     function intOrDefault(value, fallback) {
         if (value === undefined || value === null || value === "")
             return fallback
@@ -91,17 +122,18 @@ FocusScope {
     }
 
     function localCategoryRows() {
-        for (var i = 0; i < sourceCategories.length; i++) {
-            var row = sourceCategories[i] || ({})
-            if (row.type === "localRoot")
-                return (row.children || []).filter(function(child) { return child.type === "local" })
+        var categories = asList(sourceCategories)
+        for (var i = 0; i < categories.length; i++) {
+            var row = categories[i] || ({})
+            if (rowType(row) === "localroot")
+                return asList(row.children).filter(function(child) { return rowType(child) === "local" })
         }
         return []
     }
 
     function savedCustomChannels() {
         var saved = appCore.get_setting(tubeModuleId, "tube_custom_tv_channels")
-        return Array.isArray(saved) ? saved : []
+        return asList(saved)
     }
 
     function autoChannelsEnabled() {
@@ -611,11 +643,12 @@ FocusScope {
 
     function processLoadedRows(rows) {
         var load = tvCurrentLoad || ({})
-        for (var i = 0; i < (rows || []).length; i++) {
-            var row = rows[i] || ({})
-            if (row.type === "localFile")
+        var loadedRows = asList(rows)
+        for (var i = 0; i < loadedRows.length; i++) {
+            var row = loadedRows[i] || ({})
+            if (rowType(row) === "localfile")
                 addFileToChannel(load, row)
-            else if (row.type === "localFolder")
+            else if (rowType(row) === "localfolder")
                 enqueueFolder(load, row)
         }
     }
@@ -638,7 +671,7 @@ FocusScope {
         for (var i = 0; i < custom.length; i++) {
             var channel = custom[i] || ({})
             var channelKey = "custom:" + (channel.id || channel.title || i)
-            var items = channel.items || []
+            var items = asList(channel.items)
             ensureChannel({
                 channelKey: channelKey,
                 channelTitle: channel.title || "CUSTOM",
@@ -656,9 +689,9 @@ FocusScope {
                     path: item.path || "",
                     sourceIndex: intOrDefault(item.sourceIndex, -1),
                     title: item.title || channel.title || "CUSTOM",
-                    showTitle: item.mediaType === "show" ? item.title : ""
+                    showTitle: mediaKind(item) === "show" ? item.title : ""
                 }
-                if (item.type === "localFile" && item.streamUrl)
+                if (rowType(item) === "localfile" && item.streamUrl)
                     addFileToChannel(load, item)
                 else
                     enqueueLoad(load)
@@ -1008,10 +1041,11 @@ FocusScope {
         function onErrorOccurred(message) {
             if (!tvRoot.loading)
                 return
-            tvRoot.loading = false
-            tvRoot.tuningStaticVisible = false
-            tvRoot.noSignalVisible = true
-            tvRoot.statusText = message || "LOCAL TV FAILED"
+            if (tvRoot.tvLoadQueue.length > 0) {
+                tvRoot.loadNextLocalBatch()
+                return
+            }
+            tvRoot.buildReadyChannels()
         }
     }
 

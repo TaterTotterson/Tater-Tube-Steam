@@ -1,15 +1,15 @@
 {
-  "version": "v1.3.4",
-  "app_version": "1.3.4",
+  "version": "v1.3.5",
+  "app_version": "1.3.5",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.4/Tater-Tube-v1.3.4-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.4.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.5/Tater-Tube-v1.3.5-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.5.tar.gz",
   "notes": [
-    "Adds Web Setup discovery for other Tater Tube players on the local network.",
-    "Adds commercial library sync from or to another player, preserving categories.",
-    "Skips already-copied commercials during sync so repeated syncs do not create duplicates.",
-    "Adds player discovery and protected commercial file endpoints for future settings sync work."
+    "Fixes The Tube Local TV Mode custom channels created in Web Setup not appearing at launch.",
+    "Keeps saved The Tube custom channels first, ahead of auto-generated Local TV channels.",
+    "Makes The Tube TV Mode custom-channel loading more tolerant of Qt/Web Setup saved data shapes.",
+    "Skips failed Local source scans while still building any valid custom or auto channels."
   ]
 }
