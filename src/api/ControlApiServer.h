@@ -36,6 +36,7 @@ private:
     struct HttpRequest {
         QByteArray method;
         QString path;
+        QHash<QString, QString> query;
         QHash<QByteArray, QByteArray> headers;
         QByteArray body;
     };
@@ -48,6 +49,7 @@ private:
     bool isAuthorized(const HttpRequest &request) const;
     bool handleSetupStaticRequest(QTcpSocket *socket, const HttpRequest &request);
     bool handleSetupApiRequest(QTcpSocket *socket, const HttpRequest &request);
+    QJsonObject discoveryData() const;
     QJsonObject playbackStatus() const;
     QJsonObject setupStatus() const;
     QJsonObject setupData() const;
@@ -69,9 +71,11 @@ private:
     void handleSetupTubePairRequest(QTcpSocket *socket, const HttpRequest &request);
     QString commercialsRootPath() const;
     QJsonObject commercialsLibrary() const;
+    int commercialsVideoCount() const;
     void notifyCommercialLibraryChanged();
     void handleSetupCommercialCategoryRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleSetupCommercialUploadRequest(QTcpSocket *socket, const HttpRequest &request);
+    void handleSetupCommercialFileRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleSetupCommercialDeleteFileRequest(QTcpSocket *socket, const HttpRequest &request);
     void handleSetupCommercialDeleteCategoryRequest(QTcpSocket *socket, const HttpRequest &request);
     QJsonArray vodCustomChannels() const;

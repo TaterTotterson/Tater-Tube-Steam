@@ -16,11 +16,13 @@
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QNetworkAccessManager>
+#include <QNetworkInterface>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStringList>
 #include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -171,6 +173,32 @@ QString headerParameter(const QByteArray &header, const QByteArray &name)
     match = re.match(QString::fromUtf8(header));
     return match.hasMatch() ? match.captured(1).trimmed() : QString();
 }
+
+QStringList localIPv4Addresses()
+{
+    QStringList addresses;
+    const QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
+    for (const QNetworkInterface &iface : interfaces) {
+        if (!(iface.flags() & QNetworkInterface::IsUp) ||
+            !(iface.flags() & QNetworkInterface::IsRunning) ||
+            (iface.flags() & QNetworkInterface::IsLoopBack)) {
+            continue;
+        }
+        const QList<QNetworkAddressEntry> entries = iface.addressEntries();
+        for (const QNetworkAddressEntry &entry : entries) {
+            const QHostAddress address = entry.ip();
+            if (address.protocol() != QAbstractSocket::IPv4Protocol)
+                continue;
+            const QString text = address.toString();
+            if (text.startsWith(QStringLiteral("169.254.")))
+                continue;
+            if (!addresses.contains(text))
+                addresses.append(text);
+        }
+    }
+    addresses.sort();
+    return addresses;
+}
 } // namespace
 
 ControlApiServer::ControlApiServer(MpvController *player,
@@ -318,6 +346,9 @@ bool ControlApiServer::tryParseRequest(const QByteArray &buffer, HttpRequest &re
     request.method = requestLine.at(0).trimmed().toUpper();
     const QUrl url(QString::fromUtf8(requestLine.at(1)));
     request.path = url.path().isEmpty() ? QStringLiteral("/") : url.path();
+    const QUrlQuery query(url);
+    for (const auto &item : query.queryItems())
+        request.query.insert(item.first, item.second);
 
     int contentLength = 0;
     for (int i = 1; i < lines.size(); ++i) {
@@ -352,6 +383,11 @@ void ControlApiServer::handleRequest(QTcpSocket *socket, const HttpRequest &requ
 
     if (handleSetupStaticRequest(socket, request))
         return;
+
+    if (request.method == "GET" && request.path == QStringLiteral("/api/v1/discovery")) {
+        writeJson(socket, 200, discoveryData());
+        return;
+    }
 
     if (!isAuthorized(request)) {
         writeJson(socket, 401, {{"ok", false}, {"error", "unauthorized"}});
@@ -595,6 +631,10 @@ bool ControlApiServer::handleSetupApiRequest(QTcpSocket *socket,
         writeJson(socket, 200, commercialsLibrary());
         return true;
     }
+    if (request.method == "GET" && request.path == QStringLiteral("/api/v1/setup/commercials/file")) {
+        handleSetupCommercialFileRequest(socket, request);
+        return true;
+    }
     if (request.method == "GET" && request.path == QStringLiteral("/api/v1/setup/vod-tv/custom-channels")) {
         handleSetupVodCustomChannelsListRequest(socket);
         return true;
@@ -715,6 +755,21 @@ QJsonObject ControlApiServer::playbackStatus() const {
     };
 }
 
+QJsonObject ControlApiServer::discoveryData() const {
+    return {
+        {"ok", true},
+        {"service", "tater-tube-player"},
+        {"app", QJsonObject{
+            {"name", QCoreApplication::applicationName()},
+            {"version", QCoreApplication::applicationVersion()}
+        }},
+        {"api_port", m_server ? int(m_server->serverPort()) : 24024},
+        {"addresses", QJsonArray::fromStringList(localIPv4Addresses())},
+        {"token_required", !m_token.isEmpty()},
+        {"commercial_count", commercialsVideoCount()}
+    };
+}
+
 QJsonObject ControlApiServer::setupStatus() const {
     return {
         {"ok", true},
@@ -722,6 +777,8 @@ QJsonObject ControlApiServer::setupStatus() const {
             {"name", QCoreApplication::applicationName()},
             {"version", QCoreApplication::applicationVersion()}
         }},
+        {"api_port", m_server ? int(m_server->serverPort()) : 24024},
+        {"addresses", QJsonArray::fromStringList(localIPv4Addresses())},
         {"token_required", !m_token.isEmpty()}
     };
 }
@@ -1431,6 +1488,15 @@ QJsonObject ControlApiServer::commercialsLibrary() const
     return CommercialLibrary(m_appCore->dataRoot()).setupLibrary();
 }
 
+int ControlApiServer::commercialsVideoCount() const
+{
+    int total = 0;
+    const QJsonArray categories = commercialsLibrary().value(QStringLiteral("categories")).toArray();
+    for (const QJsonValue &categoryValue : categories)
+        total += categoryValue.toObject().value(QStringLiteral("count")).toInt();
+    return total;
+}
+
 void ControlApiServer::notifyCommercialLibraryChanged()
 {
     if (!m_appCore)
@@ -1472,6 +1538,44 @@ void ControlApiServer::handleSetupCommercialCategoryRequest(QTcpSocket *socket,
         {"category", category},
         {"library", commercialsLibrary()}
     });
+}
+
+void ControlApiServer::handleSetupCommercialFileRequest(QTcpSocket *socket,
+                                                        const HttpRequest &request)
+{
+    const QString category = safeCommercialName(request.query.value(QStringLiteral("category")),
+                                                QString()).trimmed();
+    const QString fileName = safeCommercialFileName(request.query.value(QStringLiteral("name")));
+    if (category.isEmpty() || fileName.isEmpty()) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "missing_commercial_file"}});
+        return;
+    }
+
+    const QDir root(commercialsRootPath());
+    const QDir categoryDir(root.absoluteFilePath(category));
+    const QString filePath = categoryDir.absoluteFilePath(fileName);
+    const QFileInfo rootInfo(root.absolutePath());
+    const QFileInfo fileInfo(filePath);
+    const QString rootCanonical = rootInfo.canonicalFilePath();
+    const QString fileCanonical = fileInfo.canonicalFilePath();
+    if (rootCanonical.isEmpty() || fileCanonical.isEmpty() ||
+        (fileCanonical != rootCanonical &&
+         !fileCanonical.startsWith(rootCanonical + QDir::separator()))) {
+        writeJson(socket, 400, {{"ok", false}, {"error", "invalid_commercial_file"}});
+        return;
+    }
+    if (!fileInfo.exists() || !fileInfo.isFile() || !CommercialLibrary::isVideoFile(fileInfo)) {
+        writeJson(socket, 404, {{"ok", false}, {"error", "file_not_found"}});
+        return;
+    }
+
+    QFile file(fileCanonical);
+    if (!file.open(QIODevice::ReadOnly)) {
+        writeJson(socket, 500, {{"ok", false}, {"error", "file_read_failed"}});
+        return;
+    }
+
+    writeBytes(socket, 200, file.readAll(), "application/octet-stream");
 }
 
 void ControlApiServer::handleSetupCommercialUploadRequest(QTcpSocket *socket,
@@ -1554,12 +1658,20 @@ void ControlApiServer::handleSetupCommercialUploadRequest(QTcpSocket *socket,
     }
 
     QDir categoryDir(root.absoluteFilePath(category));
+    const QString dedupeValue = request.query.value(QStringLiteral("dedupe")).trimmed().toLower();
+    const bool dedupe = dedupeValue == QStringLiteral("1") ||
+                        dedupeValue == QStringLiteral("true") ||
+                        dedupeValue == QStringLiteral("yes");
     int saved = 0;
     QJsonArray skipped;
     for (const UploadFile &upload : uploads) {
         const QString fileName = safeCommercialFileName(upload.filename);
         if (!CommercialLibrary::isVideoFile(QFileInfo(fileName))) {
             skipped.append(QJsonObject{{"name", fileName}, {"reason", "unsupported_file_type"}});
+            continue;
+        }
+        if (dedupe && QFileInfo::exists(categoryDir.absoluteFilePath(fileName))) {
+            skipped.append(QJsonObject{{"name", fileName}, {"reason", "already_exists"}});
             continue;
         }
 

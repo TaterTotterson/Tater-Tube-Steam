@@ -659,6 +659,9 @@
     let plexPollTimer = null;
     let moonlightPollTimer = null;
     let commercialOpenCategories = new Set();
+    let commercialPeers = [];
+    let commercialPeerUrl = "";
+    let commercialPeerToken = localStorage.getItem("taterTubePeerToken") || "";
 
     function token() {
       return localStorage.getItem("taterTubeSetupToken") || "";
@@ -692,13 +695,14 @@
       return data;
     }
 
-    function uploadApi(path, formData, onProgress) {
+    function uploadApi(path, formData, onProgress, authToken) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", path);
-        if (token()) {
-          xhr.setRequestHeader("Authorization", "Bearer " + token());
-          xhr.setRequestHeader("X-240MP-Token", token());
+        const activeToken = authToken === undefined ? token() : authToken;
+        if (activeToken) {
+          xhr.setRequestHeader("Authorization", "Bearer " + activeToken);
+          xhr.setRequestHeader("X-240MP-Token", activeToken);
         }
         xhr.upload.onprogress = event => {
           if (typeof onProgress === "function")
@@ -708,7 +712,8 @@
         xhr.onerror = () => reject(new Error("Upload failed"));
         xhr.onload = () => {
           if (xhr.status === 401) {
-            showTokenPrompt(true);
+            if (authToken === undefined)
+              showTokenPrompt(true);
             reject(new Error("Unauthorized"));
             return;
           }
@@ -758,6 +763,203 @@
       if (value >= 1024)
         return (value / 1024).toFixed(1) + " KB";
       return value + " B";
+    }
+
+    function normalizePeerUrl(value) {
+      let raw = text(value).trim();
+      if (!raw) return "";
+      if (!/^https?:\/\//i.test(raw))
+        raw = "http://" + raw;
+      try {
+        const url = new URL(raw);
+        if (!url.port)
+          url.port = String((setupData && setupData.api_port) || 24024);
+        url.pathname = "";
+        url.search = "";
+        url.hash = "";
+        return url.toString().replace(/\/$/, "");
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function authHeaders(authToken) {
+      const headers = {};
+      if (authToken) {
+        headers.Authorization = "Bearer " + authToken;
+        headers["X-240MP-Token"] = authToken;
+      }
+      return headers;
+    }
+
+    function fetchWithTimeout(url, options = {}, timeoutMs = 1400) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+        .finally(() => clearTimeout(timeout));
+    }
+
+    function ipv4Candidates() {
+      const own = new Set((setupData && setupData.addresses ? setupData.addresses : [])
+        .filter(address => /^\d+\.\d+\.\d+\.\d+$/.test(address)));
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(location.hostname))
+        own.add(location.hostname);
+
+      const prefixes = new Set();
+      own.forEach(address => {
+        const parts = address.split(".");
+        if (parts.length === 4)
+          prefixes.add(parts.slice(0, 3).join("."));
+      });
+
+      const hosts = [];
+      prefixes.forEach(prefix => {
+        for (let i = 1; i <= 254; i++) {
+          const host = prefix + "." + i;
+          if (!own.has(host))
+            hosts.push(host);
+        }
+      });
+      return hosts;
+    }
+
+    function commercialFileUrl(baseUrl, category, name) {
+      const url = new URL(normalizePeerUrl(baseUrl) + "/api/v1/setup/commercials/file");
+      url.searchParams.set("category", category || "");
+      url.searchParams.set("name", name || "");
+      return url.toString();
+    }
+
+    async function downloadCommercialBlob(baseUrl, authToken, category, video) {
+      const response = await fetch(commercialFileUrl(baseUrl, category, video.name || ""), {
+        headers: authHeaders(authToken)
+      });
+      if (response.status === 401)
+        throw new Error("Peer token required.");
+      if (!response.ok)
+        throw new Error("Download failed: " + (video.name || "commercial"));
+      return await response.blob();
+    }
+
+    function commercialItemsFromLibrary(library) {
+      const items = [];
+      const categories = library && Array.isArray(library.categories) ? library.categories : [];
+      categories.forEach(category => {
+        const categoryId = category.id || category.name || "Commercials";
+        const videos = Array.isArray(category.videos) ? category.videos : [];
+        videos.forEach(video => {
+          if (video && video.name)
+            items.push({ category: categoryId, video });
+        });
+      });
+      return items;
+    }
+
+    async function loadPeerCommercialLibrary(peer, peerToken) {
+      const response = await fetch(peer.baseUrl + "/api/v1/setup/commercials", {
+        headers: authHeaders(peerToken)
+      });
+      if (response.status === 401)
+        throw new Error("Peer token required.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false)
+        throw new Error(data.message || data.error || ("HTTP " + response.status));
+      return data;
+    }
+
+    function commercialUploadEndpoint(targetBaseUrl) {
+      const endpoint = targetBaseUrl
+        ? normalizePeerUrl(targetBaseUrl) + "/api/v1/setup/commercials/upload"
+        : "/api/v1/setup/commercials/upload";
+      return endpoint + "?dedupe=1";
+    }
+
+    async function uploadCommercialBlob(targetBaseUrl, targetToken, category, video, blob, onProgress) {
+      const formData = new FormData();
+      formData.append("category", category || "Commercials");
+      formData.append("files", blob, video.name || "commercial.mp4");
+      return await uploadApi(commercialUploadEndpoint(targetBaseUrl),
+        formData, onProgress, targetToken);
+    }
+
+    function selectedCommercialPeerUrl(card) {
+      const manualInput = card.querySelector("[data-commercial-peer-url]");
+      const select = card.querySelector("[data-commercial-peer-select]");
+      commercialPeerUrl = normalizePeerUrl(manualInput && manualInput.value.trim()
+        ? manualInput.value
+        : (select ? select.value : commercialPeerUrl));
+      return commercialPeerUrl;
+    }
+
+    function selectedCommercialPeerToken(card) {
+      const input = card.querySelector("[data-commercial-peer-token]");
+      commercialPeerToken = input ? input.value.trim() : commercialPeerToken;
+      localStorage.setItem("taterTubePeerToken", commercialPeerToken);
+      return commercialPeerToken;
+    }
+
+    function selectedCommercialPeer(card) {
+      const baseUrl = selectedCommercialPeerUrl(card);
+      if (!baseUrl)
+        throw new Error("Enter or scan for a peer player URL.");
+      return commercialPeers.find(peer => normalizePeerUrl(peer.baseUrl) === baseUrl) || { baseUrl };
+    }
+
+    async function discoverCommercialPeers(card) {
+      commercialPeerUrl = selectedCommercialPeerUrl(card) || commercialPeerUrl;
+      cardMessage(card, "Scanning for Tater Tube players...");
+      setStatus("Scanning for Tater Tube players...");
+
+      const port = (setupData && setupData.api_port) || Number(location.port) || 24024;
+      const currentOrigin = normalizePeerUrl(location.origin);
+      const hosts = ipv4Candidates();
+      const found = [];
+      const seen = new Set();
+      let cursor = 0;
+      const workerCount = Math.min(32, hosts.length);
+
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (cursor < hosts.length) {
+          const host = hosts[cursor++];
+          const baseUrl = "http://" + host + ":" + port;
+          const normalized = normalizePeerUrl(baseUrl);
+          if (!normalized || normalized === currentOrigin)
+            continue;
+          try {
+            const response = await fetchWithTimeout(normalized + "/api/v1/discovery", {}, 1300);
+            if (!response.ok)
+              continue;
+            const data = await response.json().catch(() => ({}));
+            if (!data.ok || data.service !== "tater-tube-player")
+              continue;
+            if (seen.has(normalized))
+              continue;
+            seen.add(normalized);
+            found.push({
+              baseUrl: normalized,
+              name: data.app && data.app.name ? data.app.name : "Tater Tube",
+              version: data.app && data.app.version ? data.app.version : "",
+              tokenRequired: !!data.token_required,
+              commercialCount: data.commercial_count || 0,
+              addresses: data.addresses || []
+            });
+          } catch (error) {
+            /* Ignore hosts that are not Tater Tube players. */
+          }
+        }
+      });
+
+      await Promise.all(workers);
+      commercialPeers = found.sort((a, b) => a.baseUrl.localeCompare(b.baseUrl));
+      if (!commercialPeerUrl && commercialPeers.length > 0)
+        commercialPeerUrl = commercialPeers[0].baseUrl;
+
+      const message = commercialPeers.length
+        ? "Found " + commercialPeers.length + " player" + (commercialPeers.length === 1 ? "" : "s") + "."
+        : "No players found.";
+      cardMessage(card, message, commercialPeers.length ? "ok" : "err");
+      setStatus(message, commercialPeers.length ? "ok" : "err");
+      render();
     }
 
     function titleCaseKey(key) {
@@ -1045,6 +1247,12 @@
       const options = categories.map(category =>
         `<option value="${escapeAttr(category.id || category.name || "")}">${escapeHtml(category.name || category.id || "Commercials")}</option>`
       ).join("");
+      const peerOptions = commercialPeers.map(peer => {
+        const selected = normalizePeerUrl(peer.baseUrl) === normalizePeerUrl(commercialPeerUrl) ? " selected" : "";
+        const tokenLabel = peer.tokenRequired ? " / TOKEN" : "";
+        const countLabel = peer.commercialCount ? " / " + peer.commercialCount + " ADS" : "";
+        return `<option value="${escapeAttr(peer.baseUrl)}"${selected}>${escapeHtml(peer.baseUrl + tokenLabel + countLabel)}</option>`;
+      }).join("");
       return `
         <article class="card" data-module="__commercials">
           <div class="card-head">
@@ -1081,6 +1289,32 @@
             <div class="actions">
               <button type="button" data-commercial-upload>Upload Videos</button>
             </div>
+            <div class="section-label">Sync Players</div>
+            <div class="field">
+              <label>Detected Player</label>
+              <select data-commercial-peer-select>
+                <option value="">Select detected player</option>
+                ${peerOptions}
+              </select>
+            </div>
+            <div class="field">
+              <label>Peer URL</label>
+              <input data-commercial-peer-url value="${escapeAttr(commercialPeerUrl)}"
+                placeholder="http://10.0.0.25:24024"
+                autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label>Peer Token</label>
+              <input data-commercial-peer-token value="${escapeAttr(commercialPeerToken)}"
+                placeholder="Only if the other player requires one"
+                autocapitalize="off" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="actions">
+              <button type="button" data-commercial-scan-peers>Scan For Players</button>
+              <button type="button" data-commercial-sync-from>Sync From Peer</button>
+              <button type="button" data-commercial-sync-to>Sync To Peer</button>
+            </div>
+            <div class="note">Sync copies local commercial categories and videos. It does not delete anything from either player.</div>
             <div class="section-label">Library</div>
             ${renderCommercialsLibrary()}
             <div class="message"></div>
@@ -1787,6 +2021,87 @@
       render();
     }
 
+    async function syncCommercialsFromPeer(card) {
+      const peer = selectedCommercialPeer(card);
+      const peerToken = selectedCommercialPeerToken(card);
+      cardMessage(card, "Reading peer commercial library...");
+      setStatus("Reading peer commercial library...");
+
+      const peerLibrary = await loadPeerCommercialLibrary(peer, peerToken);
+      const items = commercialItemsFromLibrary(peerLibrary);
+      if (!items.length) {
+        cardMessage(card, "Peer has no commercials.", "err");
+        setStatus("Peer has no commercials.", "err");
+        return;
+      }
+
+      showUploadModal();
+      let saved = 0;
+      let skipped = 0;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const name = item.video.name || "commercial";
+        updateUploadModal((i / Math.max(1, items.length)) * 100,
+          "Syncing from peer " + (i + 1) + " of " + items.length,
+          name);
+        try {
+          const blob = await downloadCommercialBlob(peer.baseUrl, peerToken, item.category, item.video);
+          const result = await uploadCommercialBlob("", undefined, item.category, item.video, blob);
+          saved += result.saved || 0;
+          if (result.skipped && result.skipped.length)
+            skipped += result.skipped.length;
+          commercialLibrary = result.library || commercialLibrary;
+        } catch (error) {
+          skipped++;
+        }
+      }
+
+      updateUploadModal(100, "Sync complete", saved + " saved / " + skipped + " skipped");
+      hideUploadModalSoon();
+      const tone = saved > 0 ? "ok" : "err";
+      cardMessage(card, "Synced from peer. Saved " + saved + ". Skipped " + skipped + ".", tone);
+      setStatus(saved > 0 ? "Commercial sync from peer complete." : "No commercials synced from peer.", tone);
+      render();
+    }
+
+    async function syncCommercialsToPeer(card) {
+      const peer = selectedCommercialPeer(card);
+      const peerToken = selectedCommercialPeerToken(card);
+      const items = commercialItemsFromLibrary(commercialLibrary);
+      if (!items.length) {
+        cardMessage(card, "This player has no commercials.", "err");
+        setStatus("This player has no commercials.", "err");
+        return;
+      }
+
+      showUploadModal();
+      let saved = 0;
+      let skipped = 0;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const name = item.video.name || "commercial";
+        updateUploadModal((i / Math.max(1, items.length)) * 100,
+          "Syncing to peer " + (i + 1) + " of " + items.length,
+          name);
+        try {
+          const blob = await downloadCommercialBlob(location.origin, token(), item.category, item.video);
+          const result = await uploadCommercialBlob(peer.baseUrl, peerToken, item.category, item.video, blob);
+          saved += result.saved || 0;
+          if (result.skipped && result.skipped.length)
+            skipped += result.skipped.length;
+        } catch (error) {
+          skipped++;
+        }
+      }
+
+      updateUploadModal(100, "Sync complete", saved + " saved / " + skipped + " skipped");
+      hideUploadModalSoon();
+      const tone = saved > 0 ? "ok" : "err";
+      cardMessage(card, "Synced to peer. Saved " + saved + ". Skipped " + skipped + ".", tone);
+      setStatus(saved > 0 ? "Commercial sync to peer complete." : "No commercials synced to peer.", tone);
+      render();
+    }
+
     async function deleteCommercialFile(card, button) {
       const category = button.dataset.commercialCategory || "";
       const name = button.dataset.commercialDeleteFile || "";
@@ -2217,6 +2532,45 @@
       document.querySelectorAll("[data-commercial-upload]").forEach(button => {
         button.onclick = () => uploadCommercialVideos(button.closest(".card")).catch(error => {
           cardMessage(button.closest(".card"), error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-commercial-peer-select]").forEach(select => {
+        select.onchange = () => {
+          commercialPeerUrl = normalizePeerUrl(select.value);
+          const input = select.closest(".card").querySelector("[data-commercial-peer-url]");
+          if (input)
+            input.value = commercialPeerUrl;
+        };
+      });
+      document.querySelectorAll("[data-commercial-peer-url]").forEach(input => {
+        input.oninput = () => {
+          commercialPeerUrl = input.value.trim();
+        };
+      });
+      document.querySelectorAll("[data-commercial-peer-token]").forEach(input => {
+        input.oninput = () => {
+          commercialPeerToken = input.value.trim();
+          localStorage.setItem("taterTubePeerToken", commercialPeerToken);
+        };
+      });
+      document.querySelectorAll("[data-commercial-scan-peers]").forEach(button => {
+        button.onclick = () => discoverCommercialPeers(button.closest(".card")).catch(error => {
+          cardMessage(button.closest(".card"), error.message, "err");
+          setStatus(error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-commercial-sync-from]").forEach(button => {
+        button.onclick = () => syncCommercialsFromPeer(button.closest(".card")).catch(error => {
+          hideUploadModalSoon();
+          cardMessage(button.closest(".card"), error.message, "err");
+          setStatus(error.message, "err");
+        });
+      });
+      document.querySelectorAll("[data-commercial-sync-to]").forEach(button => {
+        button.onclick = () => syncCommercialsToPeer(button.closest(".card")).catch(error => {
+          hideUploadModalSoon();
+          cardMessage(button.closest(".card"), error.message, "err");
+          setStatus(error.message, "err");
         });
       });
       document.querySelectorAll("[data-commercial-delete-file]").forEach(button => {
