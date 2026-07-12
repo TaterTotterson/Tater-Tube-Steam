@@ -43,10 +43,11 @@ FocusScope {
     property bool tvModeActive: false
     property bool tvLoading: false
     property bool tvTuningStaticVisible: false
+    property bool tvTransitionBlankVisible: false
     property bool tvStoppingForTune: false
     property bool tvStreamStarted: false
     property bool backgroundStaticVisible: (root.staticBackgroundEnabled && mode !== "playing" && mode !== "tv")
-                                           || (mode === "tv" && tvTuningStaticVisible)
+                                           || (mode === "tv" && tvTuningStaticVisible && !tvTransitionBlankVisible)
     property int tvCurrentChannelIndex: 0
     property int tvCurrentScheduleIndex: -1
     property int tvPreviousChannelIndex: -1
@@ -167,6 +168,7 @@ FocusScope {
         tvModeActive = false
         tvLoading = false
         tvTuningStaticVisible = false
+        tvTransitionBlankVisible = false
         tvStoppingForTune = false
         tvCurrentScheduleIndex = -1
         playlists = youtubePlaylistBackend.get_saved_playlists()
@@ -183,6 +185,7 @@ FocusScope {
         tvModeActive = false
         tvLoading = false
         tvTuningStaticVisible = false
+        tvTransitionBlankVisible = false
         tvStoppingForTune = false
         tvCurrentScheduleIndex = -1
         buildTvMenuRows()
@@ -546,6 +549,7 @@ FocusScope {
     }
 
     function showTvStaticForChannel(channel) {
+        tvTransitionBlankVisible = false
         tvTuningStaticVisible = true
         tvStreamStarted = false
         cancelTvResolve()
@@ -566,8 +570,9 @@ FocusScope {
     function launchTvPlayback(url, offset, label, allowYtdl, format) {
         tvStreamStarted = true
         tvStoppingForTune = false
+        var oscMode = tvTransitionBlankVisible ? "ota-quiet" : "ota"
         mpvController.loadAndPlay(url || "", offset || 0.0, 0, -1, [],
-                                  false, -1, 0.0, "", false, "ota", false,
+                                  false, -1, 0.0, "", false, oscMode, false,
                                   label, false, !!allowYtdl, format || "")
     }
 
@@ -637,6 +642,9 @@ FocusScope {
             nextIndex = 0
         var nextItem = channel.schedule[nextIndex]
         tvStartedAtMs = Date.now() - Math.max(0, nextItem.start) * 1000.0
+        tvTransitionBlankVisible = true
+        tvTuningStaticVisible = false
+        tvStreamStarted = false
         requestTvStream()
     }
 
@@ -664,7 +672,7 @@ FocusScope {
     }
 
     function tuneTvNow() {
-        if (!tvModeActive || tvLoading || !tvTuningStaticVisible)
+        if (!tvModeActive || tvLoading || tvTransitionBlankVisible || !tvTuningStaticVisible)
             return
         tvTuneTimer.stop()
         requestTvStream()
@@ -745,6 +753,7 @@ FocusScope {
             tvModeActive = false
             tvLoading = false
             tvTuningStaticVisible = false
+            tvTransitionBlankVisible = false
             mode = "message"
             statusText = "NO CHANNELS AVAILABLE"
             return
@@ -771,6 +780,7 @@ FocusScope {
         tvModeActive = true
         tvLoading = true
         tvTuningStaticVisible = true
+        tvTransitionBlankVisible = false
         tvStoppingForTune = false
         tvStreamStarted = false
         tvCurrentChannelIndex = 0
@@ -819,6 +829,7 @@ FocusScope {
         tvModeActive = false
         tvLoading = false
         tvTuningStaticVisible = false
+        tvTransitionBlankVisible = false
         tvStreamStarted = false
         tvCurrentScheduleIndex = -1
         if (mpvController.running)
@@ -1213,6 +1224,7 @@ FocusScope {
                     tvStoppingForTune = false
                     return
                 }
+                tvTransitionBlankVisible = false
                 tvTuningStaticVisible = true
                 tvStreamStarted = false
                 statusText = tvChannels.length > 0 ? tvChannelLabel(tvChannels[tvCurrentChannelIndex]) : "TV MODE"
@@ -1227,6 +1239,7 @@ FocusScope {
             if (!tvModeActive)
                 return
             if (message === "240mp-ota-file-loaded") {
+                tvTransitionBlankVisible = false
                 tvTuningStaticVisible = false
                 tvStreamStarted = true
                 return
@@ -1257,7 +1270,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: mixRoot.backgroundStaticVisible ? "transparent" : root.surfaceColor
+        color: mixRoot.backgroundStaticVisible ? "transparent" : (mode === "tv" ? "black" : root.surfaceColor)
     }
 
     AppBar {
@@ -1291,7 +1304,7 @@ FocusScope {
     }
 
     Rectangle {
-        visible: mode === "tv" && tvTuningStaticVisible && !tvLoading
+        visible: mode === "tv" && tvTuningStaticVisible && !tvLoading && !tvTransitionBlankVisible
         z: 5
         anchors.top: parent.top
         anchors.right: parent.right

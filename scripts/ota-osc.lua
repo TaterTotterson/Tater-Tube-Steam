@@ -3,9 +3,11 @@ local options = require 'mp.options'
 
 local opts = {
     show_label = "yes",
+    show_top_label = "yes",
     control_mode = "ota",
 }
 options.read_options(opts, "240mp-ota")
+options.read_options(opts, "ttota")
 
 local overlay = mp.create_osd_overlay("ass-events")
 local hide_timer = nil
@@ -21,6 +23,11 @@ local C_ORANGE = "&H0078FF&"
 
 local function labels_enabled()
     local value = tostring(opts.show_label or "yes"):lower()
+    return value ~= "no" and value ~= "false" and value ~= "0" and value ~= "off"
+end
+
+local function top_label_enabled()
+    local value = tostring(opts.show_top_label or opts.show_label or "yes"):lower()
     return value ~= "no" and value ~= "false" and value ~= "0" and value ~= "off"
 end
 
@@ -91,6 +98,12 @@ local function draw_overlay(label, with_menu)
     local ww, wh = mp.get_osd_size()
     if ww == 0 or wh == 0 then return false end
 
+    local show_top_label = top_label_enabled()
+    if not show_top_label and not with_menu then
+        overlay:remove()
+        return false
+    end
+
     local margin_x = math.floor(ww * 0.08)
     local margin_y = math.floor(wh * 0.11)
     local pad_x = math.floor(ww * 0.018)
@@ -105,8 +118,10 @@ local function draw_overlay(label, with_menu)
 
     local ass = assdraw.ass_new()
 
-    draw_box(ass, box_x, margin_y, box_w, box_h, "&H55&")
-    draw_text(ass, text_x, margin_y + math.floor(box_h / 2), 6, display_label, fs)
+    if show_top_label then
+        draw_box(ass, box_x, margin_y, box_w, box_h, "&H55&")
+        draw_text(ass, text_x, margin_y + math.floor(box_h / 2), 6, display_label, fs)
+    end
 
     if with_menu then
         local lm = math.floor(ww * 0.12)
@@ -169,6 +184,11 @@ end
 local function show_label(label)
     if not label or label == "" then return end
     latest_label = label
+
+    if not top_label_enabled() and not menu_visible then
+        overlay:remove()
+        return
+    end
 
     draw_overlay(label, menu_visible)
     if not menu_visible then

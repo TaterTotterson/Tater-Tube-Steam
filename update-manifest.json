@@ -1,15 +1,15 @@
 {
-  "version": "v1.4.2",
-  "app_version": "1.4.2",
+  "version": "v1.4.3",
+  "app_version": "1.4.3",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.2/Tater-Tube-v1.4.2-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.2.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.3/Tater-Tube-v1.4.3-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.3.tar.gz",
   "notes": [
-    "Uses The Tube TV Mode VCR overlay for regular The Tube local media and NZB stream playback.",
-    "Shows server playback details in The Tube overlay, including direct play, transcode profile, hardware engine, codec, status, and transfer rate when available.",
-    "Adds a The Tube playback overlay mode so normal playback keeps seek/menu controls instead of live channel controls.",
-    "Keeps The Tube volume overlay and playback menu from overlapping."
+    "Removes the extra top-right title label from regular The Tube playback while keeping the bottom server/HW overlay.",
+    "Makes The Tube and VOD TV Mode quiet transitions reliably suppress mpv-side channel labels.",
+    "Updates Public Access TV Mode automatic video changes to use black quiet transitions instead of static and channel overlays.",
+    "Keeps manual channel tuning behavior unchanged, with static and channel overlay still shown while changing channels."
   ]
 }
