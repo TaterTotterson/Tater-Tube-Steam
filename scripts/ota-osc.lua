@@ -18,6 +18,7 @@ local TEXT_WIDTH_FACTOR = 0.68
 local latest_label = ""
 local latest_stream_info = ""
 local menu_visible = false
+local quiet_next_file = false
 local C_WHITE = "&HFFFFFF&"
 local C_ORANGE = "&H0078FF&"
 
@@ -247,6 +248,10 @@ local function toggle_menu()
 end
 
 mp.register_script_message("240mp-ota-channel", show_label)
+mp.register_script_message("240mp-ota-quiet-next-file", function()
+    quiet_next_file = true
+    hide()
+end)
 mp.register_script_message("240mp-osd-menu-show", show_menu)
 mp.register_script_message("240mp-osd-menu-hide", hide_menu)
 
@@ -258,7 +263,12 @@ mp.register_script_message("240mp-ota-stream-info", function(info)
 end)
 
 mp.register_event("file-loaded", function()
-    if not labels_enabled() then
+    if quiet_next_file then
+        quiet_next_file = false
+        overlay:remove()
+        return
+    end
+    if not labels_enabled() or not top_label_enabled() then
         return
     end
     local title = mp.get_property("media-title", "")

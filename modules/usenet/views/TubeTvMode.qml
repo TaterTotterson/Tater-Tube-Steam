@@ -32,6 +32,8 @@ FocusScope {
     property string statusText: "LOADING TV MODE"
     property string streamInfoText: ""
     property bool currentStreamUsesServer: false
+    property double currentPlaybackOffsetSeconds: 0
+    property bool currentPlaybackUsesServerSeek: false
 
     focus: true
 
@@ -604,7 +606,7 @@ FocusScope {
             return startAt
         }
 
-        var fallback = kind === "commercial" ? 30 : (kind === "movie" ? 5400 : 1500)
+        var fallback = kind === "commercial" ? 30 : (kind === "movie" ? 5400 : 600)
         var knownDuration = hasKnownDuration(source)
         var fullDuration = durationSeconds(source, fallback)
         var duration = segmentDuration === undefined || segmentDuration === null
@@ -675,7 +677,7 @@ FocusScope {
     }
 
     function appendProgramWithMidroll(schedule, source, kind, startAt, commercialState) {
-        var fallback = kind === "movie" ? 5400 : 1500
+        var fallback = kind === "movie" ? 5400 : 600
         var fullDuration = durationSeconds(source, fallback)
         var offsets = midrollOffsetsFor(kind, fullDuration, commercialState)
         if (offsets.length === 0)
@@ -1048,6 +1050,57 @@ FocusScope {
                  segmentRemaining: channel.schedule[0].duration || 0 }
     }
 
+    function applyObservedScheduleDuration(channel, index, observedFullDuration) {
+        if (!channel || !channel.schedule || index < 0 || index >= channel.schedule.length)
+            return
+        if (!observedFullDuration || observedFullDuration <= 1.0)
+            return
+
+        var item = channel.schedule[index]
+        if (!item)
+            return
+
+        var oldDuration = Math.max(0, Number(item.duration || 0))
+        var mediaOffset = Math.max(0, Number(item.mediaOffset || 0))
+        var newDuration = item.kind === "commercial"
+            ? observedFullDuration
+            : Math.max(5, observedFullDuration - mediaOffset)
+
+        if (item.forceAdvance === true && oldDuration > 0 && newDuration > oldDuration)
+            return
+
+        if (oldDuration <= 0 || Math.abs(newDuration - oldDuration) < 1.0)
+            return
+
+        var delta = newDuration - oldDuration
+        item.duration = newDuration
+        item.fullDuration = observedFullDuration
+        item.durationKnown = true
+        item.end = item.start + newDuration
+
+        for (var i = index + 1; i < channel.schedule.length; i++) {
+            var row = channel.schedule[i]
+            row.start = Math.max(0, Number(row.start || 0) + delta)
+            row.end = Math.max(row.start, Number(row.end || 0) + delta)
+        }
+        channel.totalDuration = Math.max(1, Number(channel.totalDuration || 0) + delta)
+    }
+
+    function learnCurrentPlaybackDuration(finalPositionMs, finalDurationMs) {
+        var channel = selectedChannel()
+        if (!channel || currentScheduleIndex < 0)
+            return
+
+        var finalPositionSeconds = Math.max(0, Number(finalPositionMs || 0) / 1000.0)
+        var finalDurationSeconds = Math.max(0, Number(finalDurationMs || 0) / 1000.0)
+        var observedFullDuration = finalDurationSeconds
+        if (currentPlaybackUsesServerSeek) {
+            observedFullDuration = currentPlaybackOffsetSeconds + Math.max(finalPositionSeconds,
+                                                                           finalDurationSeconds)
+        }
+        applyObservedScheduleDuration(channel, currentScheduleIndex, observedFullDuration)
+    }
+
     function usesServerSeek(item) {
         if (!item)
             return false
@@ -1100,11 +1153,14 @@ FocusScope {
         var startOffset = offset || 0.0
         if (item.kind === "commercial" && item.local === true)
             startOffset = 0.0
-        if (item.kind !== "commercial" && usenetBackend.uses_server_seek()) {
+        var useServerSeek = item.kind !== "commercial" && usenetBackend.uses_server_seek()
+        var timelineOffset = startOffset
+        if (useServerSeek) {
             url = urlWithStartOffset(url, startOffset)
             startOffset = 0.0
         }
-        launchPlayback(url, startOffset, label, segmentRemaining || 0.0, item)
+        launchPlayback(url, startOffset, label, segmentRemaining || 0.0, item,
+                       timelineOffset, useServerSeek)
     }
 
     function requestSelectedStream() {
@@ -1123,7 +1179,7 @@ FocusScope {
                             resolved.segmentRemaining || 0.0)
     }
 
-    function launchPlayback(url, offset, label, segmentRemaining, item) {
+    function launchPlayback(url, offset, label, segmentRemaining, item, timelineOffset, useServerSeek) {
         if (!url) {
             transitionBlankVisible = false
             noSignalVisible = true
@@ -1140,10 +1196,20 @@ FocusScope {
             ? usenetBackend.playback_url(url, Math.round(root.sw), Math.round(root.sh))
             : url
         currentStreamUsesServer = item && item.kind !== "commercial"
+        currentPlaybackOffsetSeconds = Math.max(0, Number(timelineOffset || offset || 0))
+        currentPlaybackUsesServerSeek = useServerSeek === true
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl, item))
-        var oscMode = transitionBlankVisible ? "ota-quiet" : "ota"
-        mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
-                                  "", false, oscMode, false, label || statusText)
+        var oscMode = transitionBlankVisible ? "ota-tv-quiet" : "ota-tv"
+        if (transitionBlankVisible && mpvController.running) {
+            mpvController.sendScriptMessage("240mp-ota-quiet-next-file")
+            if (!mpvController.replaceCurrentFile(playbackUrl, offset || 0.0, "", label || statusText)) {
+                mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
+                                          "", false, oscMode, false, label || statusText)
+            }
+        } else {
+            mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
+                                      "", false, oscMode, false, label || statusText)
+        }
 
         scheduleAdvanceTimer.stop()
         if (item && item.forceAdvance === true && (segmentRemaining || 0) > 1.0) {
@@ -1259,11 +1325,7 @@ FocusScope {
         onTriggered: {
             if (tvRoot.leaving)
                 return
-            tvRoot.stoppingForScheduleAdvance = true
-            if (mpvController.running)
-                mpvController.stop()
-            else
-                tvRoot.playNextScheduleItem()
+            tvRoot.playNextScheduleItem()
         }
     }
 
@@ -1319,6 +1381,7 @@ FocusScope {
             if (tvRoot.leaving)
                 return
             scheduleAdvanceTimer.stop()
+            tvRoot.learnCurrentPlaybackDuration(finalPositionMs, finalDurationMs)
             tvRoot.playNextScheduleItem()
         }
 

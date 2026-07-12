@@ -273,9 +273,10 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         return;
     }
 
-    const bool isOtaMode = (oscMode == "ota" || oscMode == "ota-quiet");
+    const bool isOtaTvMode = (oscMode == "ota-tv" || oscMode == "ota-tv-quiet");
+    const bool isOtaMode = (oscMode == "ota" || oscMode == "ota-quiet" || isOtaTvMode);
     const bool isOtaOverlayMode = isOtaMode || oscMode == "tube";
-    const bool quietOtaLabel = (oscMode == "ota-quiet");
+    const bool quietOtaLabel = (oscMode == "ota-quiet" || oscMode == "ota-tv-quiet");
     const bool showOtaTopLabel = isOtaMode && !quietOtaLabel;
     const QString oscScriptName = isOtaOverlayMode ? "ota-osc.lua"
         : "mpv-osc.lua";
@@ -304,6 +305,9 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << QString("--volume=%1").arg(m_volume, 0, 'f', 3);
     if (m_muted)
         args << QStringLiteral("--mute=yes");
+    if (isOtaTvMode)
+        args << QStringLiteral("--idle=yes");
+    m_currentStayIdle = isOtaTvMode;
 
     if (hasOscScript)
         args << QString("--script=%1").arg(oscScript);
@@ -524,6 +528,38 @@ void MpvController::loadAudioAndPlay(const QString &url,
                 false, displayTitle, true);
 }
 
+bool MpvController::replaceCurrentFile(const QString &url,
+                                       float startSeconds,
+                                       const QString &httpHeaderFields,
+                                       const QString &displayTitle) {
+    if (url.isEmpty() || !isRunning() || m_ipc->state() != QLocalSocket::ConnectedState)
+        return false;
+
+    QJsonObject options;
+    if (startSeconds > 0.5f)
+        options[QStringLiteral("start")] = QString::number(double(startSeconds), 'f', 3);
+    if (!displayTitle.isEmpty())
+        options[QStringLiteral("force-media-title")] = displayTitle;
+    if (!httpHeaderFields.isEmpty())
+        options[QStringLiteral("http-header-fields")] = httpHeaderFields;
+
+    m_lastEndFileReason.clear();
+    m_position = 0;
+    m_duration = 0;
+    emit positionChanged(m_position);
+    emit durationChanged(m_duration);
+
+    QJsonArray command{
+        QStringLiteral("loadfile"),
+        url,
+        QStringLiteral("replace"),
+        -1,
+        options
+    };
+    sendCommand(command);
+    return true;
+}
+
 void MpvController::stop() {
     if (m_ipc->state() == QLocalSocket::ConnectedState) {
         sendCommand({"quit"});
@@ -615,9 +651,14 @@ void MpvController::onIpcReadyRead() {
             // mpv reports why playback ended: "eof" (played to the end),
             // "quit"/"stop" (user exited), "error", etc. Remember the last one
             // so onProcessFinished can distinguish a natural finish from a quit.
-            if (event == "end-file")
+            if (event == "end-file") {
                 m_lastEndFileReason = obj["reason"].toString();
-            else if (event == "client-message") {
+                if (m_currentStayIdle && m_lastEndFileReason == QStringLiteral("eof")) {
+                    emit playbackFinishedNaturally(m_position, m_duration);
+                } else if (m_currentStayIdle && m_lastEndFileReason == QStringLiteral("error")) {
+                    emit playbackFailed();
+                }
+            } else if (event == "client-message") {
                 const QJsonArray args = obj["args"].toArray();
                 const QString message = args.size() > 0 ? args.at(0).toString() : QString();
                 const QString arg = args.size() > 1 ? args.at(1).toString() : QString();

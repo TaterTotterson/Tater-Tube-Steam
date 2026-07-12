@@ -68,6 +68,10 @@ public:
                                       float startSeconds = 0.0f,
                                       const QString &httpHeaderFields = {},
                                       const QString &displayTitle = {});
+    Q_INVOKABLE bool replaceCurrentFile(const QString &url,
+                                        float startSeconds = 0.0f,
+                                        const QString &httpHeaderFields = {},
+                                        const QString &displayTitle = {});
     Q_INVOKABLE void stop();
     Q_INVOKABLE void seekTo(int positionMs);
     Q_INVOKABLE void sendKey(const QString &key);
@@ -181,6 +185,7 @@ private:
     bool          m_pi3FallbackAttempted = false;
     bool          m_pi3SoftwareFallback = false;
     bool          m_currentAudioOnly = false;
+    bool          m_currentStayIdle = false;
 #ifdef Q_OS_LINUX
     DrmSavedState m_savedDrm     = {};
 #endif
