@@ -1,14 +1,15 @@
 {
-  "version": "v1.3.9",
-  "app_version": "1.3.9",
+  "version": "v1.4.0",
+  "app_version": "1.4.0",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.3.9/Tater-Tube-v1.3.9-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.3.9.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.0/Tater-Tube-v1.4.0-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.0.tar.gz",
   "notes": [
-    "Fixes the Tape Deck EQ meter so it moves during normal music playback.",
-    "Improves mpv audio level detection for Tape Deck music playback.",
-    "Adds a fallback Tape Deck meter animation when live mpv audio metadata is unavailable."
+    "Adds richer TV Mode behavior for The Tube, VOD, and Public Access with cleaner channel transitions.",
+    "Improves The Tube TV Mode generated channels, custom channel ordering, and timeline-aware channel switching.",
+    "Adds VCR-style playback details to The Tube overlays, including server stream and hardware transcode status.",
+    "Refines commercial playback handling so selected categories rotate without immediate repeats."
   ]
 }

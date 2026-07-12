@@ -3805,6 +3805,7 @@ void EmbyJellyfinBackend::buildCustomVodTvChannels(
         const QVariantList savedItems = definition.value(QStringLiteral("items")).toList();
         QVariantList movies;
         QVariantList shows;
+        QVariantMap selectedEpisodeGroups;
         for (const QVariant &value : savedItems) {
             QVariantMap item = value.toMap();
             QString ratingKey = item.value(QStringLiteral("ratingKey")).toString().trimmed();
@@ -3825,12 +3826,37 @@ void EmbyJellyfinBackend::buildCustomVodTvChannels(
                 movies.append(vodProgramFromItem(item));
             } else if (isVodShowType(type)) {
                 shows.append(vodProgramFromItem(item));
+            } else if (isVodEpisodeType(type)) {
+                QString groupTitle = item.value(QStringLiteral("grandparentTitle")).toString().trimmed();
+                if (groupTitle.isEmpty())
+                    groupTitle = title;
+                if (groupTitle.isEmpty())
+                    groupTitle = QStringLiteral("SELECTED EPISODES");
+                groupTitle = groupTitle.toUpper();
+                QVariantList episodes = selectedEpisodeGroups.value(groupTitle).toList();
+                episodes.append(vodProgramFromItem(item));
+                selectedEpisodeGroups[groupTitle] = episodes;
             }
         }
 
         const QString commercialCategory = definition.value(QStringLiteral("commercialCategory")).toString().trimmed();
-        const auto finishOne = [title, movies, commercialCategory, channels, index, processNext](const QVariantList &showGroups) {
+        QVariantList selectedEpisodeSeries;
+        for (auto it = selectedEpisodeGroups.constBegin(); it != selectedEpisodeGroups.constEnd(); ++it) {
+            QVariantList episodes = it.value().toList();
+            sortEpisodeList(&episodes);
+            if (!episodes.isEmpty()) {
+                selectedEpisodeSeries.append(QVariantMap{
+                    {QStringLiteral("type"), QStringLiteral("series")},
+                    {QStringLiteral("title"), it.key()},
+                    {QStringLiteral("episodes"), episodes}
+                });
+            }
+        }
+
+        const auto finishOne = [title, movies, selectedEpisodeSeries, commercialCategory, channels, index, processNext](const QVariantList &showGroups) {
             QVariantList programs = movies;
+            for (const QVariant &group : selectedEpisodeSeries)
+                programs.append(group);
             for (const QVariant &group : showGroups)
                 programs.append(group);
 

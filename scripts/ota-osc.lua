@@ -7,7 +7,10 @@ local DISPLAY_SECONDS = 7.0
 local MENU_SECONDS = 7.0
 local TEXT_WIDTH_FACTOR = 0.68
 local latest_label = ""
+local latest_stream_info = ""
 local menu_visible = false
+local C_WHITE = "&HFFFFFF&"
+local C_ORANGE = "&H0078FF&"
 
 local function ass_escape(text)
     return tostring(text):gsub("\\", "\\\\"):gsub("{", "\\{"):gsub("}", "\\}")
@@ -49,14 +52,15 @@ local function draw_box(ass, x, y, w, h, alpha)
     ass:draw_stop()
 end
 
-local function draw_text(ass, x, y, anchor, text, fs)
+local function draw_text(ass, x, y, anchor, text, fs, color)
     ass:new_event()
     ass:append(string.format(
-        "{\\an%d\\pos(%d,%d)\\fnVCR OSD Mono\\fs%d\\1c&HFFFFFF&\\1a&H00&\\bord0\\shad0}%s",
+        "{\\an%d\\pos(%d,%d)\\fnVCR OSD Mono\\fs%d\\1c%s\\1a&H00&\\bord0\\shad0}%s",
         anchor,
         x,
         y,
         fs,
+        color or C_WHITE,
         ass_escape(text)))
 end
 
@@ -94,29 +98,36 @@ local function draw_overlay(label, with_menu)
         local menu_w = rm - lm
         local menu_fs = math.max(14, math.floor(wh * 0.0333333))
         local title_fs = math.max(18, math.floor(wh * 0.05))
-        local menu_y = math.floor(wh * 0.70)
-        local menu_h = math.floor(wh * 0.18)
-        local row_y = menu_y + math.floor(menu_h * 0.30)
-        local btn_y = menu_y + math.floor(menu_h * 0.58)
+        local info_fs = math.max(13, math.floor(wh * 0.028))
+        local menu_y = math.floor(wh * 0.66)
+        local menu_h = math.floor(wh * 0.23)
+        local title_y = menu_y + math.floor(menu_h * 0.20)
+        local info_y = menu_y + math.floor(menu_h * 0.42)
+        local btn_y = menu_y + math.floor(menu_h * 0.64)
         local btn_h = math.floor(menu_fs * 1.65)
         local gap = math.floor(menu_w * 0.025)
         local btn_w = math.floor((menu_w - gap * 3) / 4)
+        local inner_l = lm + math.floor(menu_w * 0.03)
+        local inner_r = rm - math.floor(menu_w * 0.03)
+        local info = latest_stream_info ~= "" and latest_stream_info or "SERVER INFO WAITING"
 
         draw_box(ass, lm, menu_y, menu_w, menu_h, "&H66&")
-        draw_text(ass, lm + math.floor(menu_w * 0.03), row_y, 4, "LIVE TV", title_fs)
-        draw_text(ass, rm - math.floor(menu_w * 0.03), row_y, 6,
-                  fit_text(label, math.floor(menu_w * 0.48), menu_fs), menu_fs)
+        draw_text(ass, inner_l, title_y, 4, "THE TUBE", title_fs, C_ORANGE)
+        draw_text(ass, inner_r, title_y, 6,
+                  fit_text(label, math.floor(menu_w * 0.52), menu_fs), menu_fs)
+        draw_text(ass, inner_l, info_y, 4,
+                  fit_text(info, math.floor(menu_w * 0.94), info_fs), info_fs)
 
-        local bx = lm + math.floor(menu_w * 0.03)
+        local bx = inner_l
         local usable_w = menu_w - math.floor(menu_w * 0.06)
         btn_w = math.floor((usable_w - gap * 3) / 4)
+        draw_button(ass, bx, btn_y, btn_w, btn_h, "CH +", menu_fs)
+        bx = bx + btn_w + gap
         draw_button(ass, bx, btn_y, btn_w, btn_h, "CH -", menu_fs)
         bx = bx + btn_w + gap
-        draw_button(ass, bx, btn_y, btn_w, btn_h, "LAST", menu_fs)
+        draw_button(ass, bx, btn_y, btn_w, btn_h, "MENU", menu_fs)
         bx = bx + btn_w + gap
-        draw_button(ass, bx, btn_y, btn_w, btn_h, "TUNE", menu_fs)
-        bx = bx + btn_w + gap
-        draw_button(ass, bx, btn_y, btn_w, btn_h, "CH +", menu_fs)
+        draw_button(ass, bx, btn_y, btn_w, btn_h, "BACK", menu_fs)
     end
 
     overlay.res_x = ww
@@ -200,6 +211,13 @@ end
 
 mp.register_script_message("240mp-ota-channel", show_label)
 
+mp.register_script_message("240mp-ota-stream-info", function(info)
+    latest_stream_info = tostring(info or ""):upper()
+    if menu_visible and latest_label ~= "" then
+        draw_overlay(latest_label, true)
+    end
+end)
+
 mp.register_event("file-loaded", function()
     local title = mp.get_property("media-title", "")
     if title ~= "" then
@@ -223,12 +241,16 @@ local function tune_last()
     mp.commandv("script-message", "240mp-ota-last-channel")
 end
 
+local function consume_navigation()
+end
+
 mp.add_forced_key_binding("UP", "ota-channel-up", function() tune_relative(1) end)
 mp.add_forced_key_binding("DOWN", "ota-channel-down", function() tune_relative(-1) end)
-mp.add_forced_key_binding("LEFT", "ota-last-channel", tune_last)
-mp.add_forced_key_binding("PREV", "ota-last-channel-prev", tune_last)
+mp.add_forced_key_binding("LEFT", "ota-left-disabled", consume_navigation)
+mp.add_forced_key_binding("RIGHT", "ota-right-disabled", consume_navigation)
+mp.add_forced_key_binding("PREV", "ota-prev-disabled", consume_navigation)
 mp.add_forced_key_binding("MENU", "ota-menu", toggle_menu)
-mp.add_forced_key_binding("ENTER", "ota-tune-enter", tune_now)
-mp.add_forced_key_binding("KP_ENTER", "ota-tune-kp-enter", tune_now)
+mp.add_forced_key_binding("ENTER", "ota-enter-disabled", consume_navigation)
+mp.add_forced_key_binding("KP_ENTER", "ota-kp-enter-disabled", consume_navigation)
 mp.add_key_binding("ESC", "ota-esc", function() mp.command("quit") end)
 mp.add_key_binding("BS", "ota-bs", function() mp.command("quit") end)

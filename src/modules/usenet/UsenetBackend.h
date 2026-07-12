@@ -29,6 +29,7 @@ public:
     Q_INVOKABLE void load_music_libraries();
     Q_INVOKABLE void load_music_albums(const QString &categoryId);
     Q_INVOKABLE void load_music_tracks(const QString &albumId);
+    Q_INVOKABLE void load_active_streams();
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
     Q_INVOKABLE QString playback_url(const QString &url, int screenWidth, int screenHeight) const;
     Q_INVOKABLE bool uses_server_seek() const;
@@ -43,6 +44,7 @@ signals:
     void musicLibrariesLoaded(const QVariant &libraries);
     void musicAlbumsLoaded(const QVariant &albums);
     void musicTracksLoaded(const QVariant &tracks);
+    void activeStreamsLoaded(const QVariantList &streams);
     void streamsReady(const QString &requestId, const QString &title, const QVariantList &streams);
     void pairingSucceeded(const QString &serverUrl, const QString &token, const QString &playerName);
     void errorOccurred(const QString &message);
@@ -75,6 +77,7 @@ private:
     void handleItemsReply(QNetworkReply *reply, const QString &categoryTitle);
     void handleMusicRowsReply(QNetworkReply *reply, const QString &arrayKey,
                               const QString &failureMessage);
+    void handleActiveStreamsReply(QNetworkReply *reply);
     void handleStreamsReply(QNetworkReply *reply, const QString &requestId,
                             const QString &fallbackTitle);
     void handlePairingReply(QNetworkReply *reply, const QString &serverUrl);

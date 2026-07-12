@@ -511,11 +511,19 @@ FocusScope {
         for (var i = 0; i < shuffled.length; i++) {
             total = appendTvScheduleItem(schedule, shuffled[i], "program", total)
             if (includeCommercials) {
-                var count = 1 + Math.floor(Math.random() * 3)
-                for (var j = 0; j < count; j++) {
+                var targetCount = 2 + Math.floor(Math.random() * 3)
+                var added = 0
+                var attempts = 0
+                var maxAttempts = Math.max(targetCount * 3, tvCommercialPool.length * 2)
+                while (added < targetCount && attempts < maxAttempts) {
+                    attempts++
                     var commercial = randomCommercial()
-                    if (commercial)
+                    if (commercial) {
+                        var before = total
                         total = appendTvScheduleItem(schedule, commercial, "commercial", total)
+                        if (total > before)
+                            added++
+                    }
                 }
             }
         }
@@ -656,8 +664,9 @@ FocusScope {
     }
 
     function tuneTvNow() {
-        if (!tvModeActive || tvLoading)
+        if (!tvModeActive || tvLoading || !tvTuningStaticVisible)
             return
+        tvTuneTimer.stop()
         requestTvStream()
     }
 
@@ -1006,8 +1015,7 @@ FocusScope {
             } else if (event.key === Qt.Key_Down) {
                 tuneTvRelative(-1, false)
                 event.accepted = true
-            } else if (event.key === Qt.Key_Left) {
-                tuneLastTvChannel()
+            } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
                 event.accepted = true
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                 tuneTvNow()

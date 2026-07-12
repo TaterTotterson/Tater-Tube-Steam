@@ -25,6 +25,7 @@ FocusScope {
     property bool stoppingForScheduleAdvance: false
     property bool streamStarted: false
     property bool streamRequestActive: false
+    property bool transitionBlankVisible: false
     property string pendingRequestId: ""
     property var pendingPlayback: ({})
     property int requestSerial: 0
@@ -142,15 +143,24 @@ FocusScope {
     }
 
     function appendCommercialBreak(schedule, startAt, commercialState) {
-        if (!commercialsEnabled() || commercialStatePool(commercialState).length === 0)
+        var pool = commercialStatePool(commercialState)
+        if (!commercialsEnabled() || pool.length === 0)
             return startAt
 
         var total = startAt
-        var count = 1 + Math.floor(Math.random() * 3)
-        for (var i = 0; i < count; i++) {
+        var targetCount = 2 + Math.floor(Math.random() * 3)
+        var added = 0
+        var attempts = 0
+        var maxAttempts = Math.max(targetCount * 3, pool.length * 2)
+        while (added < targetCount && attempts < maxAttempts) {
+            attempts++
             var commercial = randomCommercialFromState(commercialState)
-            if (commercial)
+            if (commercial) {
+                var before = total
                 total = appendScheduleItem(schedule, commercial, "commercial", total)
+                if (total > before)
+                    added++
+            }
         }
         return total
     }
@@ -412,6 +422,7 @@ FocusScope {
 
     function showStaticForChannel(channel) {
         scheduleAdvanceTimer.stop()
+        transitionBlankVisible = false
         tuningStaticVisible = true
         noSignalVisible = false
         streamStarted = false
@@ -428,24 +439,19 @@ FocusScope {
         }
     }
 
-    function requestSelectedStream() {
-        tuneTimer.stop()
-        if (loading || channels.length === 0)
-            return
-
-        var channel = selectedChannel()
-        var resolved = findScheduleItem(channel)
-        if (!resolved || !resolved.item ||
-                (resolved.item.kind === "commercial"
-                 ? !resolved.item.url
-                 : !resolved.item.ratingKey)) {
+    function requestScheduleItem(channel, item, index, offset, segmentRemaining) {
+        if (!channel || !item ||
+                (item.kind === "commercial"
+                 ? !item.url
+                 : !item.ratingKey)) {
+            transitionBlankVisible = false
             tuningStaticVisible = false
             noSignalVisible = true
             statusText = "VOD TV CHANNEL EMPTY"
             return
         }
 
-        currentScheduleIndex = resolved.index
+        currentScheduleIndex = index
         streamRequestActive = true
         var label = channelLabel(channel)
         statusText = label
@@ -453,23 +459,40 @@ FocusScope {
         var requestId = "vodtv-" + (++requestSerial)
         pendingRequestId = requestId
         pendingPlayback = {
-            item: resolved.item,
-            offset: resolved.offset || 0.0,
-            segmentRemaining: resolved.segmentRemaining || 0.0,
+            item: item,
+            offset: offset || 0.0,
+            segmentRemaining: segmentRemaining || 0.0,
             label: label
         }
-        if (resolved.item.kind === "commercial") {
+        if (item.kind === "commercial") {
             pendingRequestId = ""
             pendingPlayback = ({})
-            launchPlayback(resolved.item.url || "", "", resolved.offset || 0.0,
-                           label, false, "", resolved.segmentRemaining || 0.0, resolved.item)
+            launchPlayback(item.url || "", "", offset || 0.0,
+                           label, false, "", segmentRemaining || 0.0, item)
         } else {
-            embyBackend.prepare_vod_tv_stream(requestId, resolved.item)
+            embyBackend.prepare_vod_tv_stream(requestId, item)
         }
+    }
+
+    function requestSelectedStream() {
+        tuneTimer.stop()
+        if (loading || channels.length === 0)
+            return
+
+        var channel = selectedChannel()
+        var resolved = findScheduleItem(channel)
+        if (!resolved) {
+            requestScheduleItem(channel, null, -1, 0.0, 0.0)
+            return
+        }
+        requestScheduleItem(channel, resolved.item, resolved.index,
+                            resolved.offset || 0.0,
+                            resolved.segmentRemaining || 0.0)
     }
 
     function launchPlayback(url, httpHeaderFields, offset, label, allowYtdl, format, segmentRemaining, item) {
         if (!url) {
+            transitionBlankVisible = false
             noSignalVisible = true
             tuningStaticVisible = false
             streamRequestActive = false
@@ -478,6 +501,7 @@ FocusScope {
         }
 
         streamStarted = true
+        transitionBlankVisible = false
         stoppingForTune = false
         stoppingForScheduleAdvance = false
         streamRequestActive = false
@@ -510,8 +534,17 @@ FocusScope {
 
         var nextItem = channel.schedule[nextIndex]
         startedAtMs = Date.now() - Math.max(0, nextItem.start) * 1000.0
-        showStaticForChannel(channel)
-        requestSelectedStream()
+        transitionBlankVisible = true
+        tuningStaticVisible = false
+        noSignalVisible = false
+        streamStarted = false
+        streamRequestActive = false
+        pendingRequestId = ""
+        pendingPlayback = ({})
+        youtubePlaylistBackend.cancel_video_stream_resolve()
+        requestScheduleItem(channel, nextItem, nextIndex,
+                            nextItem.mediaOffset || 0.0,
+                            nextItem.duration || 0.0)
     }
 
     function tuneIndex(index, immediate) {
@@ -538,8 +571,9 @@ FocusScope {
     }
 
     function tuneNow() {
-        if (loading)
+        if (loading || transitionBlankVisible || !tuningStaticVisible)
             return
+        tuneTimer.stop()
         requestSelectedStream()
     }
 
@@ -572,11 +606,7 @@ FocusScope {
         } else if (event.key === Qt.Key_Down) {
             tuneRelative(-1, false)
             event.accepted = true
-        } else if (event.key === Qt.Key_Left) {
-            tuneLastChannel()
-            event.accepted = true
-        } else if (event.key === Qt.Key_Right) {
-            mpvController.sendKey("RIGHT")
+        } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
             event.accepted = true
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
             tuneNow()
@@ -638,6 +668,7 @@ FocusScope {
             tvRoot.pendingRequestId = ""
             tvRoot.pendingPlayback = ({})
             tvRoot.streamRequestActive = false
+            tvRoot.transitionBlankVisible = false
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV PLAYBACK FAILED"
@@ -647,6 +678,7 @@ FocusScope {
             if (!tvRoot.loading)
                 return
             tvRoot.loading = false
+            tvRoot.transitionBlankVisible = false
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV FAILED"
@@ -689,6 +721,7 @@ FocusScope {
             }
             tvRoot.streamRequestActive = false
             scheduleAdvanceTimer.stop()
+            tvRoot.transitionBlankVisible = false
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = "VOD TV PLAYBACK FAILED"
@@ -696,6 +729,7 @@ FocusScope {
 
         function onScriptMessageReceived(message, arg) {
             if (message === "240mp-ota-file-loaded") {
+                tvRoot.transitionBlankVisible = false
                 tvRoot.tuningStaticVisible = false
                 tvRoot.streamStarted = true
                 return
@@ -765,7 +799,7 @@ FocusScope {
     }
 
     Rectangle {
-        visible: tvRoot.tuningStaticVisible && !tvRoot.loading
+        visible: tvRoot.tuningStaticVisible && !tvRoot.loading && !tvRoot.transitionBlankVisible
         z: 5
         anchors.top: parent.top
         anchors.right: parent.right

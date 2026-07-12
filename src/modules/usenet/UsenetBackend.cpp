@@ -610,6 +610,19 @@ void UsenetBackend::load_music_tracks(const QString &albumId)
     });
 }
 
+void UsenetBackend::load_active_streams()
+{
+    if (serverApiBase().isEmpty() || serverPlayerToken().isEmpty())
+        return;
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/streams/active")));
+    addTaterAuthHeader(request);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleActiveStreamsReply(reply);
+    });
+}
+
 void UsenetBackend::request_streams(const QString &requestId, const QVariantMap &item)
 {
     const QString nzbUrl = item.value(QStringLiteral("nzbUrl")).toString().trimmed();
@@ -762,6 +775,34 @@ void UsenetBackend::handleMusicRowsReply(QNetworkReply *reply, const QString &ar
         emit musicAlbumsLoaded(rows);
     else if (arrayKey == QStringLiteral("tracks"))
         emit musicTracksLoaded(rows);
+}
+
+void UsenetBackend::handleActiveStreamsReply(QNetworkReply *reply)
+{
+    reply->deleteLater();
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (isRedirectStatus(status) || reply->error() != QNetworkReply::NoError || status >= 400)
+        return;
+
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(body, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject())
+        return;
+
+    QJsonValue data = doc.object().value(QStringLiteral("data"));
+    if (data.isObject())
+        data = data.toObject().value(QStringLiteral("streams"));
+    if (!data.isArray())
+        return;
+
+    QVariantList streams;
+    const QJsonArray values = data.toArray();
+    for (const QJsonValue &value : values) {
+        if (value.isObject())
+            streams.append(value.toObject().toVariantMap());
+    }
+    emit activeStreamsLoaded(streams);
 }
 
 void UsenetBackend::handleStreamsReply(QNetworkReply *reply, const QString &requestId,

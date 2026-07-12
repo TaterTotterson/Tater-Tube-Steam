@@ -1839,7 +1839,7 @@ void ControlApiServer::handleSetupVodCustomChannelSaveRequest(QTcpSocket *socket
         }
         if (ratingKey.isEmpty() ||
             !(type == QStringLiteral("movie") || type == QStringLiteral("video") ||
-              type == QStringLiteral("show"))) {
+              type == QStringLiteral("show") || type == QStringLiteral("episode"))) {
             continue;
         }
         const QString uniqueKey = type + QLatin1Char(':') + ratingKey;
@@ -1856,6 +1856,20 @@ void ControlApiServer::handleSetupVodCustomChannelSaveRequest(QTcpSocket *socket
             item[QStringLiteral("year")] = raw.value(QStringLiteral("year"));
         if (raw.contains(QStringLiteral("genres")))
             item[QStringLiteral("genres")] = raw.value(QStringLiteral("genres"));
+        const QStringList passthroughFields{
+            QStringLiteral("duration"),
+            QStringLiteral("durationDisplay"),
+            QStringLiteral("index"),
+            QStringLiteral("parentIndex"),
+            QStringLiteral("parentRatingKey"),
+            QStringLiteral("parentTitle"),
+            QStringLiteral("grandparentRatingKey"),
+            QStringLiteral("grandparentTitle")
+        };
+        for (const QString &field : passthroughFields) {
+            if (raw.contains(field))
+                item[field] = raw.value(field);
+        }
         items.append(item);
     }
 

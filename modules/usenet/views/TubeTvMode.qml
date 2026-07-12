@@ -27,8 +27,11 @@ FocusScope {
     property bool stoppingForTune: false
     property bool stoppingForScheduleAdvance: false
     property bool streamStarted: false
+    property bool transitionBlankVisible: false
     property int tuneDelayMs: 1200
     property string statusText: "LOADING TV MODE"
+    property string streamInfoText: ""
+    property bool currentStreamUsesServer: false
 
     focus: true
 
@@ -158,6 +161,97 @@ FocusScope {
 
     function cleanUpper(value) {
         return String(value || "").trim().toUpperCase()
+    }
+
+    function queryValue(url, key) {
+        var escaped = String(key || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        var match = String(url || "").match(new RegExp("[?&]" + escaped + "=([^&]*)"))
+        if (!match)
+            return ""
+        return decodeURIComponent(String(match[1]).replace(/\+/g, " "))
+    }
+
+    function profileLabel(value) {
+        var profile = cleanUpper(value).replace(/_/g, " ")
+        if (profile === "CRT 480P")
+            return "CRT 480P"
+        if (profile === "HDMI 1080P")
+            return "HDMI 1080P"
+        if (profile === "HDMI 4K")
+            return "HDMI 4K"
+        return profile
+    }
+
+    function formatRate(bytesPerSecond) {
+        var value = Number(bytesPerSecond || 0)
+        if (!isFinite(value) || value <= 0)
+            return ""
+        if (value >= 1024 * 1024)
+            return (value / (1024 * 1024)).toFixed(1) + " MB/S"
+        if (value >= 1024)
+            return Math.round(value / 1024) + " KB/S"
+        return Math.round(value) + " B/S"
+    }
+
+    function plannedStreamInfo(playbackUrl, item) {
+        if (item && item.kind === "commercial")
+            return "LOCAL SPOT | DIRECT PLAY"
+        if (queryValue(playbackUrl, "transcode") === "0")
+            return "SERVER STREAM | DIRECT PLAY"
+
+        var profile = profileLabel(queryValue(playbackUrl, "profile"))
+        var parts = ["SERVER TRANSCODE", "HW AUTO"]
+        if (profile !== "")
+            parts.push(profile)
+        return parts.join(" | ")
+    }
+
+    function streamInfoFromActiveStream(row) {
+        if (!row)
+            return ""
+
+        var status = cleanUpper(row["status"])
+        var speed = formatRate(row["bytes_per_second"])
+        var profile = profileLabel(row["transcode_name"] || row["transcode_profile"])
+        var codec = cleanUpper(row["video_codec"])
+        var accel = cleanUpper(row["hardware_acceleration"])
+        var parts = []
+
+        if (row["transcoded"] === true) {
+            if (row["hardware_active"] === true && accel !== "")
+                parts.push("HW " + accel)
+            else
+                parts.push("SOFTWARE")
+            if (codec !== "")
+                parts.push(codec)
+            if (profile !== "")
+                parts.push(profile)
+        } else {
+            parts.push(status === "STARTING" || status === "BUFFERING"
+                       ? "SERVER STREAM" : "DIRECT PLAY")
+        }
+
+        if (speed !== "")
+            parts.push(speed)
+        if (status !== "" && status !== "TRANSCODING")
+            parts.push(status)
+        return parts.join(" | ")
+    }
+
+    function updateStreamOverlayInfo(info) {
+        var text = cleanUpper(info)
+        if (text === "")
+            return
+        streamInfoText = text
+        if (mpvController.running)
+            mpvController.sendScriptMessage("240mp-ota-stream-info", streamInfoText)
+    }
+
+    function refreshActiveStreamInfo() {
+        if (!currentStreamUsesServer || !streamStarted || tuningStaticVisible
+                || noSignalVisible || leaving || !mpvController.running)
+            return
+        usenetBackend.load_active_streams()
     }
 
     function sourceSearchText(item) {
@@ -439,15 +533,24 @@ FocusScope {
     }
 
     function appendCommercialBreak(schedule, startAt, commercialState) {
-        if (!commercialsEnabled() || commercialStatePool(commercialState).length === 0)
+        var pool = commercialStatePool(commercialState)
+        if (!commercialsEnabled() || pool.length === 0)
             return startAt
 
         var total = startAt
-        var count = 1 + Math.floor(Math.random() * 3)
-        for (var i = 0; i < count; i++) {
+        var targetCount = 2 + Math.floor(Math.random() * 3)
+        var added = 0
+        var attempts = 0
+        var maxAttempts = Math.max(targetCount * 3, pool.length * 2)
+        while (added < targetCount && attempts < maxAttempts) {
+            attempts++
             var commercial = randomCommercialFromState(commercialState)
-            if (commercial)
+            if (commercial) {
+                var before = total
                 total = appendScheduleItem(schedule, commercial, "commercial", total)
+                if (total > before)
+                    added++
+            }
         }
         return total
     }
@@ -864,6 +967,7 @@ FocusScope {
 
     function showStaticForChannel(channel) {
         scheduleAdvanceTimer.stop()
+        transitionBlankVisible = false
         tuningStaticVisible = true
         noSignalVisible = false
         streamStarted = false
@@ -876,6 +980,36 @@ FocusScope {
         }
     }
 
+    function requestScheduleItem(channel, item, index, offset, segmentRemaining) {
+        if (!channel || !item ||
+                (item.kind === "commercial"
+                 ? !item.url
+                 : !item.streamUrl)) {
+            transitionBlankVisible = false
+            tuningStaticVisible = false
+            noSignalVisible = true
+            statusText = "LOCAL TV CHANNEL EMPTY"
+            return
+        }
+
+        currentScheduleIndex = index
+        var label = channelLabel(channel)
+        statusText = label
+        var url = item.kind === "commercial"
+            ? item.url
+            : item.streamUrl
+        var startOffset = offset || 0.0
+        if (item.durationKnown !== true)
+            startOffset = 0.0
+        if (item.kind === "commercial" && item.local === true)
+            startOffset = 0.0
+        if (item.kind !== "commercial" && usenetBackend.uses_server_seek()) {
+            url = urlWithStartOffset(url, startOffset)
+            startOffset = 0.0
+        }
+        launchPlayback(url, startOffset, label, segmentRemaining || 0.0, item)
+    }
+
     function requestSelectedStream() {
         tuneTimer.stop()
         if (loading || channels.length === 0)
@@ -883,37 +1017,18 @@ FocusScope {
 
         var channel = selectedChannel()
         var resolved = findScheduleItem(channel)
-        if (!resolved || !resolved.item ||
-                (resolved.item.kind === "commercial"
-                 ? !resolved.item.url
-                 : !resolved.item.streamUrl)) {
-            tuningStaticVisible = false
-            noSignalVisible = true
-            statusText = "LOCAL TV CHANNEL EMPTY"
+        if (!resolved) {
+            requestScheduleItem(channel, null, -1, 0.0, 0.0)
             return
         }
-
-        currentScheduleIndex = resolved.index
-        var label = channelLabel(channel)
-        statusText = label
-        var url = resolved.item.kind === "commercial"
-            ? resolved.item.url
-            : resolved.item.streamUrl
-        var offset = resolved.offset || 0.0
-        if (resolved.item.durationKnown !== true)
-            offset = 0.0
-        if (resolved.item.kind === "commercial" && resolved.item.local === true)
-            offset = 0.0
-        if (resolved.item.kind !== "commercial" && usenetBackend.uses_server_seek()) {
-            url = urlWithStartOffset(url, offset)
-            offset = 0.0
-        }
-        launchPlayback(url, offset, label,
-                       resolved.segmentRemaining || 0.0, resolved.item)
+        requestScheduleItem(channel, resolved.item, resolved.index,
+                            resolved.offset || 0.0,
+                            resolved.segmentRemaining || 0.0)
     }
 
     function launchPlayback(url, offset, label, segmentRemaining, item) {
         if (!url) {
+            transitionBlankVisible = false
             noSignalVisible = true
             tuningStaticVisible = false
             statusText = "LOCAL TV PLAYBACK FAILED"
@@ -921,12 +1036,15 @@ FocusScope {
         }
 
         streamStarted = true
+        transitionBlankVisible = false
         stoppingForTune = false
         stoppingForScheduleAdvance = false
         noSignalVisible = false
         var playbackUrl = item && item.kind !== "commercial"
             ? usenetBackend.playback_url(url, Math.round(root.sw), Math.round(root.sh))
             : url
+        currentStreamUsesServer = item && item.kind !== "commercial"
+        updateStreamOverlayInfo(plannedStreamInfo(playbackUrl, item))
         mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
                                   "", false, "ota", false, label || statusText)
 
@@ -954,8 +1072,13 @@ FocusScope {
 
         var nextItem = channel.schedule[nextIndex]
         startedAtMs = Date.now() - Math.max(0, nextItem.start) * 1000.0
-        showStaticForChannel(channel)
-        requestSelectedStream()
+        transitionBlankVisible = true
+        tuningStaticVisible = false
+        noSignalVisible = false
+        streamStarted = false
+        requestScheduleItem(channel, nextItem, nextIndex,
+                            nextItem.mediaOffset || 0.0,
+                            nextItem.duration || 0.0)
     }
 
     function tuneIndex(index, immediate) {
@@ -982,8 +1105,9 @@ FocusScope {
     }
 
     function tuneNow() {
-        if (loading)
+        if (loading || transitionBlankVisible || !tuningStaticVisible)
             return
+        tuneTimer.stop()
         requestSelectedStream()
     }
 
@@ -1014,11 +1138,7 @@ FocusScope {
         } else if (event.key === Qt.Key_Down) {
             tuneRelative(-1, false)
             event.accepted = true
-        } else if (event.key === Qt.Key_Left) {
-            tuneLastChannel()
-            event.accepted = true
-        } else if (event.key === Qt.Key_Right) {
-            mpvController.sendKey("RIGHT")
+        } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
             event.accepted = true
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
             tuneNow()
@@ -1050,6 +1170,16 @@ FocusScope {
         }
     }
 
+    Timer {
+        id: streamInfoPollTimer
+        interval: 3000
+        repeat: true
+        running: tvRoot.currentStreamUsesServer && tvRoot.streamStarted
+                 && !tvRoot.tuningStaticVisible && !tvRoot.noSignalVisible
+                 && !tvRoot.leaving
+        onTriggered: tvRoot.refreshActiveStreamInfo()
+    }
+
     Connections {
         target: usenetBackend
 
@@ -1068,6 +1198,15 @@ FocusScope {
                 return
             }
             tvRoot.buildReadyChannels()
+        }
+
+        function onActiveStreamsLoaded(streams) {
+            if (!tvRoot.currentStreamUsesServer)
+                return
+            var rows = tvRoot.asList(streams)
+            if (rows.length === 0)
+                return
+            tvRoot.updateStreamOverlayInfo(tvRoot.streamInfoFromActiveStream(rows[0]))
         }
     }
 
@@ -1106,6 +1245,7 @@ FocusScope {
                 return
             }
             scheduleAdvanceTimer.stop()
+            tvRoot.transitionBlankVisible = false
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = "LOCAL TV PLAYBACK FAILED"
@@ -1113,8 +1253,11 @@ FocusScope {
 
         function onScriptMessageReceived(message, arg) {
             if (message === "240mp-ota-file-loaded") {
+                tvRoot.transitionBlankVisible = false
                 tvRoot.tuningStaticVisible = false
                 tvRoot.streamStarted = true
+                tvRoot.updateStreamOverlayInfo(tvRoot.streamInfoText)
+                tvRoot.refreshActiveStreamInfo()
                 return
             }
 
@@ -1180,7 +1323,7 @@ FocusScope {
     }
 
     Rectangle {
-        visible: tvRoot.tuningStaticVisible && !tvRoot.loading
+        visible: tvRoot.tuningStaticVisible && !tvRoot.loading && !tvRoot.transitionBlankVisible
         z: 5
         anchors.top: parent.top
         anchors.right: parent.right
