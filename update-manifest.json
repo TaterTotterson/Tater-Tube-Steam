@@ -1,15 +1,15 @@
 {
-  "version": "v1.4.3",
-  "app_version": "1.4.3",
+  "version": "v1.4.4",
+  "app_version": "1.4.4",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.3/Tater-Tube-v1.4.3-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.3.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.4/Tater-Tube-v1.4.4-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.4.tar.gz",
   "notes": [
-    "Removes the extra top-right title label from regular The Tube playback while keeping the bottom server/HW overlay.",
-    "Makes The Tube and VOD TV Mode quiet transitions reliably suppress mpv-side channel labels.",
-    "Updates Public Access TV Mode automatic video changes to use black quiet transitions instead of static and channel overlays.",
-    "Keeps manual channel tuning behavior unchanged, with static and channel overlay still shown while changing channels."
+    "Adds Continue Watching for The Tube Local media, including movie resume and series progress.",
+    "Adds Stream Watch Again for recently played NZBs without saving resume positions.",
+    "Sends Stream item category metadata to Tater Tube Server for cleaner Watch Again entries.",
+    "Improves The Tube Local browsing with server-provided play state and progress fields."
   ]
 }

@@ -546,6 +546,21 @@ void UsenetBackend::load_trending(const QString &category, const QString &timePe
     });
 }
 
+void UsenetBackend::load_continue_watching()
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit errorOccurred(QStringLiteral("PAIR TATER TUBE SERVER"));
+        return;
+    }
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/playstate/continue")));
+    addTaterAuthHeader(request);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleItemsReply(reply, QStringLiteral("Continue Watching"));
+    });
+}
+
 void UsenetBackend::load_music_libraries()
 {
     if (get_auth_state() != QStringLiteral("authed")) {
@@ -643,11 +658,32 @@ void UsenetBackend::request_streams(const QString &requestId, const QVariantMap 
     QJsonObject payload;
     payload[QStringLiteral("nzb_url")] = nzbUrl;
     payload[QStringLiteral("title")] = title;
+    payload[QStringLiteral("category")] = item.value(QStringLiteral("category")).toString().trimmed();
     payload[QStringLiteral("timeout")] = streamTimeout();
 
     QNetworkReply *reply = m_network.post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, requestId, title]() {
         handleStreamsReply(reply, requestId, title);
+    });
+}
+
+void UsenetBackend::save_play_state(const QVariantMap &state)
+{
+    if (serverApiBase().isEmpty() || serverPlayerToken().isEmpty())
+        return;
+
+    const QString playStateId = state.value(QStringLiteral("playStateId")).toString().trimmed();
+    const QString path = state.value(QStringLiteral("path")).toString().trimmed();
+    if (playStateId.isEmpty() && path.isEmpty())
+        return;
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/playstate")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    addTaterAuthHeader(request);
+
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(QJsonObject::fromVariantMap(state)).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [reply]() {
+        reply->deleteLater();
     });
 }
 

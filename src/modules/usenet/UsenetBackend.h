@@ -26,11 +26,13 @@ public:
     Q_INVOKABLE void load_discover(const QString &catalogId, const QString &title);
     Q_INVOKABLE void load_trending(const QString &category, const QString &timePeriod,
                                    const QString &title);
+    Q_INVOKABLE void load_continue_watching();
     Q_INVOKABLE void load_music_libraries();
     Q_INVOKABLE void load_music_albums(const QString &categoryId);
     Q_INVOKABLE void load_music_tracks(const QString &albumId);
     Q_INVOKABLE void load_active_streams();
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
+    Q_INVOKABLE void save_play_state(const QVariantMap &state);
     Q_INVOKABLE QString playback_url(const QString &url, int screenWidth, int screenHeight) const;
     Q_INVOKABLE bool uses_server_seek() const;
     Q_INVOKABLE QVariantList get_commercial_videos_for_setting(const QString &settingKey) const;

@@ -39,6 +39,9 @@ FocusScope {
     property bool playbackStarted: false
     property string streamInfoText: ""
     property bool currentStreamUsesServer: false
+    property var currentPlaybackItem: ({})
+    property int currentPlaybackBaseOffsetMs: 0
+    property bool currentPlaybackCompleted: false
 
     focus: true
 
@@ -202,6 +205,89 @@ FocusScope {
         return parts.join(" | ")
     }
 
+    function numericValue(value, fallback) {
+        var number = Number(value)
+        return isFinite(number) ? number : (fallback || 0)
+    }
+
+    function itemViewOffsetMs(item) {
+        if (!item)
+            return 0
+        var offset = numericValue(item.viewOffset, 0)
+        if (offset <= 0)
+            offset = numericValue(item.viewOffsetSeconds, 0) * 1000
+        return Math.max(0, Math.round(offset))
+    }
+
+    function itemDurationMs(item) {
+        if (!item)
+            return 0
+        var duration = numericValue(item.duration, 0)
+        if (duration > 0)
+            return Math.round(duration * 1000)
+        duration = numericValue(item.durationSeconds, 0)
+        return duration > 0 ? Math.round(duration * 1000) : 0
+    }
+
+    function urlWithStartOffset(url, offset) {
+        if (!url || !offset || offset <= 0)
+            return url
+        var hashIndex = url.indexOf("#")
+        var base = hashIndex >= 0 ? url.slice(0, hashIndex) : url
+        var hash = hashIndex >= 0 ? url.slice(hashIndex) : ""
+        var separator = base.indexOf("?") >= 0 ? "&" : "?"
+        return base + separator + "start=" + encodeURIComponent(offset.toFixed(3)) + hash
+    }
+
+    function itemDetail(row) {
+        if (itemViewOffsetMs(row) > 0)
+            return "RSUM"
+        return row.sizeText || row.date || ""
+    }
+
+    function hasPlaybackStateItem() {
+        return currentPlaybackItem
+                && ((currentPlaybackItem.playStateId || "") !== ""
+                    || (currentPlaybackItem.path || "") !== "")
+                && (currentPlaybackItem.type || "") === "localFile"
+    }
+
+    function currentPlaybackPositionMs() {
+        var position = numericValue(mpvController.position, 0)
+        if (currentPlaybackBaseOffsetMs > 0 && position < currentPlaybackBaseOffsetMs)
+            position += currentPlaybackBaseOffsetMs
+        return Math.max(0, Math.round(position))
+    }
+
+    function currentPlaybackDurationMs() {
+        var duration = numericValue(mpvController.duration, 0)
+        var itemDuration = itemDurationMs(currentPlaybackItem)
+        if (duration <= 0 || (itemDuration > 0 && duration < currentPlaybackPositionMs()))
+            duration = itemDuration
+        return Math.max(0, Math.round(duration))
+    }
+
+    function saveCurrentPlayState(completed) {
+        if (!hasPlaybackStateItem() || currentPlaybackCompleted)
+            return
+        var positionMs = currentPlaybackPositionMs()
+        var durationMs = currentPlaybackDurationMs()
+        currentPlaybackCompleted = completed === true
+        usenetBackend.save_play_state({
+            playStateId: currentPlaybackItem.playStateId || "",
+            seriesId: currentPlaybackItem.seriesStateId || "",
+            title: currentPlaybackItem.title || "LOCAL",
+            seriesTitle: currentPlaybackItem.seriesTitle || "",
+            mediaType: currentPlaybackItem.mediaType || "",
+            categoryId: currentPlaybackItem.categoryId || "",
+            sourceIndex: currentPlaybackItem.sourceIndex || 0,
+            path: currentPlaybackItem.path || "",
+            positionMs: completed ? durationMs : positionMs,
+            durationMs: durationMs,
+            completed: completed === true
+        })
+    }
+
     function streamInfoFromActiveStream(row) {
         if (!row)
             return ""
@@ -263,6 +349,9 @@ FocusScope {
         } else if (row.type === "discover") {
             statusText = "LOADING " + currentCategoryTitle
             usenetBackend.load_discover(row.id || "", currentCategoryTitle)
+        } else if (row.type === "continue") {
+            statusText = "LOADING CONTINUE WATCHING"
+            usenetBackend.load_continue_watching()
         } else if (row.type === "local") {
             statusText = "LOADING " + currentCategoryTitle
             itemStack = []
@@ -286,6 +375,12 @@ FocusScope {
             if (mode === "subcategories") currentSubcategoryIndex = index
             else currentCategoryIndex = index
             showSearch()
+            return
+        }
+        if (row.type === "continue") {
+            if (mode === "subcategories") currentSubcategoryIndex = index
+            else currentCategoryIndex = index
+            browseCategory(row)
             return
         }
         var children = row.children || []
@@ -354,7 +449,7 @@ FocusScope {
             return
         }
         if (row.type === "localFile") {
-            playStream({ url: row.streamUrl || "", title: row.title || "LOCAL" }, row.title || "LOCAL")
+            playStream({ url: row.streamUrl || "", title: row.title || "LOCAL" }, row.title || "LOCAL", row)
             return
         }
         pendingRequestId = newRequestId()
@@ -364,25 +459,39 @@ FocusScope {
         usenetBackend.request_streams(pendingRequestId, row)
     }
 
-    function playStream(stream, title) {
+    function playStream(stream, title, item) {
         if (!stream || !stream.url) {
             mode = "message"
             statusText = "STREAM URL MISSING"
             return
         }
         playbackStarted = true
+        currentPlaybackCompleted = false
+        currentPlaybackItem = item || ({})
+        currentPlaybackBaseOffsetMs = 0
         mode = "playing"
         statusText = "PLAYING " + (title || stream.title || "THE TUBE")
-        var playbackUrl = usenetBackend.playback_url(stream.url, Math.round(root.sw), Math.round(root.sh))
+        var rawUrl = stream.url
+        var startOffsetMs = itemViewOffsetMs(item)
+        var startOffset = startOffsetMs / 1000.0
+        if (startOffset > 0 && usenetBackend.uses_server_seek()) {
+            rawUrl = urlWithStartOffset(rawUrl, startOffset)
+            currentPlaybackBaseOffsetMs = startOffsetMs
+            startOffset = 0.0
+        }
+        var playbackUrl = usenetBackend.playback_url(rawUrl, Math.round(root.sw), Math.round(root.sh))
         currentStreamUsesServer = true
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl))
-        mpvController.loadAndPlay(playbackUrl, 0.0, 0, -1, [], false, -1, 0.0,
+        mpvController.loadAndPlay(playbackUrl, startOffset, 0, -1, [], false, -1, 0.0,
                                   "", false, "tube", false, title || stream.title || "THE TUBE")
     }
 
     function stopPlayback() {
+        saveCurrentPlayState(false)
         playbackStarted = false
         currentStreamUsesServer = false
+        currentPlaybackItem = ({})
+        currentPlaybackBaseOffsetMs = 0
         mpvController.stop()
         mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
     }
@@ -411,6 +520,22 @@ FocusScope {
                         type: "localTvMenu",
                         title: "TV MODE",
                         detail: "LOCAL"
+                    })
+                }
+                var hasContinue = false
+                for (var c = 0; c < children.length; c++) {
+                    if ((children[c] || ({})).type === "continue") {
+                        hasContinue = true
+                        break
+                    }
+                }
+                if (!hasContinue) {
+                    var continueIndex = children.length > 0 && children[0].type === "localTvMenu" ? 1 : 0
+                    children.splice(continueIndex, 0, {
+                        type: "continue",
+                        title: "CONTINUE WATCHING",
+                        detail: "LOCAL",
+                        fullTitle: "Local / Continue Watching"
                     })
                 }
                 row.children = children
@@ -552,8 +677,10 @@ FocusScope {
     Component.onCompleted: refresh()
 
     Component.onDestruction: {
-        if (playbackStarted)
+        if (playbackStarted) {
+            saveCurrentPlayState(false)
             mpvController.stop()
+        }
     }
 
     Timer {
@@ -581,13 +708,23 @@ FocusScope {
         onTriggered: usenetRoot.refreshActiveStreamInfo()
     }
 
+    Timer {
+        id: playStateTimer
+        interval: 15000
+        repeat: true
+        running: usenetRoot.playbackStarted && usenetRoot.hasPlaybackStateItem()
+                 && usenetRoot.mode === "playing"
+        onTriggered: usenetRoot.saveCurrentPlayState(false)
+    }
+
     Connections {
         target: usenetBackend
 
         function onCategoriesLoaded(rows) {
             categories = rowsWithLocalTvMode(rows || [])
+            shortcutRows = []
             resetCategoryDrilldown()
-            if (categories.length === 0) {
+            if (categories.length === 0 && shortcutRows.length === 0) {
                 mode = "message"
                 statusText = "NO CATEGORIES FOUND"
                 return
@@ -659,16 +796,33 @@ FocusScope {
 
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
             if (mode === "playing") {
+                saveCurrentPlayState(false)
                 playbackStarted = false
                 currentStreamUsesServer = false
+                currentPlaybackItem = ({})
+                currentPlaybackBaseOffsetMs = 0
+                mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
+            }
+        }
+
+        function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
+            if (mode === "playing") {
+                saveCurrentPlayState(true)
+                playbackStarted = false
+                currentStreamUsesServer = false
+                currentPlaybackItem = ({})
+                currentPlaybackBaseOffsetMs = 0
                 mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
             }
         }
 
         function onPlaybackFailed() {
             if (mode === "playing") {
+                saveCurrentPlayState(false)
                 playbackStarted = false
                 currentStreamUsesServer = false
+                currentPlaybackItem = ({})
+                currentPlaybackBaseOffsetMs = 0
                 mode = "message"
                 statusText = "THE TUBE PLAYBACK FAILED"
             }
@@ -889,7 +1043,7 @@ FocusScope {
             list: itemList
             rowIndex: index
             text: modelData.title || "ITEM"
-            detail: modelData.sizeText || modelData.date || ""
+            detail: itemDetail(modelData)
         }
     }
 
