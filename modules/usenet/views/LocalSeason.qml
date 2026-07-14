@@ -10,7 +10,7 @@ FocusScope {
     property var navListState: navParams.navListState || ({})
 
     signal navigateTo(string path, var params, var listState)
-    signal goBack()
+    signal goBack
 
     property var item: navParams.item || {}
     property string showTitle: navParams.showTitle || item.seriesTitle || ""
@@ -18,87 +18,124 @@ FocusScope {
     property var episodes: []
     property bool isLoading: false
     property int focusRow: 0
+    property string errorText: ""
 
     function numericValue(value, fallback) {
-        var number = Number(value)
-        return isFinite(number) ? number : (fallback || 0)
+        var number = Number(value);
+        return isFinite(number) ? number : (fallback || 0);
     }
 
     function hasResume(row) {
-        return numericValue(row && row.viewOffset, 0) > 0
-                || numericValue(row && row.viewOffsetSeconds, 0) > 0
+        return numericValue(row && row.viewOffset, 0) > 0 || numericValue(row && row.viewOffsetSeconds, 0) > 0;
+    }
+
+    function isEpisode(row) {
+        return row && (row.type || "") === "localFile" && (row.streamUrl || "") !== "";
     }
 
     function bestEpisode(rows) {
-        rows = rows || []
+        rows = rows || [];
         for (var i = 0; i < rows.length; i++) {
-            if (hasResume(rows[i]))
-                return rows[i]
+            if (isEpisode(rows[i]) && hasResume(rows[i]))
+                return rows[i];
         }
-        return rows.length > 0 ? rows[0] : null
+        for (var j = 0; j < rows.length; j++) {
+            if (isEpisode(rows[j]))
+                return rows[j];
+        }
+        return null;
     }
 
     function episodeLabel(row) {
         if (!row)
-            return ""
-        var title = row.title || ""
+            return "";
+        var title = row.title || "";
         if (title.match(/^S\d+E\d+/i))
-            return title
-        var path = row.path || ""
-        var match = path.match(/s(\d+)[ ._-]*e(\d+)/i)
+            return title;
+        var path = row.path || "";
+        var match = path.match(/s(\d+)[ ._-]*e(\d+)/i);
         if (match)
-            return "S" + match[1] + "E" + match[2] + ": " + title
-        return title
+            return "S" + match[1] + "E" + match[2] + ": " + title;
+        return title;
     }
 
     function seasonSubtitle() {
-        var parts = []
+        var parts = [];
         if ((item.title || "") !== "")
-            parts.push(item.title)
+            parts.push(item.title);
         if (episodes.length > 0)
-            parts.push(episodes.length + (episodes.length === 1 ? " EPISODE" : " EPISODES"))
-        return parts.join(" - ")
+            parts.push(episodes.length + (episodes.length === 1 ? " EPISODE" : " EPISODES"));
+        return parts.join(" - ");
     }
 
     function playEpisode(row) {
         if (!row)
-            return
-        var episode = Object.assign({}, row)
+            return;
+        if ((row.type || "") === "localFolder") {
+            openFolder(row);
+            return;
+        }
+        if (!isEpisode(row)) {
+            errorText = "EPISODE STREAM MISSING";
+            return;
+        }
+        var episode = Object.assign({}, row);
         if (!episode.seriesTitle)
-            episode.seriesTitle = showTitle
+            episode.seriesTitle = showTitle;
         navigateTo("LocalPlayer.qml", {
             item: episode,
             title: episode.title || "EPISODE"
-        }, { currentIndex: episodeList.currentIndex })
+        }, {
+            currentIndex: episodeList.currentIndex
+        });
     }
 
     function playBestEpisode() {
-        playEpisode(bestEpisode(episodes))
+        var episode = bestEpisode(episodes);
+        if (episode) {
+            playEpisode(episode);
+            return;
+        }
+        if (episodes.length > 0 && (episodes[0].type || "") === "localFolder") {
+            openFolder(episodes[0]);
+            return;
+        }
+        errorText = "NO EPISODES FOUND";
+    }
+
+    function openFolder(row) {
+        if (!row)
+            return;
+        errorText = "";
+        isLoading = true;
+        usenetBackend.load_local_items(row.categoryId || item.categoryId || "", row.path || "", row.sourceIndex !== undefined ? row.sourceIndex : (item.sourceIndex || 0), row.title || "Season");
     }
 
     Connections {
         target: usenetBackend
 
         function onItemsLoaded(categoryTitle, rows) {
-            seasonRoot.isLoading = false
-            seasonRoot.episodes = rows || []
+            seasonRoot.isLoading = false;
+            seasonRoot.episodes = rows || [];
+            seasonRoot.errorText = seasonRoot.episodes.length === 0 ? "NO EPISODES FOUND" : "";
             if (seasonRoot.episodes.length > 0) {
-                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-                episodeList.currentIndex = Math.min(restore, seasonRoot.episodes.length - 1)
-                episodeList.positionViewAtIndex(episodeList.currentIndex, ListView.Contain)
+                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0;
+                episodeList.currentIndex = Math.min(restore, seasonRoot.episodes.length - 1);
+                episodeList.positionViewAtIndex(episodeList.currentIndex, ListView.Contain);
             }
         }
 
         function onErrorOccurred(message) {
-            seasonRoot.isLoading = false
+            seasonRoot.isLoading = false;
+            seasonRoot.errorText = message || "SEASON LOAD FAILED";
         }
     }
 
     Component.onCompleted: {
-        isLoading = true
-        focusRow = 0
-        usenetBackend.load_local_items(item.categoryId || "", item.path || "",
-                                       item.sourceIndex || 0, item.title || "Season")
+        isLoading = true;
+        focusRow = 0;
+        errorText = "";
+        usenetBackend.load_local_items(item.categoryId || "", item.path || "", item.sourceIndex || 0, item.title || "Season");
     }
 
     focus: true
@@ -106,44 +143,44 @@ FocusScope {
     Keys.onUpPressed: {
         if (focusRow === 1) {
             if (episodeList.currentIndex > 0)
-                episodeList.currentIndex--
+                episodeList.currentIndex--;
             else
-                focusRow = 0
+                focusRow = 0;
         }
     }
     Keys.onDownPressed: {
         if (focusRow === 0) {
             if (episodes.length > 0)
-                focusRow = 1
+                focusRow = 1;
         } else if (episodeList.currentIndex < episodes.length - 1) {
-            episodeList.currentIndex++
+            episodeList.currentIndex++;
         }
     }
     Keys.onLeftPressed: {
         if (focusRow === 1 && episodeList.count > 0) {
-            var rows = Math.max(1, Math.floor(episodeList.height / (root.sh * 0.0583333)) - 1)
-            episodeList.currentIndex = Math.max(0, episodeList.currentIndex - rows)
-            episodeList.positionViewAtIndex(episodeList.currentIndex, ListView.Contain)
+            var rows = Math.max(1, Math.floor(episodeList.height / (root.sh * 0.0583333)) - 1);
+            episodeList.currentIndex = Math.max(0, episodeList.currentIndex - rows);
+            episodeList.positionViewAtIndex(episodeList.currentIndex, ListView.Contain);
         }
     }
     Keys.onRightPressed: {
         if (focusRow === 1 && episodeList.count > 0) {
-            var rows = Math.max(1, Math.floor(episodeList.height / (root.sh * 0.0583333)) - 1)
-            episodeList.currentIndex = Math.min(episodeList.count - 1, episodeList.currentIndex + rows)
-            episodeList.positionViewAtIndex(episodeList.currentIndex, ListView.Contain)
+            var rows = Math.max(1, Math.floor(episodeList.height / (root.sh * 0.0583333)) - 1);
+            episodeList.currentIndex = Math.min(episodeList.count - 1, episodeList.currentIndex + rows);
+            episodeList.positionViewAtIndex(episodeList.currentIndex, ListView.Contain);
         }
     }
     Keys.onReturnPressed: {
         if (focusRow === 0) {
-            playBestEpisode()
+            playBestEpisode();
         } else {
-            playEpisode(episodes[episodeList.currentIndex])
+            playEpisode(episodes[episodeList.currentIndex]);
         }
     }
-    Keys.onPressed: function(event) {
+    Keys.onPressed: function (event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-            goBack()
-            event.accepted = true
+            goBack();
+            event.accepted = true;
         }
     }
 
@@ -190,7 +227,7 @@ FocusScope {
 
         Row {
             id: seasonDetails
-            height: root.sh * 0.175
+            height: root.sh * 0.1916667
             spacing: root.sw * 0.0375
 
             Rectangle {
@@ -205,9 +242,9 @@ FocusScope {
                     text: {
                         for (var i = 0; i < seasonRoot.episodes.length; i++) {
                             if (seasonRoot.hasResume(seasonRoot.episodes[i]))
-                                return "RSUM \u25BA"
+                                return "RSUM \u25BA";
                         }
-                        return "PLAY \u25BA"
+                        return "PLAY \u25BA";
                     }
                     color: focusRow === 0 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont
@@ -243,8 +280,21 @@ FocusScope {
         }
 
         Text {
-            id: episodeListLabel
+            id: seasonError
+            visible: errorText !== ""
             anchors.top: seasonDetails.bottom
+            text: errorText
+            color: root.secondaryColor
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            leftPadding: root.sw * 0.009375
+            font.pixelSize: root.sh * 0.0291667
+        }
+
+        Text {
+            id: episodeListLabel
+            visible: episodes.length > 0
+            anchors.top: seasonError.visible ? seasonError.bottom : seasonDetails.bottom
             text: "Episodes:"
             color: root.secondaryColor
             font.family: root.globalFont
@@ -257,6 +307,7 @@ FocusScope {
 
         ListView {
             id: episodeList
+            visible: episodes.length > 0
             model: episodes
             anchors.top: episodeListLabel.bottom
             anchors.left: parent.left
@@ -273,7 +324,7 @@ FocusScope {
                 rowIndex: index
                 focused: focusRow === 1
                 text: seasonRoot.episodeLabel(modelData)
-                detail: seasonRoot.hasResume(modelData) ? "RSUM" : (modelData.durationDisplay || modelData.sizeText || "")
+                detail: (modelData.type || "") === "localFolder" ? "OPEN" : (seasonRoot.hasResume(modelData) ? "RSUM" : (modelData.durationDisplay || modelData.sizeText || ""))
             }
         }
     }
@@ -321,15 +372,25 @@ FocusScope {
             SequentialAnimation {
                 running: rowRoot.selected && rowText.implicitWidth > textClip.width
                 loops: Animation.Infinite
-                onRunningChanged: if (!running) rowText.x = 0
-                PauseAnimation { duration: 1500 }
+                onRunningChanged: if (!running)
+                    rowText.x = 0
+                PauseAnimation {
+                    duration: 1500
+                }
                 NumberAnimation {
-                    target: rowText; property: "x"
+                    target: rowText
+                    property: "x"
                     to: textClip.width - rowText.implicitWidth
                     duration: Math.abs(to) * 20
                 }
-                PauseAnimation { duration: 2000 }
-                PropertyAction { target: rowText; property: "x"; value: 0 }
+                PauseAnimation {
+                    duration: 2000
+                }
+                PropertyAction {
+                    target: rowText
+                    property: "x"
+                    value: 0
+                }
             }
         }
 

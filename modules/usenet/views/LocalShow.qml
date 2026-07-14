@@ -10,216 +10,145 @@ FocusScope {
     property var navListState: navParams.navListState || ({})
 
     signal navigateTo(string path, var params, var listState)
-    signal goBack()
+    signal goBack
 
     property var item: navParams.item || {}
     property string libraryName: navParams.libraryName || "LOCAL"
     property var rows: []
     property bool isLoading: false
-    property int focusRow: 0
-    property string pendingLoad: "children"
-    property var pendingSeason: ({})
-    property int scanIndex: 0
-    property var scanFirstEpisode: null
+    property string errorText: ""
 
     readonly property bool rowsAreEpisodes: rows.length > 0 && (rows[0].type || "") === "localFile"
 
     function numericValue(value, fallback) {
-        var number = Number(value)
-        return isFinite(number) ? number : (fallback || 0)
+        var number = Number(value);
+        return isFinite(number) ? number : (fallback || 0);
     }
 
     function hasResume(row) {
-        return numericValue(row && row.viewOffset, 0) > 0
-                || numericValue(row && row.viewOffsetSeconds, 0) > 0
+        return numericValue(row && row.viewOffset, 0) > 0 || numericValue(row && row.viewOffsetSeconds, 0) > 0;
     }
 
     function playEpisode(row) {
         if (!row)
-            return
-        var episode = Object.assign({}, row)
+            return;
+        var episode = Object.assign({}, row);
         if (!episode.seriesTitle)
-            episode.seriesTitle = item.title || ""
+            episode.seriesTitle = item.title || "";
         navigateTo("LocalPlayer.qml", {
             item: episode,
             title: episode.title || "EPISODE"
-        }, { currentIndex: childList.currentIndex })
-    }
-
-    function playBestEpisodeFromRows(list) {
-        list = list || []
-        for (var i = 0; i < list.length; i++) {
-            if (hasResume(list[i])) {
-                playEpisode(list[i])
-                return true
-            }
-        }
-        if (list.length > 0) {
-            playEpisode(list[0])
-            return true
-        }
-        return false
-    }
-
-    function startBestEpisodeScan() {
-        if (rowsAreEpisodes) {
-            playBestEpisodeFromRows(rows)
-            return
-        }
-        if (rows.length === 0)
-            return
-        scanIndex = 0
-        scanFirstEpisode = null
-        pendingLoad = "scanEpisodes"
-        scanNextSeason()
-    }
-
-    function scanNextSeason() {
-        if (scanIndex >= rows.length) {
-            if (scanFirstEpisode)
-                playEpisode(scanFirstEpisode)
-            pendingLoad = "children"
-            isLoading = false
-            return
-        }
-        pendingSeason = rows[scanIndex] || ({})
-        isLoading = true
-        usenetBackend.load_local_items(pendingSeason.categoryId || "", pendingSeason.path || "",
-                                       pendingSeason.sourceIndex || 0, pendingSeason.title || "Season")
-    }
-
-    function handleScanRows(list) {
-        list = list || []
-        if (!scanFirstEpisode && list.length > 0)
-            scanFirstEpisode = list[0]
-        for (var i = 0; i < list.length; i++) {
-            if (hasResume(list[i])) {
-                isLoading = false
-                pendingLoad = "children"
-                playEpisode(list[i])
-                return
-            }
-        }
-        scanIndex++
-        scanNextSeason()
+        }, {
+            currentIndex: childList.currentIndex
+        });
     }
 
     function openRow(row) {
         if (!row)
-            return
-        if ((row.type || "") === "localFile") {
-            playEpisode(row)
-            return
+            return;
+        var type = String(row.type || "");
+        if (type === "localFile") {
+            playEpisode(row);
+            return;
         }
-        navigateTo("LocalSeason.qml", {
-            item: row,
-            showTitle: item.title || "",
-            libraryName: libraryName
-        }, { currentIndex: childList.currentIndex })
+        if (type === "localFolder") {
+            navigateTo("LocalSeason.qml", {
+                item: row,
+                showTitle: item.title || "",
+                libraryName: libraryName
+            }, {
+                currentIndex: childList.currentIndex
+            });
+            return;
+        }
+        errorText = "SEASON UNAVAILABLE";
     }
 
     function childLabel(row) {
         if (!row)
-            return ""
-        var title = row.title || ""
+            return "";
+        var title = row.title || "";
         if ((row.type || "") !== "localFile")
-            return title
+            return title;
         if (title.match(/^S\d+E\d+/i))
-            return title
-        var path = row.path || ""
-        var match = path.match(/s(\d+)[ ._-]*e(\d+)/i)
+            return title;
+        var path = row.path || "";
+        var match = path.match(/s(\d+)[ ._-]*e(\d+)/i);
         if (match)
-            return "S" + match[1] + "E" + match[2] + ": " + title
-        return title
+            return "S" + match[1] + "E" + match[2] + ": " + title;
+        return title;
     }
 
     function showSubtitle() {
-        var parts = []
+        var parts = [];
         if (rows.length > 0) {
             if (rowsAreEpisodes)
-                parts.push(rows.length + (rows.length === 1 ? " EPISODE" : " EPISODES"))
+                parts.push(rows.length + (rows.length === 1 ? " EPISODE" : " EPISODES"));
             else
-                parts.push(rows.length + (rows.length === 1 ? " SEASON" : " SEASONS"))
+                parts.push(rows.length + (rows.length === 1 ? " SEASON" : " SEASONS"));
         }
         if ((item.path || "") !== "")
-            parts.push(item.path)
-        return parts.join(" - ")
+            parts.push(item.path);
+        return parts.join(" - ");
     }
 
     Connections {
         target: usenetBackend
 
         function onItemsLoaded(categoryTitle, loadedRows) {
-            if (showRoot.pendingLoad === "scanEpisodes") {
-                showRoot.handleScanRows(loadedRows || [])
-                return
-            }
-
-            showRoot.isLoading = false
-            showRoot.rows = loadedRows || []
+            showRoot.isLoading = false;
+            showRoot.rows = loadedRows || [];
+            showRoot.errorText = showRoot.rows.length === 0 ? "NO SEASONS FOUND" : "";
             if (showRoot.rows.length > 0) {
-                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-                childList.currentIndex = Math.min(restore, showRoot.rows.length - 1)
-                childList.positionViewAtIndex(childList.currentIndex, ListView.Contain)
+                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0;
+                childList.currentIndex = Math.min(restore, showRoot.rows.length - 1);
+                childList.positionViewAtIndex(childList.currentIndex, ListView.Contain);
             }
         }
 
         function onErrorOccurred(message) {
-            showRoot.isLoading = false
-            showRoot.pendingLoad = "children"
+            showRoot.isLoading = false;
+            showRoot.errorText = message || "SERIES LOAD FAILED";
         }
     }
 
     Component.onCompleted: {
-        isLoading = true
-        focusRow = 0
-        pendingLoad = "children"
-        usenetBackend.load_local_items(item.categoryId || "", item.path || "",
-                                       item.sourceIndex || 0, item.title || "Show")
+        isLoading = true;
+        errorText = "";
+        usenetBackend.load_local_items(item.categoryId || "", item.path || "", item.sourceIndex || 0, item.title || "Show");
     }
 
     focus: true
 
     Keys.onUpPressed: {
-        if (focusRow === 1) {
-            if (childList.currentIndex > 0)
-                childList.currentIndex--
-            else
-                focusRow = 0
-        }
+        if (childList.currentIndex > 0)
+            childList.currentIndex--;
     }
     Keys.onDownPressed: {
-        if (focusRow === 0) {
-            if (rows.length > 0)
-                focusRow = 1
-        } else if (childList.currentIndex < rows.length - 1) {
-            childList.currentIndex++
-        }
+        if (childList.currentIndex < rows.length - 1)
+            childList.currentIndex++;
     }
     Keys.onLeftPressed: {
-        if (focusRow === 1 && childList.count > 0) {
-            var pageRows = Math.max(1, Math.floor(childList.height / (root.sh * 0.0583333)) - 1)
-            childList.currentIndex = Math.max(0, childList.currentIndex - pageRows)
-            childList.positionViewAtIndex(childList.currentIndex, ListView.Contain)
+        if (childList.count > 0) {
+            var pageRows = Math.max(1, Math.floor(childList.height / (root.sh * 0.0583333)) - 1);
+            childList.currentIndex = Math.max(0, childList.currentIndex - pageRows);
+            childList.positionViewAtIndex(childList.currentIndex, ListView.Contain);
         }
     }
     Keys.onRightPressed: {
-        if (focusRow === 1 && childList.count > 0) {
-            var pageRows = Math.max(1, Math.floor(childList.height / (root.sh * 0.0583333)) - 1)
-            childList.currentIndex = Math.min(childList.count - 1, childList.currentIndex + pageRows)
-            childList.positionViewAtIndex(childList.currentIndex, ListView.Contain)
+        if (childList.count > 0) {
+            var pageRows = Math.max(1, Math.floor(childList.height / (root.sh * 0.0583333)) - 1);
+            childList.currentIndex = Math.min(childList.count - 1, childList.currentIndex + pageRows);
+            childList.positionViewAtIndex(childList.currentIndex, ListView.Contain);
         }
     }
     Keys.onReturnPressed: {
-        if (focusRow === 0)
-            startBestEpisodeScan()
-        else
-            openRow(rows[childList.currentIndex])
+        openRow(rows[childList.currentIndex]);
     }
-    Keys.onPressed: function(event) {
+    Keys.onPressed: function (event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-            goBack()
-            event.accepted = true
+            goBack();
+            event.accepted = true;
         }
     }
 
@@ -266,20 +195,20 @@ FocusScope {
 
         Row {
             id: showDetails
-            height: root.sh * 0.2916667
+            height: root.sh * 0.2416667
             spacing: root.sw * 0.0375
 
             Rectangle {
-                color: focusRow === 0 ? root.accentColor : root.surfaceColor
-                border.color: focusRow === 0 ? root.accentColor : root.tertiaryColor
+                color: root.surfaceColor
+                border.color: root.accentColor
                 width: root.sw * 0.1875
                 height: root.sh * 0.1166667
                 border.width: root.sh * 0.003125
 
                 Text {
                     anchors.centerIn: parent
-                    text: "PLAY \u25BA"
-                    color: focusRow === 0 ? root.surfaceColor : root.primaryColor
+                    text: "SERIES"
+                    color: root.primaryColor
                     font.family: root.globalFont
                     font.pixelSize: root.sh * 0.05
                 }
@@ -319,9 +248,7 @@ FocusScope {
                     Text {
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        text: rowsAreEpisodes
-                              ? "SERVER LOCAL SERIES. PLAY RESUMES THE CURRENT EPISODE WHEN AVAILABLE."
-                              : "SERVER LOCAL SERIES. SELECT A SEASON OR PRESS PLAY TO RESUME."
+                        text: rowsAreEpisodes ? "SERVER LOCAL EPISODE INDEX" : "SERVER LOCAL SEASON INDEX"
                         color: root.primaryColor
                         font.family: root.globalFont
                         wrapMode: Text.WordWrap
@@ -333,8 +260,21 @@ FocusScope {
         }
 
         Text {
-            id: childListLabel
+            id: showError
+            visible: errorText !== ""
             anchors.top: showDetails.bottom
+            text: errorText
+            color: root.secondaryColor
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            leftPadding: root.sw * 0.009375
+            font.pixelSize: root.sh * 0.0291667
+        }
+
+        Text {
+            id: childListLabel
+            visible: rows.length > 0
+            anchors.top: showError.visible ? showError.bottom : showDetails.bottom
             text: rowsAreEpisodes ? "Episodes:" : "Seasons:"
             color: root.secondaryColor
             font.family: root.globalFont
@@ -347,6 +287,7 @@ FocusScope {
 
         ListView {
             id: childList
+            visible: rows.length > 0
             model: rows
             anchors.top: childListLabel.bottom
             anchors.left: parent.left
@@ -361,9 +302,9 @@ FocusScope {
 
                 list: childList
                 rowIndex: index
-                focused: focusRow === 1
+                focused: true
                 text: showRoot.childLabel(modelData)
-                detail: showRoot.hasResume(modelData) ? "RSUM" : (modelData.sizeText || "")
+                detail: (modelData.type || "") === "localFolder" ? "OPEN" : (showRoot.hasResume(modelData) ? "RSUM" : (modelData.durationDisplay || modelData.sizeText || ""))
             }
         }
     }
@@ -411,15 +352,25 @@ FocusScope {
             SequentialAnimation {
                 running: rowRoot.selected && rowText.implicitWidth > textClip.width
                 loops: Animation.Infinite
-                onRunningChanged: if (!running) rowText.x = 0
-                PauseAnimation { duration: 1500 }
+                onRunningChanged: if (!running)
+                    rowText.x = 0
+                PauseAnimation {
+                    duration: 1500
+                }
                 NumberAnimation {
-                    target: rowText; property: "x"
+                    target: rowText
+                    property: "x"
                     to: textClip.width - rowText.implicitWidth
                     duration: Math.abs(to) * 20
                 }
-                PauseAnimation { duration: 2000 }
-                PropertyAction { target: rowText; property: "x"; value: 0 }
+                PauseAnimation {
+                    duration: 2000
+                }
+                PropertyAction {
+                    target: rowText
+                    property: "x"
+                    value: 0
+                }
             }
         }
 

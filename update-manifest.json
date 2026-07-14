@@ -1,14 +1,14 @@
 {
-  "version": "v1.4.7",
-  "app_version": "1.4.7",
+  "version": "v1.4.8",
+  "app_version": "1.4.8",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.7/Tater-Tube-v1.4.7-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.7.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.8/Tater-Tube-v1.4.8-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.8.tar.gz",
   "notes": [
-    "Shows Tube TV as a server-provided top-level The Tube menu item instead of injecting it under Local.",
-    "Keeps The Tube catalog order aligned with the server: Tube TV, Stream, then Local.",
-    "Updates the Tube TV menu labels to match the server configuration naming."
+    "Cleans up The Tube Local series browsing so shows open as browse-only series views.",
+    "Fixes season selection so clicking a season opens episodes instead of trying to play the season folder.",
+    "Keeps only season and episode views playable while preserving the VCR-style list presentation."
   ]
 }
