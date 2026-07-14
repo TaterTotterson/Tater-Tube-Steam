@@ -41,6 +41,13 @@ FocusScope {
     property var guideLineupMetadata: ({})
     property double guideNowMs: Date.now()
     property string guideMascotSource: Qt.resolvedUrl("../../../assets/images/mascots/usenet.png")
+    property bool teletextVisible: false
+    property string teletextPage: "100"
+    property string teletextTitle: "TATERTEXT INDEX"
+    property double teletextNowMs: Date.now()
+    property var teletextActiveStreams: []
+    property var teletextServerStatus: ({})
+    property string teletextFont: "DejaVu Sans Mono"
 
     focus: true
 
@@ -165,6 +172,288 @@ FocusScope {
         for (var i = 0; i < limit; i++)
             rows.push(channel.schedule[(start + i) % channel.schedule.length])
         return rows
+    }
+
+    function teletextChannels() {
+        return [
+            { number: "100", title: "TATERTEXT INDEX", teletextPage: "100" },
+            { number: "101", title: "TATER STATUS", teletextPage: "101" },
+            { number: "200", title: "TUBE TV GUIDE", teletextPage: "200" },
+            { number: "300", title: "SYSTEM STATS", teletextPage: "300" },
+            { number: "400", title: "NOW PLAYING", teletextPage: "400" },
+            { number: "500", title: "SERVER STATUS", teletextPage: "500" },
+            { number: "600", title: "CONTROLS HELP", teletextPage: "600" },
+            { number: "888", title: "SUBTITLES", teletextPage: "888" }
+        ]
+    }
+
+    function isTeletextChannel(channel) {
+        return channel && String(channel.teletextPage || "") !== ""
+    }
+
+    function teletextChannelCount() {
+        return teletextChannels().length
+    }
+
+    function teletextRealChannels() {
+        return guideDisplayChannels || []
+    }
+
+    function teletextTwo(value) {
+        return value < 10 ? "0" + value : String(value)
+    }
+
+    function teletextClock() {
+        var d = new Date(teletextNowMs)
+        return teletextTwo(d.getHours()) + ":" + teletextTwo(d.getMinutes()) + ":" + teletextTwo(d.getSeconds())
+    }
+
+    function teletextDate() {
+        var d = new Date(teletextNowMs)
+        return teletextTwo(d.getMonth() + 1) + "/" + teletextTwo(d.getDate()) + "/" + String(d.getFullYear()).slice(-2)
+    }
+
+    function teletextClean(value, fallback) {
+        var text = String(value === undefined || value === null ? "" : value).trim()
+        return text === "" ? fallback : text.toUpperCase()
+    }
+
+    function teletextShort(value, limit) {
+        var text = teletextClean(value, "")
+        if (text.length <= limit)
+            return text
+        return text.slice(0, Math.max(0, limit - 1)) + "."
+    }
+
+    function teletextLine(text, color, bg) {
+        return {
+            text: teletextClean(text, "").slice(0, 42),
+            color: color || "#ffffff",
+            bg: bg || "transparent"
+        }
+    }
+
+    function teletextBlank() {
+        return teletextLine("", "#ffffff")
+    }
+
+    function teletextSetting(key, fallback) {
+        var value = appCore.get_setting(tubeModuleId, key)
+        if (value === undefined || value === null || value === "")
+            return fallback
+        return value
+    }
+
+    function teletextBool(value) {
+        return value === true || value === "ON" || value === "true" || value === "1"
+    }
+
+    function teletextSetupStatus() {
+        var status = usenetBackend.get_setup_status()
+        return status || ({})
+    }
+
+    function teletextRefreshData() {
+        teletextNowMs = Date.now()
+        teletextServerStatus = teletextSetupStatus()
+        if (teletextVisible && (teletextPage === "300" || teletextPage === "400" || teletextPage === "500"))
+            usenetBackend.load_active_streams()
+    }
+
+    function teletextAddFooter(rows) {
+        rows.push(teletextBlank())
+        rows.push(teletextLine("TUNE UP/DOWN FOR NEXT SERVICE", "#00ffff"))
+        rows.push(teletextLine("NO PAGE CURSOR - PLEASE WAIT", "#ffff00"))
+        return rows
+    }
+
+    function teletextIndexRows() {
+        var rows = [
+            teletextLine("TATERTEXT 100  MAIN INDEX", "#ffff00", "#0018a8"),
+            teletextBlank(),
+            teletextLine("100  MAIN INDEX", "#00ff00"),
+            teletextLine("101  TATER TUBE STATUS", "#ffffff"),
+            teletextLine("200  TUBE TV GUIDE", "#ffffff"),
+            teletextLine("300  WEATHER STYLE SYSTEM STATS", "#ffffff"),
+            teletextLine("400  NOW PLAYING / ACTIVE STREAMS", "#ffffff"),
+            teletextLine("500  SERVER STATUS", "#ffffff"),
+            teletextLine("600  CONTROLS AND HELP", "#ffffff"),
+            teletextLine("888  SUBTITLE INFORMATION", "#ffffff"),
+            teletextBlank(),
+            teletextLine("############################", "#ff3030"),
+            teletextLine("#  TATER TUBE INFORMATION  #", "#ffff00"),
+            teletextLine("############################", "#ff3030")
+        ]
+        return teletextAddFooter(rows)
+    }
+
+    function teletextStatusRows() {
+        var status = teletextServerStatus || ({})
+        var channelCount = teletextRealChannels().length
+        var mode = teletextClean(teletextSetting("tube_transcode_mode", "AUTO"), "AUTO")
+        var quality = profileLabel(teletextSetting("tube_transcode_quality", "AUTO"))
+        var rows = [
+            teletextLine("TATERTEXT 101  TATER STATUS", "#ffff00", "#0018a8"),
+            teletextBlank(),
+            teletextLine("APP VERSION       " + appCore.appVersion, "#00ff00"),
+            teletextLine("SERVER PAIRED     " + (status.configured ? "YES" : "NO"), status.configured ? "#00ff00" : "#ff3030"),
+            teletextLine("TUBE CHANNELS     " + channelCount, "#ffffff"),
+            teletextLine("SERVICE CHANNELS  " + teletextChannelCount(), "#ffffff"),
+            teletextLine("SCREEN            " + Math.round(root.sw) + "X" + Math.round(root.sh), "#ffffff"),
+            teletextLine("TRANSCODE MODE    " + mode, "#00ffff"),
+            teletextLine("QUALITY REQUEST   " + (quality === "" ? "AUTO" : quality), "#00ffff"),
+            teletextLine("COMMERCIALS       " + (commercialsEnabled() ? "ON" : "OFF"), commercialsEnabled() ? "#00ff00" : "#ffff00"),
+            teletextLine("AUTO CHANNELS     " + (autoChannelsEnabled() ? "ON" : "OFF"), autoChannelsEnabled() ? "#00ff00" : "#ffff00"),
+            teletextBlank(),
+            teletextLine("CLOCK             " + teletextClock(), "#ffff00"),
+            teletextLine("DATE              " + teletextDate(), "#ffff00")
+        ]
+        return teletextAddFooter(rows)
+    }
+
+    function teletextGuideRows() {
+        var rows = [
+            teletextLine("TATERTEXT 200  TUBE TV GUIDE", "#ffff00", "#0018a8"),
+            teletextBlank()
+        ]
+        var list = teletextRealChannels()
+        if (list.length === 0) {
+            rows.push(teletextLine("NO TUBE TV CHANNELS AVAILABLE", "#ff3030"))
+        } else {
+            rows.push(teletextLine("CH   NOW SHOWING", "#00ffff"))
+            rows.push(teletextLine("--   -------------------------", "#00ffff"))
+            for (var i = 0; i < Math.min(8, list.length); i++) {
+                var channel = list[i]
+                var resolved = findScheduleItem(channel, teletextNowMs)
+                var current = resolved ? resolved.item : null
+                var next = guideNextRows(channel, resolved ? resolved.index : -1, 1)
+                var label = String(channel.number || "--") + "   " + teletextShort(scheduleTitle(current), 28)
+                rows.push(teletextLine(label, i % 2 === 0 ? "#ffffff" : "#ffff00"))
+                if (next.length > 0)
+                    rows.push(teletextLine("     NEXT " + teletextShort(scheduleTitle(next[0]), 25), "#00ff00"))
+            }
+        }
+        return teletextAddFooter(rows)
+    }
+
+    function teletextSystemRows() {
+        var rows = [
+            teletextLine("TATERTEXT 300  SYSTEM WEATHER", "#ffff00", "#0018a8"),
+            teletextBlank(),
+            teletextLine("FORECAST FOR TATER TUBE", "#00ff00"),
+            teletextBlank(),
+            teletextLine("PICTURE CONDITIONS:", "#00ffff"),
+            teletextLine("  RESOLUTION  " + Math.round(root.sw) + "X" + Math.round(root.sh), "#ffffff"),
+            teletextLine("  THEME       OFF AIR SERVICE", "#ffffff"),
+            teletextLine("  STATIC      SCATTERED SNOW", "#ffffff"),
+            teletextBlank(),
+            teletextLine("NETWORK CONDITIONS:", "#00ffff"),
+            teletextLine("  SERVER      " + (teletextServerStatus.configured ? "LOCKED" : "NOT PAIRED"), teletextServerStatus.configured ? "#00ff00" : "#ff3030"),
+            teletextLine("  STREAMS     " + teletextActiveStreams.length + " ACTIVE", "#ffffff"),
+            teletextBlank(),
+            teletextLine("OUTLOOK:", "#00ffff"),
+            teletextLine("  SLIGHT CHANCE OF TRACKING", "#ffff00"),
+            teletextLine("  CLEARING AFTER REWIND", "#ffff00")
+        ]
+        return teletextAddFooter(rows)
+    }
+
+    function teletextNowPlayingRows() {
+        var rows = [
+            teletextLine("TATERTEXT 400  NOW PLAYING", "#ffff00", "#0018a8"),
+            teletextBlank()
+        ]
+        var streams = asList(teletextActiveStreams)
+        if (streams.length === 0) {
+            rows.push(teletextLine("NO ACTIVE SERVER STREAMS", "#ffff00"))
+            rows.push(teletextLine("STAND BY FOR TRANSMISSION", "#00ffff"))
+        } else {
+            for (var i = 0; i < Math.min(6, streams.length); i++) {
+                var row = streams[i] || ({})
+                rows.push(teletextLine(teletextShort(row.title || row.name || row.path || "UNTITLED", 36), "#ffffff"))
+                rows.push(teletextLine("  PLAYER " + teletextShort(row.player_name || row.player || "TATER", 20), "#00ffff"))
+                rows.push(teletextLine("  " + teletextShort(streamInfoFromActiveStream(row), 34), "#00ff00"))
+            }
+        }
+        return teletextAddFooter(rows)
+    }
+
+    function teletextServerRows() {
+        var status = teletextServerStatus || ({})
+        var serverUrl = teletextShort(status.serverUrl || "NOT SET", 31)
+        var rows = [
+            teletextLine("TATERTEXT 500  SERVER STATUS", "#ffff00", "#0018a8"),
+            teletextBlank(),
+            teletextLine("TATER TUBE SERVER", "#00ff00"),
+            teletextLine("  PAIRING     " + (status.configured ? "READY" : "REQUIRED"), status.configured ? "#00ff00" : "#ff3030"),
+            teletextLine("  URL         " + serverUrl, "#ffffff"),
+            teletextLine("  ACTIVE      " + teletextActiveStreams.length + " STREAMS", "#ffffff"),
+            teletextBlank(),
+            teletextLine("TRANSCODING REQUEST", "#00ffff"),
+            teletextLine("  MODE        " + teletextClean(teletextSetting("tube_transcode_mode", "AUTO"), "AUTO"), "#ffffff"),
+            teletextLine("  QUALITY     " + teletextClean(teletextSetting("tube_transcode_quality", "AUTO"), "AUTO"), "#ffffff"),
+            teletextBlank(),
+            teletextLine("SERVER CHANNEL DATA", "#00ffff"),
+            teletextLine("  STARTED     " + teletextShort(guideLineupMetadata.startedAt || "UNKNOWN", 25), "#ffffff"),
+            teletextLine("  PLANNED TO  " + teletextShort(guideLineupMetadata.plannedUntil || "UNKNOWN", 25), "#ffffff")
+        ]
+        return teletextAddFooter(rows)
+    }
+
+    function teletextHelpRows() {
+        var rows = [
+            teletextLine("TATERTEXT 600  CONTROLS", "#ffff00", "#0018a8"),
+            teletextBlank(),
+            teletextLine("REMOTE CONTROL GUIDE", "#00ff00"),
+            teletextBlank(),
+            teletextLine("UP       NEXT CHANNEL", "#ffffff"),
+            teletextLine("DOWN     PREVIOUS CHANNEL", "#ffffff"),
+            teletextLine("BACK     EXIT TUBE TV", "#ffffff"),
+            teletextLine("OK       TUNE CURRENT CHANNEL", "#ffffff"),
+            teletextLine("LEFT     DISABLED IN TV MODE", "#ffff00"),
+            teletextLine("RIGHT    DISABLED IN TV MODE", "#ffff00"),
+            teletextBlank(),
+            teletextLine("TATERTEXT PAGES ARE PASSIVE.", "#00ffff"),
+            teletextLine("WAIT FOR UPDATES OR TUNE AWAY.", "#00ffff")
+        ]
+        return teletextAddFooter(rows)
+    }
+
+    function teletextSubtitleRows() {
+        var rows = [
+            teletextLine("TATERTEXT 888  SUBTITLES", "#ffff00", "#0018a8"),
+            teletextBlank(),
+            teletextLine("SUBTITLE SERVICE", "#00ff00"),
+            teletextBlank(),
+            teletextLine("[STATIC CRACKLES]", "#ffffff"),
+            teletextLine("[A TAPE WHIRS IN THE DISTANCE]", "#ffffff"),
+            teletextLine("[REMOTE BUTTON CLICKS]", "#ffffff"),
+            teletextBlank(),
+            teletextLine("THIS PAGE INTENTIONALLY LEFT", "#00ffff"),
+            teletextLine("MOSTLY PERIOD CORRECT.", "#00ffff"),
+            teletextBlank(),
+            teletextLine("888 WAS OFTEN THE SUBTITLE PAGE", "#ffff00"),
+            teletextLine("ON OLD TELETEXT SERVICES.", "#ffff00")
+        ]
+        return teletextAddFooter(rows)
+    }
+
+    function teletextRows() {
+        if (teletextPage === "101")
+            return teletextStatusRows()
+        if (teletextPage === "200")
+            return teletextGuideRows()
+        if (teletextPage === "300")
+            return teletextSystemRows()
+        if (teletextPage === "400")
+            return teletextNowPlayingRows()
+        if (teletextPage === "500")
+            return teletextServerRows()
+        if (teletextPage === "600")
+            return teletextHelpRows()
+        if (teletextPage === "888")
+            return teletextSubtitleRows()
+        return teletextIndexRows()
     }
 
     function mediaKind(row) {
@@ -1112,7 +1401,7 @@ FocusScope {
         })
         guideDisplayChannels = realChannels
         guideLineupMetadata = metadata || ({})
-        channels = [guideChannel()].concat(realChannels)
+        channels = [guideChannel()].concat(realChannels).concat(teletextChannels())
         loading = false
         loadingServerLineup = false
         currentScheduleIndex = -1
@@ -1236,6 +1525,7 @@ FocusScope {
         if (guideChannelVisible)
             guideCrawlAnimation.stop()
         guideChannelVisible = false
+        teletextVisible = false
         tuningStaticVisible = true
         noSignalVisible = false
         streamStarted = false
@@ -1288,6 +1578,10 @@ FocusScope {
         var channel = selectedChannel()
         if (isGuideChannel(channel)) {
             showGuideChannel()
+            return
+        }
+        if (isTeletextChannel(channel)) {
+            showTeletextChannel(channel)
             return
         }
         if (channel && channel.streamUrl) {
@@ -1358,8 +1652,32 @@ FocusScope {
             mpvController.stop()
         }
         guideChannelVisible = true
+        teletextVisible = false
         guideNowMs = Date.now()
         Qt.callLater(restartGuideScroll)
+    }
+
+    function showTeletextChannel(channel) {
+        scheduleAdvanceTimer.stop()
+        transitionBlankVisible = false
+        tuningStaticVisible = false
+        noSignalVisible = false
+        streamStarted = false
+        currentChannelLiveStream = false
+        currentStreamUsesServer = false
+        currentScheduleIndex = -1
+        if (guideChannelVisible)
+            guideCrawlAnimation.stop()
+        guideChannelVisible = false
+        teletextPage = String(channel.teletextPage || "100")
+        teletextTitle = String(channel.title || "TATERTEXT")
+        statusText = channelLabel(channel)
+        if (mpvController.running) {
+            stoppingForTune = true
+            mpvController.stop()
+        }
+        teletextVisible = true
+        teletextRefreshData()
     }
 
     function launchPlayback(url, offset, label, segmentRemaining, item, timelineOffset, useServerSeek) {
@@ -1532,6 +1850,18 @@ FocusScope {
         onTriggered: tvRoot.guideNowMs = Date.now()
     }
 
+    Timer {
+        id: teletextRefreshTimer
+        interval: 1000
+        repeat: true
+        running: tvRoot.teletextVisible && !tvRoot.leaving
+        onTriggered: {
+            tvRoot.teletextNowMs = Date.now()
+            if (Math.floor(tvRoot.teletextNowMs / 1000) % 5 === 0)
+                tvRoot.teletextRefreshData()
+        }
+    }
+
     Connections {
         target: usenetBackend
 
@@ -1568,9 +1898,11 @@ FocusScope {
         }
 
         function onActiveStreamsLoaded(streams) {
+            var rows = tvRoot.asList(streams)
+            if (tvRoot.teletextVisible)
+                tvRoot.teletextActiveStreams = rows
             if (!tvRoot.currentStreamUsesServer)
                 return
-            var rows = tvRoot.asList(streams)
             if (rows.length === 0)
                 return
             tvRoot.updateStreamOverlayInfo(tvRoot.streamInfoFromActiveStream(rows[0]))
@@ -1909,6 +2241,169 @@ FocusScope {
             anchors.fill: parent
             color: "transparent"
             border.color: "#22ffffff"
+            border.width: Math.max(1, root.sh * 0.002)
+        }
+    }
+
+    Rectangle {
+        id: teletextScreen
+        anchors.fill: parent
+        visible: tvRoot.teletextVisible && !tvRoot.loading
+        color: "#000000"
+        z: 4
+
+        Rectangle {
+            id: teletextTopBar
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: root.sh * 0.105
+            color: "#0018a8"
+
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: root.sw * 0.035
+                anchors.verticalCenter: parent.verticalCenter
+                text: "P" + tvRoot.teletextPage
+                color: "#ffff00"
+                font.family: tvRoot.teletextFont
+                font.bold: true
+                font.pixelSize: root.sh * 0.055
+            }
+
+            Text {
+                anchors.centerIn: parent
+                text: "TATERTEXT"
+                color: "#ffffff"
+                font.family: tvRoot.teletextFont
+                font.bold: true
+                font.pixelSize: root.sh * 0.062
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: root.sw * 0.035
+                anchors.verticalCenter: parent.verticalCenter
+                text: tvRoot.teletextClock()
+                color: "#00ffff"
+                font.family: tvRoot.teletextFont
+                font.bold: true
+                font.pixelSize: root.sh * 0.047
+            }
+        }
+
+        Rectangle {
+            id: teletextSubBar
+            anchors.top: teletextTopBar.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: root.sh * 0.06
+            color: "#000000"
+            border.color: "#ffffff"
+            border.width: Math.max(1, root.sh * 0.002)
+
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: root.sw * 0.04
+                anchors.verticalCenter: parent.verticalCenter
+                text: "CH " + (tvRoot.selectedChannel() ? tvRoot.selectedChannel().number : "---") + "  " + tvRoot.teletextTitle
+                color: "#00ff00"
+                font.family: tvRoot.teletextFont
+                font.bold: true
+                font.pixelSize: root.sh * 0.034
+                elide: Text.ElideRight
+                width: parent.width * 0.7
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: root.sw * 0.04
+                anchors.verticalCenter: parent.verticalCenter
+                text: tvRoot.teletextDate()
+                color: "#ffff00"
+                font.family: tvRoot.teletextFont
+                font.bold: true
+                font.pixelSize: root.sh * 0.034
+            }
+        }
+
+        Item {
+            id: teletextBody
+            anchors.top: teletextSubBar.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: teletextFastBar.top
+            anchors.margins: root.sw * 0.026
+            clip: true
+
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                spacing: Math.max(1, root.sh * 0.003)
+
+                Repeater {
+                    model: tvRoot.teletextRows()
+
+                    Rectangle {
+                        width: parent.width
+                        height: root.sh * 0.029
+                        color: modelData.bg || "transparent"
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: root.sw * 0.025
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - root.sw * 0.05
+                            text: modelData.text || ""
+                            color: modelData.color || "#ffffff"
+                            font.family: tvRoot.teletextFont
+                            font.bold: true
+                            font.pixelSize: root.sh * 0.023
+                            elide: Text.ElideRight
+                            horizontalAlignment: Text.AlignLeft
+                        }
+                    }
+                }
+            }
+        }
+
+        Row {
+            id: teletextFastBar
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: root.sh * 0.075
+
+            Repeater {
+                model: [
+                    { label: "NEWS", color: "#d60000" },
+                    { label: "STATUS", color: "#00a800" },
+                    { label: "GUIDE", color: "#d6d600" },
+                    { label: "SERVER", color: "#0039d8" }
+                ]
+
+                Rectangle {
+                    width: teletextFastBar.width / 4
+                    height: teletextFastBar.height
+                    color: modelData.color
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: modelData.label
+                        color: modelData.label === "GUIDE" ? "#000000" : "#ffffff"
+                        font.family: tvRoot.teletextFont
+                        font.bold: true
+                        font.pixelSize: root.sh * 0.032
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            border.color: "#444444"
             border.width: Math.max(1, root.sh * 0.002)
         }
     }

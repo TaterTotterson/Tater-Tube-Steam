@@ -1,14 +1,14 @@
 {
-  "version": "v1.4.9",
-  "app_version": "1.4.9",
+  "version": "v1.4.10",
+  "app_version": "1.4.10",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.9/Tater-Tube-v1.4.9-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.9.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.10/Tater-Tube-v1.4.10-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.10.tar.gz",
   "notes": [
-    "Adds CH 01 Tater Guide to The Tube TV Mode as a passive scrolling guide channel.",
-    "Uses the server lineup timing so the guide shows what each channel is airing now and what comes next.",
-    "Keeps guide movement automatic only, while normal channel up/down tuning still works."
+    "Adds TaterText service channels to The Tube TV Mode using high channel numbers.",
+    "Adds teletext-style pages for index, app status, Tube TV guide, system stats, active streams, server status, controls, and subtitles.",
+    "Keeps TaterText pages passive like real TV service channels while normal channel up/down tuning still works."
   ]
 }
