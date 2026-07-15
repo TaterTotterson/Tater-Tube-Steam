@@ -13,10 +13,26 @@ FocusScope {
     property string tubeModuleId: "com.240mp.usenet"
     property var rows: []
 
+    function settingEnabled(key, fallback) {
+        var value = appCore.get_setting(tubeModuleId, key)
+        if (value === undefined || value === null || value === "")
+            return fallback
+        return value === true || value === "ON" || value === "true" || value === "1"
+    }
+
+    function guideChannelEnabled() {
+        return settingEnabled("tube_tv_guide_channel", true)
+    }
+
+    function teletextEnabled() {
+        return settingEnabled("tube_tv_teletext", true)
+    }
+
     function rebuildRows() {
         rows = [
             { key: "start", title: "START TV MODE" },
-            { key: "server", title: "TUBE TV SETTINGS" }
+            { key: "guide", title: "CH 01 GUIDE " + (guideChannelEnabled() ? "ON" : "OFF") },
+            { key: "teletext", title: "TATERTEXT " + (teletextEnabled() ? "ON" : "OFF") }
         ]
     }
 
@@ -28,11 +44,14 @@ FocusScope {
             navigateTo("TubeTvMode.qml", {
                 categories: navParams.categories || []
             }, { currentIndex: menuList.currentIndex })
-        } else if (row.key === "server") {
-            rows = [
-                { key: "start", title: "START TV MODE" },
-                { key: "server", title: "USE SERVER WEB UI" }
-            ]
+        } else if (row.key === "guide") {
+            appCore.save_setting(tubeModuleId, "tube_tv_guide_channel",
+                                 guideChannelEnabled() ? "OFF" : "ON")
+            rebuildRows()
+        } else if (row.key === "teletext") {
+            appCore.save_setting(tubeModuleId, "tube_tv_teletext",
+                                 teletextEnabled() ? "OFF" : "ON")
+            rebuildRows()
         }
     }
 

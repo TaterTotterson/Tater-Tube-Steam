@@ -78,6 +78,14 @@ FocusScope {
         return settingEnabled(tubeModuleId, "tube_tv_mode_commercials", true)
     }
 
+    function guideServiceEnabled() {
+        return settingEnabled(tubeModuleId, "tube_tv_guide_channel", true)
+    }
+
+    function teletextServiceEnabled() {
+        return settingEnabled(tubeModuleId, "tube_tv_teletext", true)
+    }
+
     function midrollCommercialsEnabled() {
         return settingEnabled(tubeModuleId, "tube_midroll_commercials", false)
     }
@@ -218,6 +226,8 @@ FocusScope {
     }
 
     function teletextChannels() {
+        if (!teletextServiceEnabled())
+            return []
         return [
             { number: "100", title: "TATERTEXT INDEX", teletextPage: "100" },
             { number: "101", title: "TATER STATUS", teletextPage: "101" },
@@ -240,6 +250,17 @@ FocusScope {
 
     function teletextRealChannels() {
         return guideDisplayChannels || []
+    }
+
+    function serviceChannels(realChannels) {
+        var out = []
+        if (guideServiceEnabled())
+            out.push(guideChannel())
+        return out.concat(realChannels || []).concat(teletextChannels())
+    }
+
+    function startupChannelIndex(realChannelCount) {
+        return guideServiceEnabled() && realChannelCount > 0 ? 1 : 0
     }
 
     function teletextTwo(value) {
@@ -280,6 +301,40 @@ FocusScope {
         return teletextLine("", "#ffffff")
     }
 
+    function teletextHeader(page, title, bg) {
+        return [
+            teletextLine("P" + page + "  TATERTEXT  " + teletextDate() + " " + teletextClock(), "#ffffff", "#000000"),
+            teletextLine("##########################################", "#ffff00", bg || "#0018a8"),
+            teletextLine("## " + teletextShort(title, 36), "#ffff00", bg || "#0018a8"),
+            teletextLine("##########################################", "#ffff00", bg || "#0018a8")
+        ]
+    }
+
+    function teletextArtTater(color) {
+        return [
+            teletextLine("        .----.       .----.", color || "#ffff00"),
+            teletextLine("       / T  T |     / TUBE|", color || "#ffff00"),
+            teletextLine("      |  .--. |    | .--. |", "#ffffff"),
+            teletextLine("      | ( OO )|    | ON  ||", "#ffffff"),
+            teletextLine("       '.___.'      '.___.'", color || "#ffff00")
+        ]
+    }
+
+    function teletextArtDish(color) {
+        return [
+            teletextLine("          ____", color || "#00ffff"),
+            teletextLine("     ____/    )   TATER SIGNAL", color || "#00ffff"),
+            teletextLine("   _/  __   _/    ))  ))  ))", "#ffffff"),
+            teletextLine("  /___/  )_/      GOOD LOCK", "#ffff00")
+        ]
+    }
+
+    function teletextBox(rows, title, color) {
+        rows.push(teletextLine("+" + "----------------------------------------" + "+", color || "#ff3030"))
+        rows.push(teletextLine("| " + teletextShort(title, 38), color || "#ff3030"))
+        rows.push(teletextLine("+" + "----------------------------------------" + "+", color || "#ff3030"))
+    }
+
     function teletextSetting(key, fallback) {
         var value = appCore.get_setting(tubeModuleId, key)
         if (value === undefined || value === null || value === "")
@@ -305,28 +360,22 @@ FocusScope {
 
     function teletextAddFooter(rows) {
         rows.push(teletextBlank())
-        rows.push(teletextLine("TUNE UP/DOWN FOR NEXT SERVICE", "#00ffff"))
-        rows.push(teletextLine("NO PAGE CURSOR - PLEASE WAIT", "#ffff00"))
+        rows.push(teletextLine(" FASTEXT  RED   GREEN  YELLOW  BLUE ", "#000000", "#00ffff"))
+        rows.push(teletextLine("  TUNE UP/DOWN FOR NEXT SERVICE PAGE", "#ffff00", "#000000"))
         return rows
     }
 
     function teletextIndexRows() {
-        var rows = [
-            teletextLine("TATERTEXT 100  MAIN INDEX", "#ffff00", "#0018a8"),
-            teletextBlank(),
-            teletextLine("100  MAIN INDEX", "#00ff00"),
-            teletextLine("101  TATER TUBE STATUS", "#ffffff"),
-            teletextLine("200  TUBE TV GUIDE", "#ffffff"),
-            teletextLine("300  WEATHER STYLE SYSTEM STATS", "#ffffff"),
-            teletextLine("400  NOW PLAYING / ACTIVE STREAMS", "#ffffff"),
-            teletextLine("500  SERVER STATUS", "#ffffff"),
-            teletextLine("600  CONTROLS AND HELP", "#ffffff"),
-            teletextLine("888  SUBTITLE INFORMATION", "#ffffff"),
-            teletextBlank(),
-            teletextLine("############################", "#ff3030"),
-            teletextLine("#  TATER TUBE INFORMATION  #", "#ffff00"),
-            teletextLine("############################", "#ff3030")
-        ]
+        var rows = teletextHeader("100", "TATER TUBE MAIN INDEX", "#0018a8")
+        rows = rows.concat(teletextArtTater("#ffff00"))
+        rows.push(teletextLine("100 MAIN INDEX       101 TATER STATUS", "#00ff00", "#000000"))
+        rows.push(teletextLine("200 TUBE TV GUIDE    300 SYSTEM MAP", "#ffffff", "#000000"))
+        rows.push(teletextLine("400 NOW PLAYING      500 SERVER ROOM", "#ffffff", "#000000"))
+        rows.push(teletextLine("600 REMOTE HELP      888 SUBTITLES", "#ffffff", "#000000"))
+        rows.push(teletextLine("==========================================", "#ff3030"))
+        rows.push(teletextLine("   WELCOME TO THE TATER TEXT SERVICE", "#ffff00", "#0018a8"))
+        rows.push(teletextLine("   NO CURSOR - WAIT FOR YOUR PAGE", "#00ffff"))
+        rows.push(teletextLine("   OLD SIGNALS  NEW TUBES  HOT SPUDS", "#00ff00"))
         return teletextAddFooter(rows)
     }
 
@@ -335,87 +384,70 @@ FocusScope {
         var channelCount = teletextRealChannels().length
         var mode = teletextClean(teletextSetting("tube_transcode_mode", "AUTO"), "AUTO")
         var quality = profileLabel(teletextSetting("tube_transcode_quality", "AUTO"))
-        var rows = [
-            teletextLine("TATERTEXT 101  TATER STATUS", "#ffff00", "#0018a8"),
-            teletextBlank(),
-            teletextLine("APP VERSION       " + appCore.appVersion, "#00ff00"),
-            teletextLine("SERVER PAIRED     " + (status.configured ? "YES" : "NO"), status.configured ? "#00ff00" : "#ff3030"),
-            teletextLine("TUBE CHANNELS     " + channelCount, "#ffffff"),
-            teletextLine("SERVICE CHANNELS  " + teletextChannelCount(), "#ffffff"),
-            teletextLine("SCREEN            " + Math.round(root.sw) + "X" + Math.round(root.sh), "#ffffff"),
-            teletextLine("TRANSCODE MODE    " + mode, "#00ffff"),
-            teletextLine("QUALITY REQUEST   " + (quality === "" ? "AUTO" : quality), "#00ffff"),
-            teletextLine("COMMERCIALS       " + (commercialsEnabled() ? "ON" : "OFF"), commercialsEnabled() ? "#00ff00" : "#ffff00"),
-            teletextLine("AUTO CHANNELS     " + (autoChannelsEnabled() ? "ON" : "OFF"), autoChannelsEnabled() ? "#00ff00" : "#ffff00"),
-            teletextBlank(),
-            teletextLine("CLOCK             " + teletextClock(), "#ffff00"),
-            teletextLine("DATE              " + teletextDate(), "#ffff00")
-        ]
+        var rows = teletextHeader("101", "TATER TUBE STATUS", "#d60000")
+        teletextBox(rows, "SET TOP BOX REPORT", "#ffff00")
+        rows.push(teletextLine("APP VERSION .... " + appCore.appVersion, "#00ff00"))
+        rows.push(teletextLine("SERVER PAIRED ... " + (status.configured ? "YES" : "NO"), status.configured ? "#00ff00" : "#ff3030"))
+        rows.push(teletextLine("TUBE CHANNELS ... " + channelCount + "    TEXT " + teletextChannelCount(), "#ffffff"))
+        rows.push(teletextLine("SCREEN .......... " + Math.round(root.sw) + "X" + Math.round(root.sh), "#ffffff"))
+        rows.push(teletextLine("TRANSCODE ....... " + mode + " / " + (quality === "" ? "AUTO" : quality), "#00ffff"))
+        rows.push(teletextLine("COMMERCIALS ..... " + (commercialsEnabled() ? "ON" : "OFF"), commercialsEnabled() ? "#00ff00" : "#ffff00"))
+        rows.push(teletextLine("AUTO CHANNELS ... " + (autoChannelsEnabled() ? "ON" : "OFF"), autoChannelsEnabled() ? "#00ff00" : "#ffff00"))
+        rows = rows.concat(teletextArtDish("#00ffff"))
         return teletextAddFooter(rows)
     }
 
     function teletextGuideRows() {
-        var rows = [
-            teletextLine("TATERTEXT 200  TUBE TV GUIDE", "#ffff00", "#0018a8"),
-            teletextBlank()
-        ]
+        var rows = teletextHeader("200", "TATER GUIDE", "#0018a8")
         var list = teletextRealChannels()
         if (list.length === 0) {
             rows.push(teletextLine("NO TUBE TV CHANNELS AVAILABLE", "#ff3030"))
+            rows.push(teletextLine("CHECK SERVER SCHEDULE AND MEDIA DURATIONS", "#ffff00"))
         } else {
-            rows.push(teletextLine("CH   NOW SHOWING", "#00ffff"))
-            rows.push(teletextLine("--   -------------------------", "#00ffff"))
-            for (var i = 0; i < Math.min(8, list.length); i++) {
+            rows.push(teletextLine(" CH   NOW SHOWING                 NEXT", "#000000", "#00ffff"))
+            for (var i = 0; i < Math.min(7, list.length); i++) {
                 var channel = list[i]
                 var resolved = findScheduleItem(channel, teletextNowMs)
                 var current = resolved ? resolved.item : null
                 var next = guideNextRows(channel, resolved ? resolved.index : -1, 1)
-                var label = String(channel.number || "--") + "   " + teletextShort(scheduleTitle(current), 28)
-                rows.push(teletextLine(label, i % 2 === 0 ? "#ffffff" : "#ffff00"))
+                var label = String(channel.number || "--") + "  " + teletextShort(scheduleTitle(current), 24)
+                rows.push(teletextLine(label, i % 2 === 0 ? "#ffffff" : "#ffff00", i % 2 === 0 ? "#000000" : "#00005f"))
                 if (next.length > 0)
-                    rows.push(teletextLine("     NEXT " + teletextShort(scheduleTitle(next[0]), 25), "#00ff00"))
+                    rows.push(teletextLine("     >> " + teletextShort(scheduleTitle(next[0]), 31), "#00ff00"))
             }
         }
         return teletextAddFooter(rows)
     }
 
     function teletextSystemRows() {
-        var rows = [
-            teletextLine("TATERTEXT 300  SYSTEM WEATHER", "#ffff00", "#0018a8"),
-            teletextBlank(),
-            teletextLine("FORECAST FOR TATER TUBE", "#00ff00"),
-            teletextBlank(),
-            teletextLine("PICTURE CONDITIONS:", "#00ffff"),
-            teletextLine("  RESOLUTION  " + Math.round(root.sw) + "X" + Math.round(root.sh), "#ffffff"),
-            teletextLine("  THEME       OFF AIR SERVICE", "#ffffff"),
-            teletextLine("  STATIC      SCATTERED SNOW", "#ffffff"),
-            teletextBlank(),
-            teletextLine("NETWORK CONDITIONS:", "#00ffff"),
-            teletextLine("  SERVER      " + (teletextServerStatus.configured ? "LOCKED" : "NOT PAIRED"), teletextServerStatus.configured ? "#00ff00" : "#ff3030"),
-            teletextLine("  STREAMS     " + teletextActiveStreams.length + " ACTIVE", "#ffffff"),
-            teletextBlank(),
-            teletextLine("OUTLOOK:", "#00ffff"),
-            teletextLine("  SLIGHT CHANCE OF TRACKING", "#ffff00"),
-            teletextLine("  CLEARING AFTER REWIND", "#ffff00")
-        ]
+        var rows = teletextHeader("300", "TATER WEATHER MAP", "#0018a8")
+        rows.push(teletextLine("      SYSTEM CONDITIONS FOR THE TUBE", "#00ff00"))
+        rows.push(teletextLine("        .-''''-.      SNOW  40%", "#ffff00"))
+        rows.push(teletextLine("      .'  CRT   '.    BUZZ  LOW", "#ffff00"))
+        rows.push(teletextLine("     /  STATIC   |    SYNC  GOOD", "#ffffff"))
+        rows.push(teletextLine("     '._      _.'     HEAT  OK", "#ffffff"))
+        rows.push(teletextLine("--------'----'----------------------", "#ff3030"))
+        rows.push(teletextLine("RESOLUTION ..... " + Math.round(root.sw) + "X" + Math.round(root.sh), "#ffffff"))
+        rows.push(teletextLine("SERVER ......... " + (teletextServerStatus.configured ? "LOCKED" : "NOT PAIRED"), teletextServerStatus.configured ? "#00ff00" : "#ff3030"))
+        rows.push(teletextLine("STREAMS ........ " + teletextActiveStreams.length + " ACTIVE", "#ffffff"))
+        rows.push(teletextLine("OUTLOOK ........ TRACKING IMPROVING", "#00ffff"))
         return teletextAddFooter(rows)
     }
 
     function teletextNowPlayingRows() {
-        var rows = [
-            teletextLine("TATERTEXT 400  NOW PLAYING", "#ffff00", "#0018a8"),
-            teletextBlank()
-        ]
+        var rows = teletextHeader("400", "NOW PLAYING", "#0018a8")
+        rows.push(teletextLine("   ___   ___   ___     ACTIVE STREAMS", "#ffff00"))
+        rows.push(teletextLine("  |REC| |PLAY| |TV |    LIVE FROM SERVER", "#ffff00"))
+        rows.push(teletextLine("   ---   ---   ---", "#ff3030"))
         var streams = asList(teletextActiveStreams)
         if (streams.length === 0) {
             rows.push(teletextLine("NO ACTIVE SERVER STREAMS", "#ffff00"))
             rows.push(teletextLine("STAND BY FOR TRANSMISSION", "#00ffff"))
         } else {
-            for (var i = 0; i < Math.min(6, streams.length); i++) {
+            for (var i = 0; i < Math.min(4, streams.length); i++) {
                 var row = streams[i] || ({})
-                rows.push(teletextLine(teletextShort(row.title || row.name || row.path || "UNTITLED", 36), "#ffffff"))
-                rows.push(teletextLine("  PLAYER " + teletextShort(row.player_name || row.player || "TATER", 20), "#00ffff"))
-                rows.push(teletextLine("  " + teletextShort(streamInfoFromActiveStream(row), 34), "#00ff00"))
+                rows.push(teletextLine("> " + teletextShort(row.title || row.name || row.path || "UNTITLED", 35), "#ffffff", "#00005f"))
+                rows.push(teletextLine("  BOX " + teletextShort(row.player_name || row.player || "TATER", 18) + "  " + teletextShort(streamInfoFromActiveStream(row), 16), "#00ff00"))
             }
         }
         return teletextAddFooter(rows)
@@ -424,60 +456,45 @@ FocusScope {
     function teletextServerRows() {
         var status = teletextServerStatus || ({})
         var serverUrl = teletextShort(status.serverUrl || "NOT SET", 31)
-        var rows = [
-            teletextLine("TATERTEXT 500  SERVER STATUS", "#ffff00", "#0018a8"),
-            teletextBlank(),
-            teletextLine("TATER TUBE SERVER", "#00ff00"),
-            teletextLine("  PAIRING     " + (status.configured ? "READY" : "REQUIRED"), status.configured ? "#00ff00" : "#ff3030"),
-            teletextLine("  URL         " + serverUrl, "#ffffff"),
-            teletextLine("  ACTIVE      " + teletextActiveStreams.length + " STREAMS", "#ffffff"),
-            teletextBlank(),
-            teletextLine("TRANSCODING REQUEST", "#00ffff"),
-            teletextLine("  MODE        " + teletextClean(teletextSetting("tube_transcode_mode", "AUTO"), "AUTO"), "#ffffff"),
-            teletextLine("  QUALITY     " + teletextClean(teletextSetting("tube_transcode_quality", "AUTO"), "AUTO"), "#ffffff"),
-            teletextBlank(),
-            teletextLine("SERVER CHANNEL DATA", "#00ffff"),
-            teletextLine("  STARTED     " + teletextShort(guideLineupMetadata.startedAt || "UNKNOWN", 25), "#ffffff"),
-            teletextLine("  PLANNED TO  " + teletextShort(guideLineupMetadata.plannedUntil || "UNKNOWN", 25), "#ffffff")
-        ]
+        var rows = teletextHeader("500", "SERVER ROOM", "#d60000")
+        rows.push(teletextLine("  [====]  [====]  [====]  TATER RACK", "#00ffff"))
+        rows.push(teletextLine("  |    |  |    |  |    |  HUMMING", "#ffffff"))
+        rows.push(teletextLine("  [====]  [====]  [====]  " + (status.configured ? "ONLINE" : "PAIR ME"), status.configured ? "#00ff00" : "#ff3030"))
+        teletextBox(rows, "LINK STATUS", "#ffff00")
+        rows.push(teletextLine("PAIRING ....... " + (status.configured ? "READY" : "REQUIRED"), status.configured ? "#00ff00" : "#ff3030"))
+        rows.push(teletextLine("URL ........... " + serverUrl, "#ffffff"))
+        rows.push(teletextLine("ACTIVE ........ " + teletextActiveStreams.length + " STREAMS", "#ffffff"))
+        rows.push(teletextLine("MODE .......... " + teletextClean(teletextSetting("tube_transcode_mode", "AUTO"), "AUTO"), "#00ffff"))
+        rows.push(teletextLine("QUALITY ....... " + teletextClean(teletextSetting("tube_transcode_quality", "AUTO"), "AUTO"), "#00ffff"))
+        rows.push(teletextLine("GUIDE START ... " + teletextShort(guideLineupMetadata.startedAt || "UNKNOWN", 24), "#ffff00"))
         return teletextAddFooter(rows)
     }
 
     function teletextHelpRows() {
-        var rows = [
-            teletextLine("TATERTEXT 600  CONTROLS", "#ffff00", "#0018a8"),
-            teletextBlank(),
-            teletextLine("REMOTE CONTROL GUIDE", "#00ff00"),
-            teletextBlank(),
-            teletextLine("UP       NEXT CHANNEL", "#ffffff"),
-            teletextLine("DOWN     PREVIOUS CHANNEL", "#ffffff"),
-            teletextLine("BACK     EXIT TUBE TV", "#ffffff"),
-            teletextLine("OK       TUNE CURRENT CHANNEL", "#ffffff"),
-            teletextLine("LEFT     DISABLED IN TV MODE", "#ffff00"),
-            teletextLine("RIGHT    DISABLED IN TV MODE", "#ffff00"),
-            teletextBlank(),
-            teletextLine("TATERTEXT PAGES ARE PASSIVE.", "#00ffff"),
-            teletextLine("WAIT FOR UPDATES OR TUNE AWAY.", "#00ffff")
-        ]
+        var rows = teletextHeader("600", "REMOTE HELP", "#0018a8")
+        rows.push(teletextLine("      .----------------------.", "#ffff00"))
+        rows.push(teletextLine("      |  UP  | OK |  BACK    |", "#ffffff"))
+        rows.push(teletextLine("      | DOWN |HOME|  MENU    |", "#ffffff"))
+        rows.push(teletextLine("      '----------------------'", "#ffff00"))
+        rows.push(teletextLine("UP .......... NEXT CHANNEL", "#00ff00"))
+        rows.push(teletextLine("DOWN ........ PREVIOUS CHANNEL", "#00ff00"))
+        rows.push(teletextLine("BACK ........ EXIT TUBE TV", "#ffffff"))
+        rows.push(teletextLine("OK .......... TUNE CURRENT CHANNEL", "#ffffff"))
+        rows.push(teletextLine("LEFT/RIGHT .. DISABLED IN TV MODE", "#ffff00"))
+        rows.push(teletextLine("TEXT PAGES ARE PASSIVE BROADCASTS", "#00ffff"))
         return teletextAddFooter(rows)
     }
 
     function teletextSubtitleRows() {
-        var rows = [
-            teletextLine("TATERTEXT 888  SUBTITLES", "#ffff00", "#0018a8"),
-            teletextBlank(),
-            teletextLine("SUBTITLE SERVICE", "#00ff00"),
-            teletextBlank(),
-            teletextLine("[STATIC CRACKLES]", "#ffffff"),
-            teletextLine("[A TAPE WHIRS IN THE DISTANCE]", "#ffffff"),
-            teletextLine("[REMOTE BUTTON CLICKS]", "#ffffff"),
-            teletextBlank(),
-            teletextLine("THIS PAGE INTENTIONALLY LEFT", "#00ffff"),
-            teletextLine("MOSTLY PERIOD CORRECT.", "#00ffff"),
-            teletextBlank(),
-            teletextLine("888 WAS OFTEN THE SUBTITLE PAGE", "#ffff00"),
-            teletextLine("ON OLD TELETEXT SERVICES.", "#ffff00")
-        ]
+        var rows = teletextHeader("888", "SUBTITLE SERVICE", "#0018a8")
+        rows.push(teletextLine("   .--------------------------------.", "#ffff00"))
+        rows.push(teletextLine("   | [STATIC CRACKLES]              |", "#ffffff"))
+        rows.push(teletextLine("   | [A TAPE WHIRS IN THE DISTANCE] |", "#ffffff"))
+        rows.push(teletextLine("   | [REMOTE BUTTON CLICKS]         |", "#ffffff"))
+        rows.push(teletextLine("   '--------------------------------'", "#ffff00"))
+        rows.push(teletextLine("888 WAS OFTEN A SUBTITLE PAGE", "#00ffff"))
+        rows.push(teletextLine("TATER TEXT HONORS THE OLD SIGNAL", "#00ff00"))
+        rows.push(teletextLine("NO ACTUAL SUBTITLES ARE BROADCAST", "#ffff00"))
         return teletextAddFooter(rows)
     }
 
@@ -1444,7 +1461,7 @@ FocusScope {
         })
         guideDisplayChannels = realChannels
         guideLineupMetadata = metadata || ({})
-        channels = [guideChannel()].concat(realChannels).concat(teletextChannels())
+        channels = serviceChannels(realChannels)
         loading = false
         loadingServerLineup = false
         currentScheduleIndex = -1
@@ -1459,7 +1476,7 @@ FocusScope {
             return
         }
 
-        tuneIndex(realChannels.length > 0 ? 1 : 0, false)
+        tuneIndex(startupChannelIndex(realChannels.length), false)
     }
 
     function selectedChannel() {
