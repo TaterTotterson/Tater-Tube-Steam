@@ -351,13 +351,16 @@ QString UsenetBackend::playback_url(const QString &rawUrl, int screenWidth, int 
         const QString path = url.path();
         const bool isTubeTVChannel = path.contains(QStringLiteral("/api/tater/tv/channel/"))
             && path.endsWith(QStringLiteral("/playlist.m3u8"));
-        if (isTubeTVChannel && isRaspberryPi5()) {
+        if (isRaspberryPi5()) {
+            // Pi 5 has a hardware HEVC decoder. Keep the detected HDMI profile,
+            // including 4K, and use HEVC for every server-transcoded Tube stream.
+            query.addQueryItem(QStringLiteral("codec"), QStringLiteral("hevc"));
             if (profile == QStringLiteral("hdmi_4k"))
-                profile = QStringLiteral("hdmi_1080p");
-            if (profile == QStringLiteral("hdmi_1080p")) {
-                query.addQueryItem(QStringLiteral("codec"), QStringLiteral("hevc"));
+                query.addQueryItem(QStringLiteral("fallback_profile"), QStringLiteral("hdmi_1080p"));
+            else if (profile == QStringLiteral("hdmi_1080p"))
                 query.addQueryItem(QStringLiteral("fallback_profile"), QStringLiteral("hdmi_720p"));
-            }
+            else if (profile == QStringLiteral("hdmi_720p"))
+                query.addQueryItem(QStringLiteral("fallback_profile"), QStringLiteral("crt_480p"));
         } else if (isTubeTVChannel && profile == QStringLiteral("hdmi_4k")) {
             profile = QStringLiteral("hdmi_1080p");
         }

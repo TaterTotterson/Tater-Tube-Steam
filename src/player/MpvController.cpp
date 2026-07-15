@@ -141,9 +141,9 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
 {
     m_videoProfile = detectVideoProfile();
     qInfo("[MpvController] video profile: %s",
-          m_videoProfile == VideoProfile::Pi4       ? "Pi 4 — drm + v4l2m2m-copy"
-        : m_videoProfile == VideoProfile::Pi3       ? "Pi 3 — gpu/drm + v4l2m2m (zero-copy)"
-        : m_videoProfile == VideoProfile::PiFullKms ? "Pi 5 (Full KMS) — drm + auto-safe"
+          m_videoProfile == VideoProfile::Pi4       ? "Pi 4 - gpu/drm + DRM Prime"
+        : m_videoProfile == VideoProfile::Pi3       ? "Pi 3 - gpu/drm + auto-safe"
+        : m_videoProfile == VideoProfile::PiFullKms ? "Pi 5 - gpu/drm + DRM Prime"
                                                     : "generic");
 
     QFile f(m_inputConfPath);
@@ -319,13 +319,13 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
              << QStringLiteral("--network-timeout=15");
         if (isTubeTvHls) {
             args << QStringLiteral("--cache-pause-initial=no")
-                 << QStringLiteral("--cache-secs=24")
-                 << QStringLiteral("--demuxer-readahead-secs=12")
+                 << QStringLiteral("--cache-secs=12")
+                 << QStringLiteral("--demuxer-readahead-secs=6")
                  << QStringLiteral("--demuxer-max-bytes=32MiB")
                  << QStringLiteral("--demuxer-max-back-bytes=2MiB")
                  << QStringLiteral("--demuxer-seekable-cache=no")
                  << QStringLiteral("--audio-buffer=0.5")
-                 << QStringLiteral("--demuxer-lavf-o=live_start_index=-3,prefer_x_start=1,seg_max_retry=5");
+                 << QStringLiteral("--demuxer-lavf-o=live_start_index=-2,prefer_x_start=1,seg_max_retry=5");
         } else {
             args << QStringLiteral("--demuxer-readahead-secs=24")
                  << QStringLiteral("--demuxer-max-bytes=64MiB")
@@ -914,8 +914,8 @@ MpvController::VideoProfile MpvController::detectVideoProfile() const {
 #ifdef Q_OS_LINUX
     // The Raspberry Pi model string (e.g. "Raspberry Pi 4 Model B Rev 1.5") is
     // exposed NUL-terminated at /proc/device-tree/model. Pi 3 and Pi 4 both boot
-    // Fake KMS but have different CPU budgets, so they get different decode paths;
-    // Pi 5 boots Full KMS and direct-renders with --vo=drm.
+    // Fake KMS but have different CPU budgets. Pi 5 boots Full KMS and uses a
+    // separate full-resolution DRM Prime video plane.
     QFile f("/proc/device-tree/model");
     if (f.open(QIODevice::ReadOnly)) {
         const QString model =
@@ -963,20 +963,19 @@ void MpvController::appendVideoArgs(QStringList &args) const {
 
     if (m_headlessMode) {
         if (m_videoProfile == VideoProfile::Pi4) {
-            // Pi 4B: native --vo=drm draws on the primary plane with precise KMS
-            // page-flip timing (smooth cadence). v4l2m2m-copy keeps decode on the
-            // hardware block but copies frames back to RAM so they land on that
-            // primary plane instead of the drmprime *overlay* plane — the overlay
-            // path (vo=gpu zero-copy) decodes just as cheaply but its presentation
-            // jitters into visible 24p judder. The copy + zimg downscale costs more
-            // CPU (~50-70% across 4 cores) but the Pi4 has the headroom, and crop
-            // (--panscan) works because frames go through the normal scaler.
-            args << "--vo=drm";
+            // Keep decoded H.264 frames in DRM Prime buffers. The video uses the
+            // hardware overlay plane while mpv's OSD stays on the primary plane,
+            // avoiding the full-frame RAM copy and software scale of vo=drm.
+            args << "--vo=gpu"
+                 << "--gpu-context=drm"
+                 << "--hwdec=drm"
+                 << "--profile=fast"
+                 << "--drm-draw-plane=primary"
+                 << "--drm-drmprime-video-plane=overlay";
             if (hasCompositeDrmConnector()) {
                 args << "--drm-device=/dev/dri/card1"
                      << "--drm-connector=Composite-1";
             }
-            args << "--hwdec=v4l2m2m-copy";
         } else if (m_videoProfile == VideoProfile::Pi3) {
             if (m_pi3SoftwareFallback) {
                 // Last resort for Pi 3s where the DRM GPU/v4l2m2m path fails to
@@ -997,8 +996,19 @@ void MpvController::appendVideoArgs(QStringList &args) const {
                      << "--hwdec=auto-safe"
                      << "--profile=fast";
             }
+        } else if (m_videoProfile == VideoProfile::PiFullKms) {
+            // Pi 5: keep full-resolution HEVC video on the primary DRM plane.
+            // Render the much cheaper OSD surface at 1080p on an overlay plane;
+            // KMS scales that surface without reducing the video resolution.
+            args << "--vo=gpu"
+                 << "--gpu-context=drm"
+                 << "--hwdec=drm"
+                 << "--profile=fast"
+                 << "--drm-draw-plane=overlay"
+                 << "--drm-drmprime-video-plane=primary"
+                 << "--drm-draw-surface-size=1920x1080";
         } else {
-            // Pi 5 (Full KMS) and the safe fallback for unknown headless Linux.
+            // Safe fallback for unknown headless Linux devices.
             args << "--vo=drm" << "--hwdec=auto-safe";
         }
     } else {

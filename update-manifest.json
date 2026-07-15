@@ -1,14 +1,14 @@
 {
-  "version": "v1.5.0",
-  "app_version": "1.5.0",
+  "version": "v1.5.1",
+  "app_version": "1.5.1",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.0/Tater-Tube-v1.5.0-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.0.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.1/Tater-Tube-v1.5.1-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.1.tar.gz",
   "notes": [
-    "Adds HDMI 720p as a Tube transcode target for smoother Pi playback.",
-    "Tunes Tube TV playback for Pi 5 HDMI by preferring HEVC at 1080p with a 720p fallback when needed.",
-    "Keeps the channel 01 Tater Guide synced to the server timeline while the guide is tuned."
+    "Moves Pi 4 composite and Pi 5 HDMI playback to zero-copy DRM Prime hardware decoding to reduce stutter and CPU use.",
+    "Restores automatic full-resolution Pi 5 HDMI transcoding, including 4K HEVC with a 1080p fallback.",
+    "Speeds Tube TV channel tuning with a shorter tune delay, lower-latency HLS buffering, and a closer live edge."
   ]
 }

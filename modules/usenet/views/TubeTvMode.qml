@@ -29,7 +29,8 @@ FocusScope {
     property bool stoppingForScheduleAdvance: false
     property bool streamStarted: false
     property bool transitionBlankVisible: false
-    property int tuneDelayMs: 1200
+    // Debounce channel surfing without making every cold tune wait a full second.
+    property int tuneDelayMs: 700
     property string statusText: "LOADING TV MODE"
     property string streamInfoText: ""
     property bool currentStreamUsesServer: false
