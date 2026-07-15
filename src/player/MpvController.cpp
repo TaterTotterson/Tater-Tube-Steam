@@ -186,6 +186,10 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
         if (silenceMs > 30000) {
             qWarning("[MpvController] WATCHDOG: no IPC time-pos event for %lld s — possible freeze",
                      silenceMs / 1000);
+            if (m_currentStayIdle && m_process && m_process->state() != QProcess::NotRunning) {
+                qWarning("[MpvController] WATCHDOG: killing stalled live TV mpv process");
+                m_process->kill();
+            }
         }
     });
 }
@@ -305,8 +309,15 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << QString("--volume=%1").arg(m_volume, 0, 'f', 3);
     if (m_muted)
         args << QStringLiteral("--mute=yes");
-    if (isOtaTvMode)
-        args << QStringLiteral("--idle=yes");
+    if (isOtaTvMode) {
+        args << QStringLiteral("--idle=yes")
+             << QStringLiteral("--cache=yes")
+             << QStringLiteral("--cache-pause=no")
+             << QStringLiteral("--demuxer-readahead-secs=24")
+             << QStringLiteral("--demuxer-max-bytes=64MiB")
+             << QStringLiteral("--demuxer-max-back-bytes=16MiB")
+             << QStringLiteral("--network-timeout=15");
+    }
     m_currentStayIdle = isOtaTvMode;
 
     if (hasOscScript)

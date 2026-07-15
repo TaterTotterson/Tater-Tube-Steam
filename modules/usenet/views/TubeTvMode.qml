@@ -174,6 +174,49 @@ FocusScope {
         return rows
     }
 
+    function guideRowPitch() {
+        return Math.max(1, root.sh * 0.14) + Math.max(1, root.sh * 0.006)
+    }
+
+    function guideCycleHeight() {
+        var count = guideDisplayChannels ? guideDisplayChannels.length : 0
+        return count * guideRowPitch()
+    }
+
+    function guideScrollSpeed() {
+        return guideRowPitch() / 14.0
+    }
+
+    function guideScrollBaseMs() {
+        var serverStartMs = dateMs(guideLineupMetadata.startedAt)
+        if (serverStartMs > 0)
+            return serverStartMs
+        return startedAtMs > 0 ? startedAtMs : Date.now()
+    }
+
+    function guideScrollY() {
+        var cycleHeight = guideCycleHeight()
+        if (cycleHeight <= 0)
+            return 0
+        var elapsed = Math.max(0, (guideNowMs - guideScrollBaseMs()) / 1000.0)
+        var offset = (elapsed * guideScrollSpeed()) % cycleHeight
+        return -offset
+    }
+
+    function guideRepeatedChannels(viewportHeight) {
+        var base = guideDisplayChannels || []
+        if (base.length === 0)
+            return []
+        var cycleHeight = Math.max(1, guideCycleHeight())
+        var repeats = Math.max(3, Math.ceil((Math.max(0, viewportHeight) + cycleHeight) / cycleHeight) + 1)
+        var rows = []
+        for (var repeat = 0; repeat < repeats; repeat++) {
+            for (var i = 0; i < base.length; i++)
+                rows.push(base[i])
+        }
+        return rows
+    }
+
     function teletextChannels() {
         return [
             { number: "100", title: "TATERTEXT INDEX", teletextPage: "100" },
@@ -1416,7 +1459,7 @@ FocusScope {
             return
         }
 
-        tuneIndex(0, false)
+        tuneIndex(realChannels.length > 0 ? 1 : 0, false)
     }
 
     function selectedChannel() {
@@ -1522,8 +1565,6 @@ FocusScope {
     function showStaticForChannel(channel) {
         scheduleAdvanceTimer.stop()
         transitionBlankVisible = false
-        if (guideChannelVisible)
-            guideCrawlAnimation.stop()
         guideChannelVisible = false
         teletextVisible = false
         tuningStaticVisible = true
@@ -1629,12 +1670,7 @@ FocusScope {
     function restartGuideScroll() {
         if (!guideChannelVisible)
             return
-        guideCrawlAnimation.stop()
-        guideRowsColumn.y = guideViewport.height
-        guideCrawlAnimation.from = guideViewport.height
-        guideCrawlAnimation.to = -Math.max(guideRowsColumn.height, guideViewport.height)
-        guideCrawlAnimation.duration = Math.max(50000, Math.round((guideViewport.height + guideRowsColumn.height) * 115))
-        guideCrawlAnimation.start()
+        guideNowMs = Date.now()
     }
 
     function showGuideChannel() {
@@ -1666,8 +1702,6 @@ FocusScope {
         currentChannelLiveStream = false
         currentStreamUsesServer = false
         currentScheduleIndex = -1
-        if (guideChannelVisible)
-            guideCrawlAnimation.stop()
         guideChannelVisible = false
         teletextPage = String(channel.teletextPage || "100")
         teletextTitle = String(channel.title || "TATERTEXT")
@@ -1786,7 +1820,6 @@ FocusScope {
         leaving = true
         tuneTimer.stop()
         scheduleAdvanceTimer.stop()
-        guideCrawlAnimation.stop()
         if (mpvController.running)
             mpvController.stop()
         goBack()
@@ -1844,7 +1877,7 @@ FocusScope {
 
     Timer {
         id: guideClockTimer
-        interval: 1000
+        interval: 100
         repeat: true
         running: tvRoot.guideChannelVisible && !tvRoot.leaving
         onTriggered: tvRoot.guideNowMs = Date.now()
@@ -2127,10 +2160,11 @@ FocusScope {
             Column {
                 id: guideRowsColumn
                 width: guideViewport.width
+                y: tvRoot.guideScrollY()
                 spacing: Math.max(1, root.sh * 0.006)
 
                 Repeater {
-                    model: tvRoot.guideDisplayChannels
+                    model: tvRoot.guideRepeatedChannels(guideViewport.height)
 
                     Rectangle {
                         width: guideViewport.width
@@ -2225,16 +2259,6 @@ FocusScope {
                 }
             }
 
-            NumberAnimation {
-                id: guideCrawlAnimation
-                target: guideRowsColumn
-                property: "y"
-                from: guideViewport.height
-                to: -guideRowsColumn.height
-                duration: 60000
-                loops: Animation.Infinite
-                easing.type: Easing.Linear
-            }
         }
 
         Rectangle {

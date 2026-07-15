@@ -328,8 +328,13 @@ QString UsenetBackend::playback_url(const QString &rawUrl, int screenWidth, int 
     if (mode == QStringLiteral("off")) {
         query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("0"));
     } else {
-        query.addQueryItem(QStringLiteral("profile"),
-                           playbackTranscodeProfile(screenWidth, screenHeight));
+        QString profile = playbackTranscodeProfile(screenWidth, screenHeight);
+        const QString path = url.path();
+        const bool isTubeTVChannel = path.contains(QStringLiteral("/api/tater/tv/channel/"))
+            && path.endsWith(QStringLiteral("/playlist.m3u8"));
+        if (isTubeTVChannel && profile == QStringLiteral("hdmi_4k"))
+            profile = QStringLiteral("hdmi_1080p");
+        query.addQueryItem(QStringLiteral("profile"), profile);
         query.addQueryItem(QStringLiteral("transcode"), QStringLiteral("1"));
         query.addQueryItem(QStringLiteral("hwaccel"), QStringLiteral("auto"));
     }
