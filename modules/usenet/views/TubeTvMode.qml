@@ -29,12 +29,12 @@ FocusScope {
     property bool stoppingForScheduleAdvance: false
     property bool streamStarted: false
     property bool transitionBlankVisible: false
+    property bool showChannelLabelAfterTransition: false
     // Debounce channel surfing without making every cold tune wait a full second.
     property int tuneDelayMs: 700
     property string statusText: "LOADING TV MODE"
     property string streamInfoText: ""
     property bool currentStreamUsesServer: false
-    property bool currentChannelLiveStream: false
     property double currentPlaybackOffsetSeconds: 0
     property bool currentPlaybackUsesServerSeek: false
     property bool guideChannelVisible: false
@@ -1460,7 +1460,7 @@ FocusScope {
         stoppingForTune = false
         stoppingForScheduleAdvance = false
         streamStarted = false
-        currentChannelLiveStream = false
+        showChannelLabelAfterTransition = false
         currentIndex = -1
         previousIndex = -1
         currentScheduleIndex = -1
@@ -1601,20 +1601,18 @@ FocusScope {
 
     function showStaticForChannel(channel) {
         scheduleAdvanceTimer.stop()
-        transitionBlankVisible = false
+        transitionBlankVisible = true
         guideChannelVisible = false
         teletextVisible = false
-        tuningStaticVisible = true
+        tuningStaticVisible = false
         noSignalVisible = false
         streamStarted = false
-        currentChannelLiveStream = false
+        showChannelLabelAfterTransition = true
         stoppingForScheduleAdvance = false
         statusText = channelLabel(channel)
 
-        if (mpvController.running) {
-            stoppingForTune = true
-            mpvController.stop()
-        }
+        if (mpvController.running)
+            mpvController.sendScriptMessage("240mp-ota-transition-black")
     }
 
     function requestScheduleItem(channel, item, index, offset, segmentRemaining) {
@@ -1662,11 +1660,6 @@ FocusScope {
             showTeletextChannel(channel)
             return
         }
-        if (channel && channel.streamUrl) {
-            launchChannelStream(channel)
-            return
-        }
-
         var resolved = findScheduleItem(channel)
         if (!resolved) {
             requestScheduleItem(channel, null, -1, 0.0, 0.0)
@@ -1677,40 +1670,13 @@ FocusScope {
                             resolved.segmentRemaining || 0.0)
     }
 
-    function launchChannelStream(channel) {
-        if (!channel || !channel.streamUrl) {
-            transitionBlankVisible = false
-            noSignalVisible = true
-            tuningStaticVisible = false
-            statusText = "LOCAL TV PLAYBACK FAILED"
-            return
-        }
-
-        currentScheduleIndex = -1
-        streamStarted = true
-        stoppingForTune = false
-        stoppingForScheduleAdvance = false
-        noSignalVisible = false
-        currentStreamUsesServer = true
-        currentChannelLiveStream = true
-        currentPlaybackOffsetSeconds = 0
-        currentPlaybackUsesServerSeek = false
-        var label = channelLabel(channel)
-        statusText = label
-        var playbackUrl = usenetBackend.playback_url(channel.streamUrl, Math.round(root.sw), Math.round(root.sh))
-        updateStreamOverlayInfo("SERVER CHANNEL | LIVE")
-        mpvController.loadAndPlay(playbackUrl, 0.0, 0, -1, [], false, -1, 0.0,
-                                  "", false, "ota-tv", false, label)
-        scheduleAdvanceTimer.stop()
-    }
-
     function showGuideChannel() {
         scheduleAdvanceTimer.stop()
         transitionBlankVisible = false
+        showChannelLabelAfterTransition = false
         tuningStaticVisible = false
         noSignalVisible = false
         streamStarted = false
-        currentChannelLiveStream = false
         currentStreamUsesServer = false
         currentScheduleIndex = -1
         statusText = "CH 01 TATER GUIDE"
@@ -1726,10 +1692,10 @@ FocusScope {
     function showTeletextChannel(channel) {
         scheduleAdvanceTimer.stop()
         transitionBlankVisible = false
+        showChannelLabelAfterTransition = false
         tuningStaticVisible = false
         noSignalVisible = false
         streamStarted = false
-        currentChannelLiveStream = false
         currentStreamUsesServer = false
         currentScheduleIndex = -1
         guideChannelVisible = false
@@ -1757,11 +1723,8 @@ FocusScope {
         stoppingForTune = false
         stoppingForScheduleAdvance = false
         noSignalVisible = false
-        currentChannelLiveStream = false
-        var playbackUrl = item && item.kind !== "commercial"
-            ? usenetBackend.playback_url(url, Math.round(root.sw), Math.round(root.sh))
-            : url
-        currentStreamUsesServer = item && item.kind !== "commercial"
+        var playbackUrl = usenetBackend.playback_url(url, Math.round(root.sw), Math.round(root.sh))
+        currentStreamUsesServer = true
         currentPlaybackOffsetSeconds = Math.max(0, Number(timelineOffset || offset || 0))
         currentPlaybackUsesServerSeek = useServerSeek === true
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl, item))
@@ -1800,8 +1763,8 @@ FocusScope {
             nextIndex = 0
 
         var nextItem = channel.schedule[nextIndex]
-        startedAtMs = Date.now() - Math.max(0, nextItem.start) * 1000.0
         transitionBlankVisible = true
+        showChannelLabelAfterTransition = false
         tuningStaticVisible = false
         noSignalVisible = false
         streamStarted = false
@@ -1984,15 +1947,6 @@ FocusScope {
             if (tvRoot.leaving)
                 return
             scheduleAdvanceTimer.stop()
-            if (tvRoot.currentChannelLiveStream) {
-                tvRoot.currentChannelLiveStream = false
-                tvRoot.streamStarted = false
-                tvRoot.transitionBlankVisible = false
-                tvRoot.tuningStaticVisible = false
-                tvRoot.noSignalVisible = true
-                tvRoot.statusText = "CHANNEL STREAM ENDED"
-                return
-            }
             tvRoot.learnCurrentPlaybackDuration(finalPositionMs, finalDurationMs)
             tvRoot.playNextScheduleItem()
         }
@@ -2007,17 +1961,6 @@ FocusScope {
                 tvRoot.stoppingForTune = false
                 return
             }
-            if (tvRoot.currentChannelLiveStream) {
-                tvRoot.currentChannelLiveStream = false
-                tvRoot.streamStarted = false
-                if (!tvRoot.leaving) {
-                    tvRoot.transitionBlankVisible = false
-                    tvRoot.tuningStaticVisible = false
-                    tvRoot.noSignalVisible = true
-                    tvRoot.statusText = "CHANNEL STREAM ENDED"
-                }
-                return
-            }
             if (!tvRoot.leaving && tvRoot.streamStarted)
                 tvRoot.exitTvMode()
         }
@@ -2028,12 +1971,15 @@ FocusScope {
                 return
             }
             scheduleAdvanceTimer.stop()
-            var wasLiveChannel = tvRoot.currentChannelLiveStream
-            tvRoot.currentChannelLiveStream = false
+            tvRoot.streamStarted = false
             tvRoot.transitionBlankVisible = false
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
-            tvRoot.statusText = wasLiveChannel ? "CHANNEL STREAM FAILED" : "LOCAL TV PLAYBACK FAILED"
+            tvRoot.statusText = "LOCAL TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
 
         function onScriptMessageReceived(message, arg) {
@@ -2041,6 +1987,10 @@ FocusScope {
                 tvRoot.transitionBlankVisible = false
                 tvRoot.tuningStaticVisible = false
                 tvRoot.streamStarted = true
+                if (tvRoot.showChannelLabelAfterTransition) {
+                    tvRoot.showChannelLabelAfterTransition = false
+                    mpvController.sendScriptMessage("240mp-ota-channel", tvRoot.statusText)
+                }
                 tvRoot.updateStreamOverlayInfo(tvRoot.streamInfoText)
                 tvRoot.refreshActiveStreamInfo()
                 return

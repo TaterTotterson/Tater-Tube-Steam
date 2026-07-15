@@ -403,7 +403,19 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                                                              : QStringLiteral("no"))
                    << QString("ttota-control_mode=%1").arg(isOtaMode
                                                            ? QStringLiteral("ota")
-                                                           : QStringLiteral("playback"));
+                                                           : QStringLiteral("playback"))
+                   << QString("240mp-ota-start-black=%1").arg(quietOtaLabel
+                                                               ? QStringLiteral("yes")
+                                                               : QStringLiteral("no"))
+                   << QString("240mp-ota-start_black=%1").arg(quietOtaLabel
+                                                               ? QStringLiteral("yes")
+                                                               : QStringLiteral("no"))
+                   << QString("ttota-start-black=%1").arg(quietOtaLabel
+                                                           ? QStringLiteral("yes")
+                                                           : QStringLiteral("no"))
+                   << QString("ttota-start_black=%1").arg(quietOtaLabel
+                                                           ? QStringLiteral("yes")
+                                                           : QStringLiteral("no"));
     args << QString("--script-opts=%1").arg(scriptOpts.join(","));
 
     if (loop)

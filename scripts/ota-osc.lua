@@ -5,11 +5,13 @@ local opts = {
     show_label = "yes",
     show_top_label = "yes",
     control_mode = "ota",
+    start_black = "no",
 }
 options.read_options(opts, "240mp-ota")
 options.read_options(opts, "ttota")
 
 local overlay = mp.create_osd_overlay("ass-events")
+local transition_overlay = mp.create_osd_overlay("ass-events")
 local hide_timer = nil
 local menu_timer = nil
 local DISPLAY_SECONDS = 7.0
@@ -19,6 +21,7 @@ local latest_label = ""
 local latest_stream_info = ""
 local menu_visible = false
 local quiet_next_file = false
+local transition_pending = false
 local C_WHITE = "&HFFFFFF&"
 local C_ORANGE = "&H0078FF&"
 
@@ -34,6 +37,34 @@ end
 
 local function ota_controls_enabled()
     return tostring(opts.control_mode or "ota"):lower() == "ota"
+end
+
+local function option_enabled(value)
+    value = tostring(value or "no"):lower()
+    return value == "yes" or value == "true" or value == "1" or value == "on"
+end
+
+local function show_transition_black()
+    transition_pending = true
+    local ww, wh = mp.get_osd_size()
+    if ww == 0 or wh == 0 then return end
+
+    local ass = assdraw.ass_new()
+    ass:new_event()
+    ass:pos(0, 0)
+    ass:append("{\\an7\\bord0\\shad0\\1c&H000000&\\1a&H00&}")
+    ass:draw_start()
+    ass:rect_cw(0, 0, ww, wh)
+    ass:draw_stop()
+    transition_overlay.res_x = ww
+    transition_overlay.res_y = wh
+    transition_overlay.data = ass.text
+    transition_overlay:update()
+end
+
+local function hide_transition_black()
+    transition_pending = false
+    transition_overlay:remove()
 end
 
 local function ass_escape(text)
@@ -251,7 +282,13 @@ mp.register_script_message("240mp-ota-channel", show_label)
 mp.register_script_message("240mp-ota-quiet-next-file", function()
     quiet_next_file = true
     hide()
+    show_transition_black()
 end)
+mp.register_script_message("240mp-ota-transition-black", function()
+    hide()
+    show_transition_black()
+end)
+mp.register_script_message("240mp-ota-transition-black-hide", hide_transition_black)
 mp.register_script_message("240mp-osd-menu-show", show_menu)
 mp.register_script_message("240mp-osd-menu-hide", hide_menu)
 
@@ -263,9 +300,11 @@ mp.register_script_message("240mp-ota-stream-info", function(info)
 end)
 
 mp.register_event("file-loaded", function()
+    if transition_pending then
+        show_transition_black()
+    end
     if quiet_next_file then
         quiet_next_file = false
-        overlay:remove()
         return
     end
     if not labels_enabled() or not top_label_enabled() then
@@ -278,8 +317,20 @@ mp.register_event("file-loaded", function()
 end)
 
 mp.register_event("playback-restart", function()
+    if transition_pending then
+        hide_transition_black()
+    end
     mp.commandv("script-message", "240mp-ota-file-loaded")
 end)
+
+mp.register_event("shutdown", function()
+    overlay:remove()
+    transition_overlay:remove()
+end)
+
+if option_enabled(opts.start_black) then
+    mp.add_timeout(0, show_transition_black)
+end
 
 local function tune_relative(delta)
     mp.commandv("script-message", "240mp-ota-channel-step", tostring(delta))
