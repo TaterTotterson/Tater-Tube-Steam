@@ -1,14 +1,14 @@
 {
-  "version": "v1.4.13",
-  "app_version": "1.4.13",
+  "version": "v1.4.14",
+  "app_version": "1.4.14",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.13/Tater-Tube-v1.4.13-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.13.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.4.14/Tater-Tube-v1.4.14-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.4.14.tar.gz",
   "notes": [
-    "Improves Tube TV HLS playback by tuning mpv for live-edge startup, smaller back-buffering, and segment retry.",
-    "Keeps the channel 01 Tater Guide scrolling against the live TV timeline even when you tune away and come back.",
-    "Prevents Tube TV guide scroll position from resetting when the guide channel is selected."
+    "Fixes Tube TV HLS playback stalls by removing FFmpeg reconnect behavior that retried normal playlist EOFs.",
+    "Keeps the channel 01 Tater Guide synced to live time without running its scroll timer behind video playback.",
+    "Reduces hidden Tube TV UI work while mpv is playing server channels."
   ]
 }

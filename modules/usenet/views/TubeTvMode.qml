@@ -1700,6 +1700,7 @@ FocusScope {
         }
         guideChannelVisible = true
         teletextVisible = false
+        guideNowMs = Date.now()
     }
 
     function showTeletextChannel(channel) {
@@ -1888,7 +1889,7 @@ FocusScope {
         id: guideClockTimer
         interval: 100
         repeat: true
-        running: !tvRoot.loading && !tvRoot.leaving
+        running: tvRoot.guideChannelVisible && !tvRoot.leaving
         onTriggered: tvRoot.guideNowMs = Date.now()
     }
 

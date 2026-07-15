@@ -324,8 +324,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                  << QStringLiteral("--demuxer-max-bytes=24MiB")
                  << QStringLiteral("--demuxer-max-back-bytes=4MiB")
                  << QStringLiteral("--demuxer-seekable-cache=no")
-                 << QStringLiteral("--demuxer-lavf-o=live_start_index=-2,prefer_x_start=1,seg_max_retry=3")
-                 << QStringLiteral("--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_delay_total_max=8");
+                 << QStringLiteral("--demuxer-lavf-o=live_start_index=-2,prefer_x_start=1,seg_max_retry=3");
         } else {
             args << QStringLiteral("--demuxer-readahead-secs=24")
                  << QStringLiteral("--demuxer-max-bytes=64MiB")
