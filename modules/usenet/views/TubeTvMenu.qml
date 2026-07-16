@@ -31,7 +31,7 @@ FocusScope {
     function rebuildRows() {
         rows = [
             { key: "start", title: "START TV MODE" },
-            { key: "guide", title: "CH 01 GUIDE " + (guideChannelEnabled() ? "ON" : "OFF") },
+            { key: "guide", title: "TATER GUIDE " + (guideChannelEnabled() ? "ON" : "OFF") },
             { key: "teletext", title: "TATERTEXT " + (teletextEnabled() ? "ON" : "OFF") }
         ]
     }

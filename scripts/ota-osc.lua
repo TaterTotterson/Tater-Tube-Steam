@@ -4,6 +4,7 @@ local options = require 'mp.options'
 local opts = {
     show_label = "yes",
     show_top_label = "yes",
+    show_initial_label = "no",
     control_mode = "ota",
     start_black = "no",
 }
@@ -42,6 +43,10 @@ end
 local function option_enabled(value)
     value = tostring(value or "no"):lower()
     return value == "yes" or value == "true" or value == "1" or value == "on"
+end
+
+local function initial_label_enabled()
+    return option_enabled(opts.show_initial_label)
 end
 
 local function show_transition_black()
@@ -344,7 +349,18 @@ mp.register_event("shutdown", function()
 end)
 
 if option_enabled(opts.start_black) then
-    mp.add_timeout(0, show_transition_black)
+    mp.add_timeout(0, function()
+        show_transition_black()
+        if initial_label_enabled() then
+            local label = mp.get_property("force-media-title", "")
+            if label == "" then
+                label = mp.get_property("media-title", "")
+            end
+            if label ~= "" then
+                show_tuned_channel(label)
+            end
+        end
+    end)
 end
 
 local function tune_relative(delta)

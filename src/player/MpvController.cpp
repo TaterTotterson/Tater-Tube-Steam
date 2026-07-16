@@ -283,9 +283,12 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     const bool isTubeTvHls = url.contains(QStringLiteral("/api/tater/tv/channel/"),
                                           Qt::CaseInsensitive)
         && url.contains(QStringLiteral("/playlist.m3u8"), Qt::CaseInsensitive);
-    const bool isOtaMode = (oscMode == "ota" || oscMode == "ota-quiet" || isOtaTvMode);
+    const bool isOtaMode = (oscMode == "ota" || oscMode == "ota-quiet" ||
+                            oscMode == "ota-tune" || isOtaTvMode);
     const bool isOtaOverlayMode = isOtaMode || oscMode == "tube";
-    const bool quietOtaLabel = (oscMode == "ota-quiet" || oscMode == "ota-tv-quiet");
+    const bool quietOtaLabel = (oscMode == "ota-quiet" || oscMode == "ota-tune" ||
+                                oscMode == "ota-tv-quiet");
+    const bool showInitialOtaLabel = (oscMode == "ota-tune");
     const bool showOtaTopLabel = isOtaMode && !quietOtaLabel;
     const QString oscScriptName = isOtaOverlayMode ? "ota-osc.lua"
         : "mpv-osc.lua";
@@ -415,7 +418,19 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                                                            : QStringLiteral("no"))
                    << QString("ttota-start_black=%1").arg(quietOtaLabel
                                                            ? QStringLiteral("yes")
-                                                           : QStringLiteral("no"));
+                                                           : QStringLiteral("no"))
+                   << QString("240mp-ota-show-initial-label=%1").arg(showInitialOtaLabel
+                                                                      ? QStringLiteral("yes")
+                                                                      : QStringLiteral("no"))
+                   << QString("240mp-ota-show_initial_label=%1").arg(showInitialOtaLabel
+                                                                      ? QStringLiteral("yes")
+                                                                      : QStringLiteral("no"))
+                   << QString("ttota-show-initial-label=%1").arg(showInitialOtaLabel
+                                                                  ? QStringLiteral("yes")
+                                                                  : QStringLiteral("no"))
+                   << QString("ttota-show_initial_label=%1").arg(showInitialOtaLabel
+                                                                  ? QStringLiteral("yes")
+                                                                  : QStringLiteral("no"));
     args << QString("--script-opts=%1").arg(scriptOpts.join(","));
 
     if (loop)

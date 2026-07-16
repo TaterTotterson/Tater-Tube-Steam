@@ -127,7 +127,7 @@ FocusScope {
 
     function guideChannel() {
         return {
-            number: "01",
+            number: "999",
             title: "TATER GUIDE",
             guideChannel: true,
             schedule: [],
@@ -267,14 +267,19 @@ FocusScope {
     }
 
     function serviceChannels(realChannels) {
-        var out = []
+        var out = (realChannels || []).concat(teletextChannels())
         if (guideServiceEnabled())
             out.push(guideChannel())
-        return out.concat(realChannels || []).concat(teletextChannels())
+        return out
     }
 
-    function startupChannelIndex(realChannelCount) {
-        return guideServiceEnabled() && realChannelCount > 0 ? 1 : 0
+    function startupChannelIndex(realChannels) {
+        var rows = realChannels || []
+        for (var i = 0; i < rows.length; i++) {
+            if (String((rows[i] && rows[i].number) || "") === "02")
+                return i
+        }
+        return 0
     }
 
     function teletextTwo(value) {
@@ -1470,9 +1475,7 @@ FocusScope {
     }
 
     function applyServerLineup(rows, metadata) {
-        var realChannels = asList(rows).filter(function(channel) {
-            return String((channel && channel.number) || "") !== "01"
-        })
+        var realChannels = asList(rows)
         guideDisplayChannels = realChannels
         guideLineupMetadata = metadata || ({})
         var serverNowMs = dateMs(guideLineupMetadata.serverNow)
@@ -1496,7 +1499,7 @@ FocusScope {
             return
         }
 
-        tuneIndex(startupChannelIndex(realChannels.length), false)
+        tuneIndex(startupChannelIndex(realChannels), false)
     }
 
     function selectedChannel() {
@@ -1611,8 +1614,10 @@ FocusScope {
         stoppingForScheduleAdvance = false
         statusText = channelLabel(channel)
 
-        if (mpvController.running)
+        if (mpvController.running) {
             mpvController.sendScriptMessage("240mp-ota-transition-black")
+            mpvController.sendScriptMessage("240mp-ota-tuned-channel", statusText)
+        }
     }
 
     function requestScheduleItem(channel, item, index, offset, segmentRemaining) {
@@ -1679,7 +1684,7 @@ FocusScope {
         streamStarted = false
         currentStreamUsesServer = false
         currentScheduleIndex = -1
-        statusText = "CH 01 TATER GUIDE"
+        statusText = channelLabel(selectedChannel())
         if (mpvController.running) {
             stoppingForTune = true
             mpvController.stop()
@@ -1728,7 +1733,9 @@ FocusScope {
         currentPlaybackOffsetSeconds = Math.max(0, Number(timelineOffset || offset || 0))
         currentPlaybackUsesServerSeek = useServerSeek === true
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl, item))
-        var oscMode = transitionBlankVisible ? "ota-quiet" : "ota"
+        var oscMode = showChannelLabelAfterTransition
+            ? "ota-tune"
+            : (transitionBlankVisible ? "ota-quiet" : "ota")
         mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
                                   "", false, oscMode, false, label || statusText)
 
@@ -1982,7 +1989,6 @@ FocusScope {
                 tvRoot.updateStreamOverlayInfo(tvRoot.streamInfoText)
                 if (tvRoot.showChannelLabelAfterTransition) {
                     tvRoot.showChannelLabelAfterTransition = false
-                    mpvController.sendScriptMessage("240mp-osd-menu-show")
                     mpvController.sendScriptMessage("240mp-ota-tuned-channel", tvRoot.statusText)
                 }
                 tvRoot.refreshActiveStreamInfo()
@@ -2437,7 +2443,7 @@ FocusScope {
     }
 
     Rectangle {
-        visible: tvRoot.tuningStaticVisible && !tvRoot.loading && !tvRoot.transitionBlankVisible
+        visible: tvRoot.showChannelLabelAfterTransition && !tvRoot.loading
         z: 5
         anchors.top: parent.top
         anchors.right: parent.right

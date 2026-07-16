@@ -1,15 +1,16 @@
 {
-  "version": "v1.5.4",
-  "app_version": "1.5.4",
+  "version": "v1.5.5",
+  "app_version": "1.5.5",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.4/Tater-Tube-v1.5.4-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.4.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.5/Tater-Tube-v1.5.5-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.5.tar.gz",
   "notes": [
-    "Runs every Tube TV item through the same stable MPV lifecycle used by Video on Demand instead of the persistent live-player path.",
-    "Restores the compact channel number and name in the top-right while retaining the full controls and stream overlay at the bottom.",
-    "Keeps program and commercial transitions black and free of channel overlays.",
-    "Requires Tater Tube Server v1.2.11 for Local-style scheduled-item transcoding."
+    "Shows the compact channel number and name immediately while Tube TV tunes, then keeps it visible briefly after playback begins.",
+    "Keeps the detailed bottom playback overlay hidden during channel changes and opens it only from the overlay button.",
+    "Moves the scrolling Tater Guide to channel 999 after TaterText and leaves channel 01 available for an optional server channel.",
+    "Still starts Tube TV on channel 02 and keeps automatic program and commercial transitions black.",
+    "Pairs with Tater Tube Server v1.3.1 for the optional channel 01 setting."
   ]
 }
