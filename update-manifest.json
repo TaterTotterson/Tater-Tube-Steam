@@ -1,16 +1,14 @@
 {
-  "version": "v1.5.5",
-  "app_version": "1.5.5",
+  "version": "v1.5.6",
+  "app_version": "1.5.6",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.5/Tater-Tube-v1.5.5-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.5.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.6/Tater-Tube-v1.5.6-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.6.tar.gz",
   "notes": [
-    "Shows the compact channel number and name immediately while Tube TV tunes, then keeps it visible briefly after playback begins.",
-    "Keeps the detailed bottom playback overlay hidden during channel changes and opens it only from the overlay button.",
-    "Moves the scrolling Tater Guide to channel 999 after TaterText and leaves channel 01 available for an optional server channel.",
-    "Still starts Tube TV on channel 02 and keeps automatic program and commercial transitions black.",
-    "Pairs with Tater Tube Server v1.3.1 for the optional channel 01 setting."
+    "Matches the Tube TV tuning overlay to the bordered VCR-style channel display used by TaterText and the Tater Guide.",
+    "Centers the channel number and name inside a readable white-edged overlay on CRT and HDMI displays.",
+    "Keeps the compact channel display visible while tuning and briefly after playback begins."
   ]
 }

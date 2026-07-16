@@ -103,13 +103,26 @@ local function hide()
     overlay:remove()
 end
 
-local function draw_box(ass, x, y, w, h, alpha)
+local function draw_solid_box(ass, x, y, w, h, color, alpha)
     ass:new_event()
     ass:pos(x, y)
-    ass:append(string.format("{\\bord0\\shad0\\1c&H000000&\\1a%s}", alpha or "&H55&"))
+    ass:append(string.format("{\\bord0\\shad0\\1c%s\\1a%s}",
+                             color or "&H000000&", alpha or "&H55&"))
     ass:draw_start()
     ass:rect_cw(0, 0, w, h)
     ass:draw_stop()
+end
+
+local function draw_box(ass, x, y, w, h, alpha)
+    draw_solid_box(ass, x, y, w, h, "&H000000&", alpha)
+end
+
+local function draw_channel_box(ass, x, y, w, h, border)
+    local line = math.max(1, border or 1)
+    draw_solid_box(ass, x, y, w, h, C_WHITE, "&H00&")
+    draw_solid_box(ass, x + line, y + line,
+                   math.max(1, w - line * 2), math.max(1, h - line * 2),
+                   "&H000000&", "&H9F&")
 end
 
 local function draw_text(ass, x, y, anchor, text, fs, color)
@@ -141,23 +154,26 @@ local function draw_overlay(label, with_menu, force_top_label)
         return false
     end
 
-    local margin_x = math.floor(ww * 0.08)
-    local margin_y = math.floor(wh * 0.11)
-    local pad_x = math.floor(ww * 0.018)
-    local pad_y = math.floor(wh * 0.012)
-    local fs = math.max(18, math.floor(wh * 0.065))
-    local max_box_w = math.floor(ww * 0.72)
+    local margin_x = math.floor(ww * 0.07)
+    local margin_y = math.floor(wh * 0.09)
+    local pad_x = math.floor(ww * 0.02)
+    local fs = math.max(18, math.floor(wh * 0.055))
+    local min_box_w = math.floor(ww * 0.18)
+    local max_box_w = math.floor(ww * 0.66)
     local display_label = fit_text(label, max_box_w - pad_x * 2, fs)
-    local box_w = math.min(max_box_w, estimated_text_width(display_label, fs) + pad_x * 2)
-    local box_h = math.floor(fs * 1.35 + pad_y * 2)
+    local box_w = math.min(max_box_w,
+                           math.max(min_box_w,
+                                    estimated_text_width(display_label, fs) + pad_x * 2))
+    local box_h = math.floor(wh * 0.085)
     local box_x = ww - margin_x - box_w
-    local text_x = ww - margin_x - pad_x
+    local text_x = box_x + math.floor(box_w / 2)
 
     local ass = assdraw.ass_new()
 
     if show_top_label then
-        draw_box(ass, box_x, margin_y, box_w, box_h, "&H55&")
-        draw_text(ass, text_x, margin_y + math.floor(box_h / 2), 6, display_label, fs)
+        draw_channel_box(ass, box_x, margin_y, box_w, box_h,
+                         math.max(1, math.floor(wh * 0.004)))
+        draw_text(ass, text_x, margin_y + math.floor(box_h / 2), 5, display_label, fs)
     end
 
     if with_menu then
