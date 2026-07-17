@@ -1,14 +1,15 @@
 {
-  "version": "v1.5.6",
-  "app_version": "1.5.6",
+  "version": "v1.5.7",
+  "app_version": "1.5.7",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.6/Tater-Tube-v1.5.6-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.6.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.7/Tater-Tube-v1.5.7-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.7.tar.gz",
   "notes": [
-    "Matches the Tube TV tuning overlay to the bordered VCR-style channel display used by TaterText and the Tater Guide.",
-    "Centers the channel number and name inside a readable white-edged overlay on CRT and HDMI displays.",
-    "Keeps the compact channel display visible while tuning and briefly after playback begins."
+    "Restores the Tube TV channel overlay's translucent black background while retaining its white VCR-style border.",
+    "Keeps the channel number and name continuously visible through channel selection, buffering, and playback startup.",
+    "Uses one atomic tuning update so the overlay no longer briefly disappears and reappears during channel changes.",
+    "Starts the normal seven-second display timeout only after the new channel begins playing."
   ]
 }

@@ -119,10 +119,11 @@ end
 
 local function draw_channel_box(ass, x, y, w, h, border)
     local line = math.max(1, border or 1)
-    draw_solid_box(ass, x, y, w, h, C_WHITE, "&H00&")
-    draw_solid_box(ass, x + line, y + line,
-                   math.max(1, w - line * 2), math.max(1, h - line * 2),
-                   "&H000000&", "&H9F&")
+    draw_solid_box(ass, x, y, w, h, "&H000000&", "&H9F&")
+    draw_solid_box(ass, x, y, w, line, C_WHITE, "&H00&")
+    draw_solid_box(ass, x, y + h - line, w, line, C_WHITE, "&H00&")
+    draw_solid_box(ass, x, y, line, h, C_WHITE, "&H00&")
+    draw_solid_box(ass, x + w - line, y, line, h, C_WHITE, "&H00&")
 end
 
 local function draw_text(ass, x, y, anchor, text, fs, color)
@@ -228,6 +229,10 @@ end
 local function start_label_timeout()
     if hide_timer then hide_timer:kill() end
     hide_timer = mp.add_timeout(DISPLAY_SECONDS, function()
+        hide_timer = nil
+        if transition_pending then
+            return
+        end
         if not menu_visible then
             overlay:remove()
         end
@@ -268,6 +273,19 @@ local function show_tuned_channel(label)
             end
         end)
     end
+end
+
+local function show_tuning_transition(label)
+    if not label or label == "" then return end
+    latest_label = label
+    if menu_timer then
+        menu_timer:kill()
+        menu_timer = nil
+    end
+    menu_visible = false
+    show_transition_black()
+    draw_overlay(label, false, true)
+    start_label_timeout()
 end
 
 local function hide_menu()
@@ -315,6 +333,7 @@ end
 
 mp.register_script_message("240mp-ota-channel", show_label)
 mp.register_script_message("240mp-ota-tuned-channel", show_tuned_channel)
+mp.register_script_message("240mp-ota-tune-transition", show_tuning_transition)
 mp.register_script_message("240mp-ota-quiet-next-file", function()
     quiet_next_file = true
     hide()

@@ -1615,8 +1615,7 @@ FocusScope {
         statusText = channelLabel(channel)
 
         if (mpvController.running) {
-            mpvController.sendScriptMessage("240mp-ota-transition-black")
-            mpvController.sendScriptMessage("240mp-ota-tuned-channel", statusText)
+            mpvController.sendScriptMessage("240mp-ota-tune-transition", statusText)
         }
     }
 
