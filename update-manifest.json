@@ -1,15 +1,15 @@
 {
-  "version": "v1.5.7",
-  "app_version": "1.5.7",
+  "version": "v1.5.8",
+  "app_version": "1.5.8",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.7/Tater-Tube-v1.5.7-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.7.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.8/Tater-Tube-v1.5.8-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.8.tar.gz",
   "notes": [
-    "Restores the Tube TV channel overlay's translucent black background while retaining its white VCR-style border.",
-    "Keeps the channel number and name continuously visible through channel selection, buffering, and playback startup.",
-    "Uses one atomic tuning update so the overlay no longer briefly disappears and reappears during channel changes.",
-    "Starts the normal seven-second display timeout only after the new channel begins playing."
+    "Renders the Tube TV black tuning screen and channel number as one composite MPV overlay.",
+    "Keeps the selected channel visible when changing channels, including when the previous channel overlay is still on screen.",
+    "Prepares the translucent playback overlay underneath the tuning screen for a seamless handoff when video starts.",
+    "Preserves the white VCR-style border and true transparent black background during playback."
   ]
 }

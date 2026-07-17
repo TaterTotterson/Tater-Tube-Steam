@@ -138,6 +138,37 @@ local function draw_text(ass, x, y, anchor, text, fs, color)
         ass_escape(text)))
 end
 
+local function channel_label_layout(ww, wh, label)
+    local margin_x = math.floor(ww * 0.07)
+    local margin_y = math.floor(wh * 0.09)
+    local pad_x = math.floor(ww * 0.02)
+    local fs = math.max(18, math.floor(wh * 0.055))
+    local min_box_w = math.floor(ww * 0.18)
+    local max_box_w = math.floor(ww * 0.66)
+    local display_label = fit_text(label, max_box_w - pad_x * 2, fs)
+    local box_w = math.min(max_box_w,
+                           math.max(min_box_w,
+                                    estimated_text_width(display_label, fs) + pad_x * 2))
+    local box_h = math.floor(wh * 0.085)
+    local box_x = ww - margin_x - box_w
+    return {
+        text = display_label,
+        x = box_x,
+        y = margin_y,
+        w = box_w,
+        h = box_h,
+        fs = fs,
+        text_x = box_x + math.floor(box_w / 2),
+        border = math.max(1, math.floor(wh * 0.004)),
+    }
+end
+
+local function append_channel_label(ass, layout)
+    draw_channel_box(ass, layout.x, layout.y, layout.w, layout.h, layout.border)
+    draw_text(ass, layout.text_x, layout.y + math.floor(layout.h / 2),
+              5, layout.text, layout.fs)
+end
+
 local function draw_button(ass, x, y, w, h, label, fs)
     draw_box(ass, x, y, w, h, "&H55&")
     draw_text(ass, x + math.floor(w / 2), y + math.floor(h / 2), 5, label, fs)
@@ -155,26 +186,12 @@ local function draw_overlay(label, with_menu, force_top_label)
         return false
     end
 
-    local margin_x = math.floor(ww * 0.07)
-    local margin_y = math.floor(wh * 0.09)
-    local pad_x = math.floor(ww * 0.02)
-    local fs = math.max(18, math.floor(wh * 0.055))
-    local min_box_w = math.floor(ww * 0.18)
-    local max_box_w = math.floor(ww * 0.66)
-    local display_label = fit_text(label, max_box_w - pad_x * 2, fs)
-    local box_w = math.min(max_box_w,
-                           math.max(min_box_w,
-                                    estimated_text_width(display_label, fs) + pad_x * 2))
-    local box_h = math.floor(wh * 0.085)
-    local box_x = ww - margin_x - box_w
-    local text_x = box_x + math.floor(box_w / 2)
+    local layout = channel_label_layout(ww, wh, label)
 
     local ass = assdraw.ass_new()
 
     if show_top_label then
-        draw_channel_box(ass, box_x, margin_y, box_w, box_h,
-                         math.max(1, math.floor(wh * 0.004)))
-        draw_text(ass, text_x, margin_y + math.floor(box_h / 2), 5, display_label, fs)
+        append_channel_label(ass, layout)
     end
 
     if with_menu then
@@ -223,6 +240,31 @@ local function draw_overlay(label, with_menu, force_top_label)
 
     if hide_timer then hide_timer:kill() end
     hide_timer = mp.add_timeout(DISPLAY_SECONDS, hide)
+    return true
+end
+
+local function render_tuning_transition(label)
+    local ww, wh = mp.get_osd_size()
+    if ww == 0 or wh == 0 then return false end
+
+    local ass = assdraw.ass_new()
+    ass:new_event()
+    ass:pos(0, 0)
+    ass:append("{\\an7\\bord0\\shad0\\1c&H000000&\\1a&H00&}")
+    ass:draw_start()
+    ass:rect_cw(0, 0, ww, wh)
+    ass:draw_stop()
+    append_channel_label(ass, channel_label_layout(ww, wh, label))
+
+    transition_pending = true
+    transition_overlay.res_x = ww
+    transition_overlay.res_y = wh
+    transition_overlay.data = ass.text
+    transition_overlay:update()
+
+    -- Keep the transparent playback label ready underneath the tuning screen.
+    -- Removing the tuning layer then reveals it without a blank frame.
+    draw_overlay(label, false, true)
     return true
 end
 
@@ -283,8 +325,7 @@ local function show_tuning_transition(label)
         menu_timer = nil
     end
     menu_visible = false
-    show_transition_black()
-    draw_overlay(label, false, true)
+    render_tuning_transition(label)
     start_label_timeout()
 end
 
@@ -356,7 +397,11 @@ end)
 
 mp.register_event("file-loaded", function()
     if transition_pending then
-        show_transition_black()
+        if latest_label ~= "" and initial_label_enabled() then
+            show_tuning_transition(latest_label)
+        else
+            show_transition_black()
+        end
     end
     if quiet_next_file then
         quiet_next_file = false
@@ -385,15 +430,18 @@ end)
 
 if option_enabled(opts.start_black) then
     mp.add_timeout(0, function()
-        show_transition_black()
         if initial_label_enabled() then
             local label = mp.get_property("force-media-title", "")
             if label == "" then
                 label = mp.get_property("media-title", "")
             end
             if label ~= "" then
-                show_tuned_channel(label)
+                show_tuning_transition(label)
+            else
+                show_transition_black()
             end
+        else
+            show_transition_black()
         end
     end)
 end
