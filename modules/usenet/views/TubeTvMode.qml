@@ -166,11 +166,18 @@ FocusScope {
         var kind = String((row && (row.kind || row.mediaType || row.type)) || "MEDIA").toUpperCase()
         if (kind === "COMMERCIAL")
             return "SPOT"
+        if (kind === "BUMPER")
+            return "BUMPER"
         if (kind === "EPISODE")
             return "TV"
         if (kind === "MOVIE")
             return "MOVIE"
         return kind
+    }
+
+    function isInterstitialItem(item) {
+        var kind = String((item && item.kind) || "").toLowerCase()
+        return kind === "commercial" || kind === "bumper"
     }
 
     function guideNextRows(channel, currentIndex, count) {
@@ -634,8 +641,10 @@ FocusScope {
     }
 
     function plannedStreamInfo(playbackUrl, item) {
-        if (item && item.kind === "commercial")
-            return "SERVER SPOT | DIRECT PLAY"
+        if (isInterstitialItem(item))
+            return item.kind === "bumper"
+                ? "SERVER BUMPER | DIRECT PLAY"
+                : "SERVER SPOT | DIRECT PLAY"
         if (queryValue(playbackUrl, "transcode") === "0")
             return "SERVER STREAM | DIRECT PLAY"
 
@@ -1547,7 +1556,7 @@ FocusScope {
 
         var oldDuration = Math.max(0, Number(item.duration || 0))
         var mediaOffset = Math.max(0, Number(item.mediaOffset || 0))
-        var newDuration = item.kind === "commercial"
+        var newDuration = isInterstitialItem(item)
             ? observedFullDuration
             : Math.max(5, observedFullDuration - mediaOffset)
 
@@ -1621,9 +1630,7 @@ FocusScope {
 
     function requestScheduleItem(channel, item, index, offset, segmentRemaining) {
         if (!channel || !item ||
-                (item.kind === "commercial"
-                 ? !item.url
-                 : !item.streamUrl)) {
+                (isInterstitialItem(item) ? !item.url : !item.streamUrl)) {
             transitionBlankVisible = false
             tuningStaticVisible = false
             noSignalVisible = true
@@ -1634,13 +1641,13 @@ FocusScope {
         currentScheduleIndex = index
         var label = channelLabel(channel)
         statusText = label
-        var url = item.kind === "commercial"
+        var url = isInterstitialItem(item)
             ? item.url
             : item.streamUrl
         var startOffset = offset || 0.0
-        if (item.kind === "commercial" && item.local === true)
+        if (isInterstitialItem(item) && item.local === true)
             startOffset = 0.0
-        var useServerSeek = item.kind !== "commercial" && usenetBackend.uses_server_seek()
+        var useServerSeek = !isInterstitialItem(item) && usenetBackend.uses_server_seek()
         var timelineOffset = startOffset
         if (useServerSeek) {
             url = urlWithStartOffset(url, startOffset)

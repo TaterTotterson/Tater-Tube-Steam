@@ -25,6 +25,9 @@ FocusScope {
     property var categoryRows: mode === "subcategories" ? subcategories : shortcutRows.concat(categories)
     property var items: []
     property var streams: []
+    readonly property bool browsingSeries: mode === "items"
+                                                   && items.length > 0
+                                                   && String((items[0] || {}).mediaType || "").toLowerCase() === "show"
     property int currentCategoryIndex: 0
     property int currentSubcategoryIndex: 0
     property int currentItemIndex: 0
@@ -63,9 +66,20 @@ FocusScope {
 
     function pageList(list, direction) {
         if (!list || list.count <= 0) return
-        var rowHeight = root.sh * 0.0583333
+        var rowHeight = list === seriesList ? root.sh * 0.0525 : root.sh * 0.0583333
         var rows = Math.max(1, Math.floor(list.height / rowHeight) - 1)
         setListIndex(list, list.currentIndex + direction * rows)
+    }
+
+    function activeItemList() {
+        return browsingSeries ? seriesList : itemList
+    }
+
+    function seriesTapeNumber(index) {
+        var value = String(Math.max(0, index) + 1)
+        while (value.length < 3)
+            value = "0" + value
+        return value
     }
 
     function focusSetupRow() {
@@ -445,7 +459,7 @@ FocusScope {
                 navigateTo("LocalShow.qml", {
                     item: row,
                     libraryName: currentCategoryTitle
-                }, { currentIndex: itemList.currentIndex })
+                }, { currentIndex: currentItemIndex })
                 return
             }
             if ((row.mediaType || "") === "season") {
@@ -453,7 +467,7 @@ FocusScope {
                     item: row,
                     showTitle: currentCategoryTitle,
                     libraryName: currentCategoryTitle
-                }, { currentIndex: itemList.currentIndex })
+                }, { currentIndex: currentItemIndex })
                 return
             }
             itemStack = itemStack.concat([{
@@ -522,7 +536,7 @@ FocusScope {
             currentCategoryTitle = previous.title || currentCategoryTitle
             items = previous.rows || []
             mode = "items"
-            setListIndex(itemList, previous.index || 0)
+            setListIndex(activeItemList(), previous.index || 0)
             return
         }
         returnToCategoryMenu()
@@ -604,20 +618,21 @@ FocusScope {
         }
 
         if (mode === "items") {
+            var activeList = activeItemList()
             if (event.key === Qt.Key_Up) {
-                setListIndex(itemList, itemList.currentIndex - 1)
+                setListIndex(activeList, activeList.currentIndex - 1)
                 event.accepted = true
             } else if (event.key === Qt.Key_Down) {
-                setListIndex(itemList, itemList.currentIndex + 1)
+                setListIndex(activeList, activeList.currentIndex + 1)
                 event.accepted = true
             } else if (event.key === Qt.Key_Left) {
-                pageList(itemList, -1)
+                pageList(activeList, -1)
                 event.accepted = true
             } else if (event.key === Qt.Key_Right) {
-                pageList(itemList, 1)
+                pageList(activeList, 1)
                 event.accepted = true
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                selectItem(itemList.currentIndex)
+                selectItem(activeList.currentIndex)
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 returnFromItems()
@@ -639,7 +654,7 @@ FocusScope {
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 mode = "items"
-                setListIndex(itemList, currentItemIndex)
+                setListIndex(activeItemList(), currentItemIndex)
                 event.accepted = true
             }
             return
@@ -753,7 +768,7 @@ FocusScope {
                 return
             }
             mode = "items"
-            setListIndex(itemList, 0)
+            setListIndex(activeItemList(), 0)
         }
 
         function onStreamsReady(requestId, title, rows) {
@@ -1033,9 +1048,193 @@ FocusScope {
         }
     }
 
+    Item {
+        id: seriesArchive
+        visible: browsingSeries
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: root.sh * 0.235
+        anchors.leftMargin: root.sw * 0.115625
+        width: root.sw * 0.76875
+        height: root.sh * 0.555
+
+        Rectangle {
+            id: seriesArchiveHeader
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: root.sh * 0.062
+            color: root.surfaceColor
+            border.color: root.accentColor
+            border.width: Math.max(1, root.sh * 0.0025)
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: root.sw * 0.012
+                color: root.accentColor
+            }
+
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: root.sw * 0.028
+                text: "SERIES ARCHIVE"
+                color: root.primaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                font.pixelSize: root.sh * 0.04
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.rightMargin: root.sw * 0.014
+                text: items.length + (items.length === 1 ? " TAPE" : " TAPES")
+                color: root.secondaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                font.pixelSize: root.sh * 0.027
+            }
+        }
+
+        Item {
+            id: seriesColumnHeader
+            anchors.top: seriesArchiveHeader.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: root.sh * 0.036
+
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: root.sw * 0.014
+                text: "TAPE"
+                color: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.022
+            }
+
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: root.sw * 0.13
+                text: "PROGRAM TITLE"
+                color: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.022
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.rightMargin: root.sw * 0.014
+                text: "MODE"
+                color: root.tertiaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.022
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Math.max(1, root.sh * 0.0015)
+                color: root.tertiaryColor
+                opacity: 0.65
+            }
+        }
+
+        ListView {
+            id: seriesList
+            anchors.top: seriesColumnHeader.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            model: items
+            clip: true
+            focus: visible
+            currentIndex: currentItemIndex
+            onCurrentIndexChanged: currentItemIndex = currentIndex
+
+            delegate: Item {
+                id: seriesRow
+                required property var modelData
+                required property int index
+                readonly property bool selected: seriesList.currentIndex === index
+
+                width: seriesList.width
+                height: root.sh * 0.0525
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: root.accentColor
+                    opacity: seriesRow.selected ? 0.88 : (seriesRow.index % 2 === 0 ? 0.07 : 0)
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: root.sw * 0.007
+                    color: seriesRow.selected ? root.secondaryColor : "transparent"
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: root.sw * 0.014
+                    width: root.sw * 0.1
+                    text: "T-" + usenetRoot.seriesTapeNumber(seriesRow.index)
+                    color: seriesRow.selected ? root.surfaceColor : root.secondaryColor
+                    font.family: root.globalFont
+                    font.pixelSize: root.sh * 0.028
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.right: modeText.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: root.sw * 0.13
+                    anchors.rightMargin: root.sw * 0.016
+                    text: seriesRow.modelData.title || "UNTITLED SERIES"
+                    color: seriesRow.selected ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    elide: Text.ElideRight
+                    font.pixelSize: root.sh * 0.038
+                }
+
+                Text {
+                    id: modeText
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.rightMargin: root.sw * 0.014
+                    width: root.sw * 0.105
+                    text: seriesRow.selected ? "OPEN \u25BA" : "SERIES"
+                    color: seriesRow.selected ? root.surfaceColor : root.tertiaryColor
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    horizontalAlignment: Text.AlignRight
+                    font.pixelSize: root.sh * 0.026
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: Math.max(1, root.sh * 0.001)
+                    color: root.tertiaryColor
+                    opacity: seriesRow.selected ? 0 : 0.24
+                }
+            }
+        }
+    }
+
     ListView {
         id: itemList
-        visible: mode === "items"
+        visible: mode === "items" && !browsingSeries
         model: items
         anchors.top: parent.top
         anchors.left: parent.left

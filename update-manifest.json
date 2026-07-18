@@ -1,15 +1,14 @@
 {
-  "version": "v1.5.8",
-  "app_version": "1.5.8",
+  "version": "v1.5.9",
+  "app_version": "1.5.9",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.8/Tater-Tube-v1.5.8-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.8.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.9/Tater-Tube-v1.5.9-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.9.tar.gz",
   "notes": [
-    "Renders the Tube TV black tuning screen and channel number as one composite MPV overlay.",
-    "Keeps the selected channel visible when changing channels, including when the previous channel overlay is still on screen.",
-    "Prepares the translucent playback overlay underneath the tuning screen for a seamless handoff when video starts.",
-    "Preserves the white VCR-style border and true transparent black background during playback."
+    "Adds a dense VCR-style Series Archive that shows about eight titles at once while preserving the existing season and episode views.",
+    "Supports server-scheduled Tube TV bumpers before and after commercial breaks.",
+    "Treats bumpers as clean direct-play interstitials with accurate guide labels and no channel watermark."
   ]
 }
