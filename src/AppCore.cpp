@@ -16,6 +16,7 @@
 #include <QVariantMap>
 #include <QDebug>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QQmlContext>
 #include <QtConcurrent/QtConcurrent>
 
@@ -503,6 +504,12 @@ AppCore::AppCore(const QString &appRoot, const QString &dataRoot, QObject *paren
     : QObject(parent), m_appRoot(appRoot), m_dataRoot(dataRoot)
 {
     m_updateNetwork = new QNetworkAccessManager(this);
+    m_taterRecommendationsTimer = new QTimer(this);
+    m_taterRecommendationsTimer->setInterval(5 * 60 * 1000);
+    connect(m_taterRecommendationsTimer, &QTimer::timeout,
+            this, &AppCore::refreshTaterRecommendations);
+    m_taterRecommendationsTimer->start();
+    QTimer::singleShot(2000, this, &AppCore::refreshTaterRecommendations);
 
     QDir modulesDir(appRoot + "/modules");
     const QStringList dirs = modulesDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
@@ -626,6 +633,95 @@ QVariant AppCore::get_setting(const QString &moduleId, const QString &key) {
     else
         target = config["modules"].toObject()[moduleId].toObject();
     return target[key].toVariant();
+}
+
+QString AppCore::taterServerToken() const {
+    QJsonObject config = loadConfig();
+    const QJsonObject module =
+        config["modules"].toObject()["com.240mp.usenet"].toObject();
+    return module["tater_server_token"].toString().trimmed();
+}
+
+QString AppCore::taterServerApiUrl(const QString &path) const {
+    QJsonObject config = loadConfig();
+    const QJsonObject module =
+        config["modules"].toObject()["com.240mp.usenet"].toObject();
+    QString serverUrl = module["tater_server_url"].toString().trimmed();
+    while (serverUrl.endsWith('/'))
+        serverUrl.chop(1);
+    if (serverUrl.endsWith(QStringLiteral("/api"), Qt::CaseInsensitive))
+        serverUrl.chop(4);
+    if (serverUrl.isEmpty())
+        return {};
+    return serverUrl + QStringLiteral("/api/") + path;
+}
+
+void AppCore::refreshTaterRecommendations() {
+    const QString token = taterServerToken();
+    const QString endpoint =
+        taterServerApiUrl(QStringLiteral("tater/recommendations?profile_id=household"));
+    if (token.isEmpty() || endpoint.isEmpty()) {
+        if (!m_taterRecommendations.isEmpty()) {
+            m_taterRecommendations.clear();
+            emit taterRecommendationsChanged();
+        }
+        return;
+    }
+
+    QNetworkRequest request{QUrl(endpoint)};
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    QNetworkReply *reply = m_updateNetwork->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        const QByteArray body = reply->readAll();
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        reply->deleteLater();
+        if (!ok) {
+            qWarning("[AppCore] Tater recommendations request failed");
+            if (status == 401 && !m_taterRecommendations.isEmpty()) {
+                m_taterRecommendations.clear();
+                emit taterRecommendationsChanged();
+            }
+            return;
+        }
+        const QJsonObject envelope = QJsonDocument::fromJson(body).object();
+        const QJsonObject data = envelope.value("data").toObject();
+        const QVariantList items = data.value("items").toArray().toVariantList();
+        if (items != m_taterRecommendations) {
+            m_taterRecommendations = items;
+            emit taterRecommendationsChanged();
+        }
+    });
+}
+
+void AppCore::sendTaterRecommendationFeedback(const QString &recommendationId,
+                                              const QString &feedback) {
+    const QString cleanId = recommendationId.trimmed();
+    const QString token = taterServerToken();
+    const QString endpoint = taterServerApiUrl(
+        QStringLiteral("tater/recommendations/%1/feedback")
+            .arg(QString::fromUtf8(QUrl::toPercentEncoding(cleanId))));
+    if (cleanId.isEmpty() || token.isEmpty() || endpoint.isEmpty())
+        return;
+
+    QNetworkRequest request{QUrl(endpoint)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    const QByteArray payload = QJsonDocument(
+        QJsonObject{{QStringLiteral("feedback"), feedback.trimmed().toLower()}}
+    ).toJson(QJsonDocument::Compact);
+    QNetworkReply *reply = m_updateNetwork->post(request, payload);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        if (!ok)
+            qWarning("[AppCore] Tater recommendation feedback failed");
+        reply->deleteLater();
+        if (ok)
+            refreshTaterRecommendations();
+    });
 }
 
 void AppCore::save_setting(const QString &moduleId, const QString &key, const QVariant &value) {

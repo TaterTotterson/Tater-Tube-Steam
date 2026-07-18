@@ -206,6 +206,16 @@ FocusScope {
 
         var playbackUrl = usenetBackend.playback_url(rawUrl, Math.round(root.sw), Math.round(root.sh))
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl))
+        mpvController.setViewingContext({
+            module_id: moduleId,
+            source: "local_media",
+            media_id: item.playStateId || ((item.categoryId || "") + ":" + (item.path || "")),
+            media_type: item.mediaType || "video",
+            title: item.title || title,
+            series_title: item.seriesTitle || "",
+            season: item.season || 0,
+            episode: item.episode || 0
+        })
         mpvController.loadAndPlay(playbackUrl, startOffset, 0, -1, [], false, -1, 0.0,
                                   "", false, "tube", false, title)
     }

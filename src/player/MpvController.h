@@ -7,8 +7,10 @@
 #include <QList>
 #include <QPointer>
 #include <QStringList>
+#include <QVariantMap>
 
 class AppCore;
+class QNetworkAccessManager;
 class QWindow;
 
 #ifdef Q_OS_LINUX
@@ -85,6 +87,7 @@ public:
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void setPlaybackSpeed(double speed);
     Q_INVOKABLE void setAudioPitchCorrection(bool enabled);
+    Q_INVOKABLE void setViewingContext(const QVariantMap &context);
 
 signals:
     void positionChanged(int ms);
@@ -150,6 +153,11 @@ private:
     void setVolumeLevel(double volume, bool persist, bool showOverlay);
     void setMutedState(bool muted, bool showOverlay);
     void showMpvVolumeOverlay();
+    void beginViewingSession(const QString &url, const QString &displayTitle,
+                             const QString &oscMode, bool audioOnly, bool allowYtdl);
+    void sendViewingEvent(const QString &state, int positionMs = -1,
+                          int durationMs = -1);
+    QString taterServerApiUrl(const QString &path) const;
     int  getActiveVt() const;
     int  findFreeVt() const;
     int  findQtDrmFd() const;
@@ -167,6 +175,8 @@ private:
     QLocalSocket *m_ipc            = nullptr;
     QTimer       *m_connectTimer   = nullptr;
     QTimer       *m_watchdogTimer  = nullptr;
+    QTimer       *m_telemetryTimer = nullptr;
+    QNetworkAccessManager *m_taterNetwork = nullptr;
     qint64        m_lastIpcEventMs = 0;
     QString       m_appRoot;
     QString       m_socketPath;
@@ -191,6 +201,10 @@ private:
     bool          m_pi3SoftwareFallback = false;
     bool          m_currentAudioOnly = false;
     bool          m_currentStayIdle = false;
+    QVariantMap   m_pendingViewingContext;
+    QVariantMap   m_currentViewingContext;
+    QString       m_viewingEventId;
+    int           m_lastTelemetryPosition = -1;
     QList<QPointer<QWindow>> m_suspendedQtWindows;
 #ifdef Q_OS_LINUX
     DrmSavedState m_savedDrm     = {};

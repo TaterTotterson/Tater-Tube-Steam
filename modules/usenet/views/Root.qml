@@ -66,5 +66,27 @@ FocusScope {
         }
     }
 
-    Component.onCompleted: navigateTo("Browse.qml", {})
+    Component.onCompleted: {
+        var recommendation = navParams.recommendation || ({})
+        var launch = recommendation.launch || ({})
+        if (launch.type === "localFile") {
+            navigateTo("LocalPlayer.qml", {
+                item: launch,
+                title: recommendation.title || launch.title || "TATER'S PICK"
+            })
+        } else if (launch.type === "localFolder" && (launch.mediaType || "") === "show") {
+            navigateTo("LocalShow.qml", {
+                item: launch,
+                libraryName: "TATER'S PICKS"
+            })
+        } else if (launch.type === "localFolder" && (launch.mediaType || "") === "season") {
+            navigateTo("LocalSeason.qml", {
+                item: launch,
+                showTitle: launch.title || "TATER'S PICK",
+                libraryName: "TATER'S PICKS"
+            })
+        } else {
+            navigateTo("Browse.qml", {})
+        }
+    }
 }

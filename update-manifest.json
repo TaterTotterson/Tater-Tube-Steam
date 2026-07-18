@@ -1,14 +1,14 @@
 {
-  "version": "v1.5.9",
-  "app_version": "1.5.9",
+  "version": "v1.5.10",
+  "app_version": "1.5.10",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.9/Tater-Tube-v1.5.9-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.9.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.10/Tater-Tube-v1.5.10-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.10.tar.gz",
   "notes": [
-    "Adds a dense VCR-style Series Archive that shows about eight titles at once while preserving the existing season and episode views.",
-    "Supports server-scheduled Tube TV bumpers before and after commercial breaks.",
-    "Treats bumpers as clean direct-play interstitials with accurate guide labels and no channel watermark."
+    "Adds Tater's Picks to the main menu with a VCR-style recommendation screen and the Tater mascot.",
+    "Reports normalized playback progress to Tater Tube Server for household viewing context without sending raw media URLs.",
+    "Launches Tater-recommended local movies and series directly and supports played or not-for-me feedback."
   ]
 }

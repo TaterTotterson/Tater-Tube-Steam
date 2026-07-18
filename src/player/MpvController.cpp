@@ -9,6 +9,12 @@
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QDebug>
+#include <QCryptographicHash>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QUrl>
+#include <QUuid>
 #include <QWindow>
 #include <QtGlobal>
 
@@ -67,6 +73,33 @@ static QProcessEnvironment mpvProcessEnvironment(const QString &appRoot)
 static QString mpvVolumeStatePath()
 {
     return QStringLiteral("/tmp/240mp-volume-state");
+}
+
+static QString redactedPlaybackUrl(const QString &value)
+{
+    QUrl url(value);
+    if (!url.isValid() || url.scheme().isEmpty())
+        return value;
+    url.setQuery(QString());
+    url.setFragment(QString());
+    return url.toString(QUrl::FullyEncoded);
+}
+
+static QStringList redactedMpvArgs(const QStringList &args)
+{
+    QStringList safeArgs;
+    safeArgs.reserve(args.size());
+    for (const QString &arg : args) {
+        if (arg.startsWith(QStringLiteral("--http-header-fields="))) {
+            safeArgs.append(QStringLiteral("--http-header-fields=<redacted>"));
+        } else if (arg.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive) ||
+                   arg.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+            safeArgs.append(redactedPlaybackUrl(arg));
+        } else {
+            safeArgs.append(arg);
+        }
+    }
+    return safeArgs;
 }
 
 static bool readSavedMpvVolume(double *volumeOut)
@@ -194,6 +227,18 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
             }
         }
     });
+
+    m_taterNetwork = new QNetworkAccessManager(this);
+    m_telemetryTimer = new QTimer(this);
+    m_telemetryTimer->setInterval(30000);
+    connect(m_telemetryTimer, &QTimer::timeout, this, [this]() {
+        if (!isRunning() || m_viewingEventId.isEmpty())
+            return;
+        if (m_lastTelemetryPosition == m_position && !m_paused)
+            return;
+        sendViewingEvent(m_paused ? QStringLiteral("paused") : QStringLiteral("progress"));
+    });
+    m_telemetryTimer->start();
 }
 
 MpvController::~MpvController() {
@@ -238,6 +283,10 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     }
     m_currentAudioOnly = audioOnly;
 
+    if (m_process && m_process->state() != QProcess::NotRunning &&
+        !m_replayingPi3Fallback && !m_viewingEventId.isEmpty()) {
+        sendViewingEvent(QStringLiteral("stopped"));
+    }
     if (m_process) {
         m_process->disconnect();
         if (m_process->state() != QProcess::NotRunning) {
@@ -279,6 +328,9 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         return;
     }
 
+    if (!m_replayingPi3Fallback)
+        beginViewingSession(url, displayTitle, oscMode, audioOnly, allowYtdl);
+
     const bool isOtaTvMode = (oscMode == "ota-tv" || oscMode == "ota-tv-quiet");
     const bool isTubeTvHls = url.contains(QStringLiteral("/api/tater/tv/channel/"),
                                           Qt::CaseInsensitive)
@@ -301,7 +353,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         if (lf.open(QFile::Append | QFile::Text)) {
             lf.write(QString("\n=== Tater Tube session start %1 ===\n    url: %2\n\n")
                          .arg(QDateTime::currentDateTime().toString(Qt::ISODate))
-                         .arg(url)
+                         .arg(redactedPlaybackUrl(url))
                          .toUtf8());
         }
     }
@@ -460,6 +512,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     m_process->setProcessChannelMode(QProcess::MergedChannels);
     connect(m_process, &QProcess::started, this, [this]() {
         emit runningChanged(true);
+        sendViewingEvent(QStringLiteral("started"));
     });
     connect(m_process,
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -481,7 +534,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
              << "--no-video"
              << "--audio-display=no"
              << "--force-window=no";
-        qDebug("[MpvController] audio launch: mpv %s", qPrintable(args.join(" ")));
+        qDebug("[MpvController] audio launch: mpv %s",
+               qPrintable(redactedMpvArgs(args).join(" ")));
         m_process->start(bin, args);
         m_connectTimer->start();
         return;
@@ -501,7 +555,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                  << "--video-sync=audio";
             appendVideoArgs(args);
             args << "--no-input-terminal";
-            qDebug("[MpvController] headless launch: mpv %s", qPrintable(args.join(" ")));
+            qDebug("[MpvController] headless launch: mpv %s",
+                   qPrintable(redactedMpvArgs(args).join(" ")));
             m_process->start(bin, args);
             m_connectTimer->start();
             return;
@@ -551,7 +606,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
              << "--video-sync=audio";
         appendVideoArgs(args);
         args << "--no-input-terminal";
-        qDebug("[MpvController] headless launch: mpv %s", qPrintable(args.join(" ")));
+        qDebug("[MpvController] headless launch: mpv %s",
+               qPrintable(redactedMpvArgs(args).join(" ")));
         m_process->start(bin, args);
         m_connectTimer->start();
     } else {
@@ -575,7 +631,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         // approach doesn't apply here; --osd-fonts-dir is provider-independent.
         args << QString("--osd-fonts-dir=%1").arg(m_appRoot + "/assets/fonts");
 #endif
-        qDebug("[MpvController] desktop launch: mpv %s", qPrintable(args.join(" ")));
+        qDebug("[MpvController] desktop launch: mpv %s",
+               qPrintable(redactedMpvArgs(args).join(" ")));
         m_process->start(bin, args);
         m_connectTimer->start();
     }
@@ -596,6 +653,10 @@ bool MpvController::replaceCurrentFile(const QString &url,
                                        const QString &displayTitle) {
     if (url.isEmpty() || !isRunning() || m_ipc->state() != QLocalSocket::ConnectedState)
         return false;
+
+    sendViewingEvent(QStringLiteral("stopped"));
+    beginViewingSession(url, displayTitle, m_lastPlaybackRequest.oscMode,
+                        m_currentAudioOnly, m_lastPlaybackRequest.allowYtdl);
 
     QJsonObject options;
     if (startSeconds > 0.5f)
@@ -619,6 +680,7 @@ bool MpvController::replaceCurrentFile(const QString &url,
         options
     };
     sendCommand(command);
+    sendViewingEvent(QStringLiteral("started"));
     return true;
 }
 
@@ -690,6 +752,134 @@ void MpvController::setAudioPitchCorrection(bool enabled) {
     sendCommand({"set_property", "audio-pitch-correction", enabled});
 }
 
+void MpvController::setViewingContext(const QVariantMap &context) {
+    m_pendingViewingContext = context;
+}
+
+QString MpvController::taterServerApiUrl(const QString &path) const {
+    if (!m_appCore)
+        return {};
+    QString serverUrl =
+        m_appCore->get_setting(QStringLiteral("com.240mp.usenet"),
+                               QStringLiteral("tater_server_url")).toString().trimmed();
+    while (serverUrl.endsWith('/'))
+        serverUrl.chop(1);
+    if (serverUrl.endsWith(QStringLiteral("/api"), Qt::CaseInsensitive))
+        serverUrl.chop(4);
+    if (serverUrl.isEmpty())
+        return {};
+    return serverUrl + QStringLiteral("/api/") + path;
+}
+
+void MpvController::beginViewingSession(const QString &url, const QString &displayTitle,
+                                        const QString &oscMode, bool audioOnly,
+                                        bool allowYtdl) {
+    m_currentViewingContext = m_pendingViewingContext;
+    m_pendingViewingContext.clear();
+
+    QString source = m_currentViewingContext.value(QStringLiteral("source")).toString().trimmed();
+    if (source.isEmpty()) {
+        if (oscMode.startsWith(QStringLiteral("ota")))
+            source = QStringLiteral("over_the_air");
+        else if (oscMode == QStringLiteral("tube"))
+            source = QStringLiteral("the_tube");
+        else if (audioOnly)
+            source = QStringLiteral("tape_deck");
+        else if (allowYtdl)
+            source = QStringLiteral("public_access");
+        else if (QUrl(url).isLocalFile() || url.startsWith('/'))
+            source = QStringLiteral("local_files");
+        else
+            source = QStringLiteral("video_on_demand");
+    }
+
+    QString title = m_currentViewingContext.value(QStringLiteral("title")).toString().trimmed();
+    if (title.isEmpty())
+        title = displayTitle.trimmed();
+    if (title.isEmpty())
+        title = audioOnly ? QStringLiteral("Audio") : QStringLiteral("Video");
+
+    QString mediaType =
+        m_currentViewingContext.value(QStringLiteral("media_type")).toString().trimmed();
+    if (mediaType.isEmpty())
+        mediaType = oscMode.startsWith(QStringLiteral("ota"))
+            ? QStringLiteral("live")
+            : (audioOnly ? QStringLiteral("audio") : QStringLiteral("video"));
+
+    QString mediaId =
+        m_currentViewingContext.value(QStringLiteral("media_id")).toString().trimmed();
+    if (mediaId.isEmpty()) {
+        QUrl safeUrl(url);
+        safeUrl.setQuery(QString());
+        safeUrl.setFragment(QString());
+        const QByteArray identity =
+            source.toUtf8() + '\0' + safeUrl.toString(QUrl::FullyEncoded).toUtf8() +
+            '\0' + title.toUtf8();
+        mediaId = QString::fromLatin1(
+            QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex());
+    }
+
+    m_currentViewingContext[QStringLiteral("source")] = source;
+    m_currentViewingContext[QStringLiteral("title")] = title;
+    m_currentViewingContext[QStringLiteral("media_type")] = mediaType;
+    m_currentViewingContext[QStringLiteral("media_id")] = mediaId;
+    m_viewingEventId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_lastTelemetryPosition = -1;
+}
+
+void MpvController::sendViewingEvent(const QString &state, int positionMs, int durationMs) {
+    if (!m_appCore || m_viewingEventId.isEmpty())
+        return;
+    const QString token =
+        m_appCore->get_setting(QStringLiteral("com.240mp.usenet"),
+                               QStringLiteral("tater_server_token")).toString().trimmed();
+    const QString endpoint = taterServerApiUrl(QStringLiteral("tater/viewing/events"));
+    if (token.isEmpty() || endpoint.isEmpty())
+        return;
+
+    const int position = positionMs >= 0 ? positionMs : m_position;
+    const int duration = durationMs >= 0 ? durationMs : m_duration;
+    QJsonObject metadata;
+    const QString moduleId =
+        m_currentViewingContext.value(QStringLiteral("module_id")).toString().trimmed();
+    if (!moduleId.isEmpty())
+        metadata[QStringLiteral("module_id")] = moduleId;
+
+    QJsonObject event{
+        {QStringLiteral("event_id"), m_viewingEventId},
+        {QStringLiteral("profile_id"), QStringLiteral("household")},
+        {QStringLiteral("source"),
+         m_currentViewingContext.value(QStringLiteral("source")).toString()},
+        {QStringLiteral("media_id"),
+         m_currentViewingContext.value(QStringLiteral("media_id")).toString()},
+        {QStringLiteral("media_type"),
+         m_currentViewingContext.value(QStringLiteral("media_type")).toString()},
+        {QStringLiteral("title"),
+         m_currentViewingContext.value(QStringLiteral("title")).toString()},
+        {QStringLiteral("series_title"),
+         m_currentViewingContext.value(QStringLiteral("series_title")).toString()},
+        {QStringLiteral("season"),
+         m_currentViewingContext.value(QStringLiteral("season")).toInt()},
+        {QStringLiteral("episode"),
+         m_currentViewingContext.value(QStringLiteral("episode")).toInt()},
+        {QStringLiteral("position_ms"), qMax(0, position)},
+        {QStringLiteral("duration_ms"), qMax(0, duration)},
+        {QStringLiteral("state"), state},
+        {QStringLiteral("occurred_at"),
+         QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+        {QStringLiteral("metadata"), metadata}
+    };
+
+    QNetworkRequest request{QUrl(endpoint)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", QByteArray("Bearer ") + token.toUtf8());
+    QNetworkReply *reply = m_taterNetwork->post(
+        request, QJsonDocument(event).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+    m_lastTelemetryPosition = position;
+}
+
 bool MpvController::isRunning() const {
     return m_process && m_process->state() != QProcess::NotRunning;
 }
@@ -756,6 +946,8 @@ void MpvController::onIpcReadyRead() {
             if (m_paused != paused) {
                 m_paused = paused;
                 emit pausedChanged(m_paused);
+                if (m_paused)
+                    sendViewingEvent(QStringLiteral("paused"));
             }
         } else if (name == "volume") {
             setVolumeLevel(val, true, false);
@@ -823,6 +1015,10 @@ void MpvController::onProcessFinished() {
 
     const int pos = m_position;
     const int dur = m_duration;
+    sendViewingEvent(naturalEof ? QStringLiteral("completed") : QStringLiteral("stopped"),
+                     naturalEof && dur > 0 ? dur : pos, dur);
+    m_viewingEventId.clear();
+    m_currentViewingContext.clear();
     m_position = 0;
     m_duration = 0;
     setAudioLevel(0.0);
