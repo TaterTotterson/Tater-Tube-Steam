@@ -14,12 +14,33 @@ FocusScope {
 
     focus: true
 
+    function narrationEnabled() {
+        var value = appCore.get_setting("com.240mp.usenet", "tater_picks_narration")
+        if (value === undefined || value === null || value === "")
+            return true
+        if (value === true || value === false)
+            return value
+        var normalized = ("" + value).toUpperCase()
+        return normalized !== "OFF" && normalized !== "FALSE"
+                && normalized !== "0" && normalized !== "NO"
+    }
+
+    function scheduleNarration() {
+        appCore.stopTaterNarration()
+        narrationTimer.stop()
+        var recommendation = selectedPick()
+        if (!narrationEnabled() || !recommendation.id || !recommendation.reason)
+            return
+        narrationTimer.restart()
+    }
+
     function reloadPicks() {
         picks = (appCore.taterRecommendations || []).slice()
         if (pickList.count > 0) {
             pickList.currentIndex = Math.max(0, Math.min(pickList.currentIndex, pickList.count - 1))
             pickList.positionViewAtIndex(pickList.currentIndex, ListView.Contain)
         }
+        Qt.callLater(scheduleNarration)
     }
 
     function selectedPick() {
@@ -32,6 +53,7 @@ FocusScope {
         var recommendation = selectedPick()
         if (!recommendation.id)
             return
+        appCore.stopTaterNarration()
         appCore.sendTaterRecommendationFeedback(recommendation.id, "played")
         navigateTo("modules/usenet/views/Root.qml",
                    { recommendation: recommendation },
@@ -42,6 +64,7 @@ FocusScope {
         var recommendation = selectedPick()
         if (!recommendation.id)
             return
+        appCore.stopTaterNarration()
         appCore.sendTaterRecommendationFeedback(recommendation.id, "not_for_me")
         var next = picks.slice()
         next.splice(pickList.currentIndex, 1)
@@ -51,11 +74,29 @@ FocusScope {
             return
         }
         pickList.currentIndex = Math.min(pickList.currentIndex, picks.length - 1)
+        Qt.callLater(scheduleNarration)
+    }
+
+    function returnToMenu() {
+        appCore.stopTaterNarration()
+        goBack()
     }
 
     Component.onCompleted: {
         reloadPicks()
         appCore.refreshTaterRecommendations()
+    }
+    Component.onDestruction: appCore.stopTaterNarration()
+
+    Timer {
+        id: narrationTimer
+        interval: 550
+        repeat: false
+        onTriggered: {
+            var recommendation = picksRoot.selectedPick()
+            if (recommendation.id && recommendation.reason)
+                appCore.speakTaterRecommendation(recommendation.id)
+        }
     }
 
     Connections {
@@ -74,7 +115,7 @@ FocusScope {
     }
 
     Image {
-        source: "../assets/images/mascots/usenet.png"
+        source: "../assets/images/mascots/tater-picks.png"
         anchors.right: parent.right
         anchors.rightMargin: root.sw * 0.035
         anchors.verticalCenter: parent.verticalCenter
@@ -86,6 +127,7 @@ FocusScope {
     }
 
     Rectangle {
+        id: summaryBubble
         anchors.right: parent.right
         anchors.rightMargin: root.sw * 0.055
         anchors.top: parent.top
@@ -108,6 +150,16 @@ FocusScope {
         }
     }
 
+    Text {
+        anchors.right: summaryBubble.right
+        anchors.top: summaryBubble.bottom
+        anchors.topMargin: root.sh * 0.012
+        text: appCore.taterNarrating ? "TATER IS TALKING..." : ""
+        color: root.secondaryColor
+        font.family: root.globalFont
+        font.pixelSize: root.sh * 0.019
+    }
+
     ListView {
         id: pickList
         model: picksRoot.picks
@@ -119,6 +171,7 @@ FocusScope {
         clip: true
         focus: true
         currentIndex: 0
+        onCurrentIndexChanged: picksRoot.scheduleNarration()
 
         delegate: Item {
             id: pickDelegate
@@ -170,7 +223,7 @@ FocusScope {
                 picksRoot.dismissSelected()
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                picksRoot.goBack()
+                picksRoot.returnToMenu()
                 event.accepted = true
             }
         }

@@ -1,14 +1,15 @@
 {
-  "version": "v1.5.10",
-  "app_version": "1.5.10",
+  "version": "v1.5.11",
+  "app_version": "1.5.11",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.10/Tater-Tube-v1.5.10-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.10.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.11/Tater-Tube-v1.5.11-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.11.tar.gz",
   "notes": [
-    "Adds Tater's Picks to the main menu with a VCR-style recommendation screen and the Tater mascot.",
-    "Reports normalized playback progress to Tater Tube Server for household viewing context without sending raw media URLs.",
-    "Launches Tater-recommended local movies and series directly and supports played or not-for-me feedback."
+    "Refreshes Tater's Picks with a new left-facing mascot made especially for recommending movies and series.",
+    "Reads the highlighted pick's summary using the voice and TTS provider configured in the paired Tater Core.",
+    "Stops narration immediately while moving through the list, then starts the newly highlighted summary after a short pause.",
+    "Adds a Tater's Picks Narration module setting so spoken recommendations can be turned on or off."
   ]
 }

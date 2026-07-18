@@ -8,6 +8,7 @@
 
 class QQmlContext;
 class QNetworkAccessManager;
+class QProcess;
 class QTimer;
 
 struct ModuleEntry {
@@ -24,6 +25,7 @@ class AppCore : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
     Q_PROPERTY(QVariantList taterRecommendations READ taterRecommendations NOTIFY taterRecommendationsChanged)
+    Q_PROPERTY(bool taterNarrating READ taterNarrating NOTIFY taterNarratingChanged)
 public:
     explicit AppCore(const QString &appRoot, const QString &dataRoot, QObject *parent = nullptr);
 
@@ -31,6 +33,7 @@ public:
     QString appRoot() const { return m_appRoot; }
     QString dataRoot() const { return m_dataRoot; }
     QVariantList taterRecommendations() const { return m_taterRecommendations; }
+    bool taterNarrating() const { return m_taterNarrating; }
 
     // True when launched by the autostart systemd service (which injects MP240_AUTOSTART=1).
     // Gates the quit overlay's "Exit to Terminal" option, which only makes sense on a
@@ -72,6 +75,8 @@ public:
     Q_INVOKABLE void refreshTaterRecommendations();
     Q_INVOKABLE void sendTaterRecommendationFeedback(const QString &recommendationId,
                                                      const QString &feedback);
+    Q_INVOKABLE void speakTaterRecommendation(const QString &recommendationId);
+    Q_INVOKABLE void stopTaterNarration();
 
     // Registers a module backend: stores it for action routing, exposes it to QML under
     // contextProperty, and connects its optional signals/slots by introspection (only
@@ -91,6 +96,7 @@ signals:
     void bluetoothScanFinished(const QVariantMap &result);
     void bluetoothActionFinished(const QString &action, const QVariantMap &result);
     void taterRecommendationsChanged();
+    void taterNarratingChanged();
 
 private slots:
     // Receive a backend's signal and re-emit it with the module ID prepended, recovering
@@ -108,6 +114,11 @@ private:
     bool canInstallUpdates() const;
     QString taterServerApiUrl(const QString &path) const;
     QString taterServerToken() const;
+    bool taterPicksNarrationEnabled() const;
+    void pollTaterNarrationRequest();
+    void playTaterNarrationAudio(const QString &requestId, quint64 generation);
+    void cancelTaterNarrationRequest(const QString &requestId);
+    void setTaterNarrating(bool narrating);
 
     QString m_appRoot;
     QString m_dataRoot;
@@ -115,5 +126,11 @@ private:
     QMap<QString, QObject*> m_backends;
     QNetworkAccessManager *m_updateNetwork = nullptr;
     QTimer *m_taterRecommendationsTimer = nullptr;
+    QTimer *m_taterNarrationPollTimer = nullptr;
+    QProcess *m_taterNarrationProcess = nullptr;
     QVariantList m_taterRecommendations;
+    QString m_taterNarrationRequestId;
+    quint64 m_taterNarrationGeneration = 0;
+    int m_taterNarrationPollAttempts = 0;
+    bool m_taterNarrating = false;
 };

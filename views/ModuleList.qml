@@ -20,7 +20,7 @@ FocusScope {
         "com.240mp.retro": "../assets/images/mascots/game-center.png",
         "com.240mp.local_files": "../assets/images/mascots/local-files.png",
         "com.240mp.moonlight": "../assets/images/mascots/pc-link.png",
-        "com.tater.picks": "../assets/images/mascots/usenet.png"
+        "com.tater.picks": "../assets/images/mascots/tater-picks.png"
     })
 
     function rebuildMenu() {

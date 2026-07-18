@@ -24,6 +24,12 @@
       "default": ""
     },
     {
+      "key": "tater_picks_narration",
+      "label": "TATER PICKS NARRATION",
+      "type": "toggle",
+      "default": "ON"
+    },
+    {
       "key": "tube_transcode_mode",
       "label": "TRANSCODING",
       "type": "list_single",
