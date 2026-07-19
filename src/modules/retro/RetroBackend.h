@@ -4,6 +4,7 @@
 #include <QProcess>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QSet>
 #include <QStringList>
 
 #ifdef Q_OS_LINUX
@@ -82,6 +83,25 @@ private:
     QString mountPoint() const;
     QString gamesRoot() const;
     QString retroarchPath() const;
+    QString rclonePath() const;
+    QString rcloneConfigPath() const;
+    QString desktopRetroNasCacheMarkerPath() const;
+    QString desktopRetroNasDownloadRoot() const;
+    QString desktopRetroNasRemoteRoot() const;
+    QString desktopRetroNasVirtualPath(const QString &relativePath) const;
+    QString desktopRetroNasRelativePath(const QString &virtualPath) const;
+    bool desktopRetroNasCacheMode() const;
+    void setDesktopRetroNasCacheMode(bool enabled) const;
+    bool buildDesktopRetroNasCatalog(QString *errorOut) const;
+    void startDesktopRetroNasDownload(const QString &systemId,
+                                      const QString &relativePath);
+    void startNextDesktopRetroNasDownload();
+    void finishDesktopRetroNasDownload(bool ok, const QString &error = QString());
+    void queueDesktopRetroNasCompanions(const QString &relativePath,
+                                        const QString &localPath);
+    void pruneDesktopRetroNasDownloadCache() const;
+    void launchLocalGame(const QString &systemId, const QString &path);
+    bool unmountDesktopRetroNas() const;
     QString systemDirectory(const SystemDef &def) const;
     QString corePath(const SystemDef &def) const;
     QVariantList coreInstallStatusOptions() const;
@@ -122,6 +142,12 @@ private:
     QString m_dataRoot;
     QProcess *m_process = nullptr;
     QProcess *m_coreInstallProcess = nullptr;
+    QProcess *m_retroNasTransferProcess = nullptr;
+    QStringList m_retroNasTransferQueue;
+    QSet<QString> m_retroNasQueuedPaths;
+    QString m_pendingRemoteSystemId;
+    QString m_pendingRemotePrimaryPath;
+    QString m_activeRemoteTransferPath;
     QString m_currentTitle;
     QString m_coreInstallStatus;
     bool m_headlessMode = false;

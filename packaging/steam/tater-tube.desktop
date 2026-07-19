@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Tater Tube
+Comment=Retro media center for the TV
+Exec=tater-tube
+Icon=logo
+Terminal=false
+Categories=AudioVideo;Game;

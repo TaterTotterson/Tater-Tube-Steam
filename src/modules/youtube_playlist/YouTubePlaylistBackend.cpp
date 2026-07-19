@@ -502,6 +502,16 @@ QString YouTubePlaylistBackend::setting(const QString &key, const QString &fallb
 
 QString YouTubePlaylistBackend::ytDlpPath() const
 {
+    const QStringList bundledCandidates{
+        QDir(m_appRoot).absoluteFilePath(QStringLiteral("vendor/yt-dlp/bin/yt-dlp")),
+        QDir(m_appRoot).absoluteFilePath(QStringLiteral("vendor/yt-dlp/yt-dlp"))
+    };
+    for (const QString &candidate : bundledCandidates) {
+        const QFileInfo info(candidate);
+        if (info.exists() && info.isExecutable())
+            return info.absoluteFilePath();
+    }
+
     QString path = QStandardPaths::findExecutable(QStringLiteral("yt-dlp"), executableSearchPaths());
     if (!path.isEmpty())
         return path;

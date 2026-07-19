@@ -5,14 +5,17 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+option(TATER_TUBE_STEAM "Build the Steam desktop distribution" OFF)
+
 include(GNUInstallDirs)
+include(CTest)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml Network Svg Concurrent)
 find_package(SDL2 CONFIG REQUIRED) # gamepad input (InputManager)
 
 # libdrm is used on Linux/RPi to save and restore the KMS CRTC state
 # around mpv playback so Qt EGLFS can resume cleanly after mpv exits.
-if(NOT APPLE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(Libdrm REQUIRED libdrm)
 endif()
@@ -46,14 +49,14 @@ target_link_libraries(240mp PRIVATE
     Qt6::Svg
     Qt6::Concurrent
     SDL2::SDL2
-    $<$<NOT:$<BOOL:${APPLE}>>:${Libdrm_LIBRARIES}>
+    $<$<PLATFORM_ID:Linux>:${Libdrm_LIBRARIES}>
 )
 
 if(APPLE)
     target_link_libraries(240mp PRIVATE "-framework AppKit")
 endif()
 
-if(NOT APPLE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(240mp PRIVATE ${Libdrm_INCLUDE_DIRS})
 endif()
 
@@ -63,7 +66,16 @@ target_include_directories(240mp PRIVATE
 
 target_compile_definitions(240mp PRIVATE
     TATER_TUBE_VERSION="${PROJECT_VERSION}"
+    $<$<BOOL:${TATER_TUBE_STEAM}>:TATER_TUBE_STEAM_BUILD=1>
 )
+
+if(TATER_TUBE_STEAM)
+    set_target_properties(240mp PROPERTIES
+        OUTPUT_NAME "tater-tube"
+        INSTALL_RPATH "$ORIGIN/../lib;$ORIGIN/../lib/tater-tube"
+        INSTALL_RPATH_USE_LINK_PATH FALSE
+    )
+endif()
 
 # ── macOS bundle metadata ──────────────────────────────────────────────────────
 set_target_properties(240mp PROPERTIES
@@ -73,8 +85,11 @@ set_target_properties(240mp PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.tatertotterson.tatertube"
     MACOSX_BUNDLE_ICON_FILE "assets/images/240-mp"
-    INSTALL_RPATH_USE_LINK_PATH TRUE
 )
+
+if(NOT TATER_TUBE_STEAM)
+    set_target_properties(240mp PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+endif()
 
 # ── Dev bundle symlink (macOS only, non-CI) ───────────────────────────────────
 # Makes double-clicking build/240mp.app work during development by symlinking
@@ -138,11 +153,30 @@ else()
         DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
         COMPONENT Runtime)
 
-    install(DIRECTORY
-        "${CMAKE_SOURCE_DIR}/scripts"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
-        USE_SOURCE_PERMISSIONS
-        COMPONENT Runtime)
+    if(TATER_TUBE_STEAM)
+        install(FILES
+            "${CMAKE_SOURCE_DIR}/scripts/audio-vu.lua"
+            "${CMAKE_SOURCE_DIR}/scripts/media-keys.lua"
+            "${CMAKE_SOURCE_DIR}/scripts/mpv-osc.lua"
+            "${CMAKE_SOURCE_DIR}/scripts/ota-osc.lua"
+            "${CMAKE_SOURCE_DIR}/scripts/vcr-osd.lua"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp/scripts"
+            COMPONENT Runtime)
+    else()
+        install(DIRECTORY
+            "${CMAKE_SOURCE_DIR}/scripts"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
+            USE_SOURCE_PERMISSIONS
+            COMPONENT Runtime)
+    endif()
+
+    if(TATER_TUBE_STEAM AND EXISTS "${CMAKE_SOURCE_DIR}/vendor")
+        install(DIRECTORY
+            "${CMAKE_SOURCE_DIR}/vendor/"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp/vendor"
+            USE_SOURCE_PERMISSIONS
+            COMPONENT Runtime)
+    endif()
 endif()
 
 # ── CPack ──────────────────────────────────────────────────────────────────────
@@ -156,4 +190,26 @@ if(NOT APPLE)
     set(CPACK_GENERATOR "TGZ")
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
     include(CPack)
+endif()
+
+if(BUILD_TESTING AND TATER_TUBE_STEAM AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    add_executable(retronas-fallback-test
+        tests/RetroNasFallbackTest.cpp
+        src/modules/retro/RetroBackend.cpp
+    )
+    target_include_directories(retronas-fallback-test PRIVATE
+        src
+        ${Libdrm_INCLUDE_DIRS}
+    )
+    target_compile_definitions(retronas-fallback-test PRIVATE
+        TATER_TUBE_STEAM_BUILD=1
+    )
+    target_link_libraries(retronas-fallback-test PRIVATE
+        Qt6::Core
+        Qt6::Test
+        ${Libdrm_LIBRARIES}
+    )
+    add_test(NAME retronas-fallback COMMAND retronas-fallback-test)
 endif()

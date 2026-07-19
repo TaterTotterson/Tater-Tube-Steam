@@ -1,0 +1,7 @@
+Tater Tube is free and open-source software licensed under GPL-3.0.
+
+Corresponding source, build scripts, license notices, and release tags:
+https://github.com/TaterTotterson/Tater-Tube
+
+The file BUILD-COMMIT.txt in this depot identifies the exact source revision
+used for the build.

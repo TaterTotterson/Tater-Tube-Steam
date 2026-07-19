@@ -22,10 +22,16 @@ struct ModuleEntry {
 class AppCore : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
+    Q_PROPERTY(QString distributionTarget READ distributionTarget CONSTANT)
+    Q_PROPERTY(bool steamBuild READ isSteamBuild CONSTANT)
+    Q_PROPERTY(QVariantMap platformCapabilities READ platformCapabilities CONSTANT)
 public:
     explicit AppCore(const QString &appRoot, const QString &dataRoot, QObject *parent = nullptr);
 
     QString appVersion() const { return QCoreApplication::applicationVersion(); }
+    QString distributionTarget() const;
+    bool isSteamBuild() const;
+    QVariantMap platformCapabilities() const;
     QString appRoot() const { return m_appRoot; }
     QString dataRoot() const { return m_dataRoot; }
 

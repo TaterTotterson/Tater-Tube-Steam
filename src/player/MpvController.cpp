@@ -51,7 +51,17 @@ static QProcessEnvironment mpvProcessEnvironment(const QString &appRoot)
     env.insert(QStringLiteral("APP_ROOT"), appRoot);
 
     const QString existingPath = env.value(QStringLiteral("PATH"));
-    const QString toolPath = QStringLiteral("/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin");
+    const QStringList toolPaths{
+        QDir(appRoot).absoluteFilePath(QStringLiteral("vendor/mpv/bin")),
+        QDir(appRoot).absoluteFilePath(QStringLiteral("vendor/yt-dlp/bin")),
+        QStringLiteral("/usr/local/bin"),
+        QStringLiteral("/usr/bin"),
+        QStringLiteral("/bin"),
+        QStringLiteral("/usr/local/sbin"),
+        QStringLiteral("/usr/sbin"),
+        QStringLiteral("/sbin")
+    };
+    const QString toolPath = toolPaths.join(QLatin1Char(':'));
     env.insert(QStringLiteral("PATH"),
                existingPath.isEmpty() ? toolPath : toolPath + QStringLiteral(":") + existingPath);
 
@@ -62,6 +72,21 @@ static QProcessEnvironment mpvProcessEnvironment(const QString &appRoot)
 #endif
 
     return env;
+}
+
+static QString mpvExecutable(const QString &appRoot)
+{
+    const QStringList bundledCandidates{
+        QDir(appRoot).absoluteFilePath(QStringLiteral("vendor/mpv/bin/mpv")),
+        QDir(appRoot).absoluteFilePath(QStringLiteral("vendor/mpv/mpv"))
+    };
+    for (const QString &candidate : bundledCandidates) {
+        const QFileInfo info(candidate);
+        if (info.exists() && info.isExecutable())
+            return info.absoluteFilePath();
+    }
+
+    return QStandardPaths::findExecutable(QStringLiteral("mpv"));
 }
 
 static QString mpvVolumeStatePath()
@@ -272,9 +297,9 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         }
     }
 #endif
-    const QString bin = QStandardPaths::findExecutable("mpv");
+    const QString bin = mpvExecutable(m_appRoot);
     if (bin.isEmpty()) {
-        qWarning("[MpvController] mpv not found in PATH");
+        qWarning("[MpvController] mpv not found in the app runtime or PATH");
         QTimer::singleShot(0, this, [this]() { emit playbackFinished(0, 0); });
         return;
     }

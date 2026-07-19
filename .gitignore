@@ -16,6 +16,7 @@ Thumbs.db
 /build-*/
 /cmake-build-*/
 /out/
+/dist/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake

@@ -1,0 +1,60 @@
+ARG SNIPER_IMAGE=registry.gitlab.steamos.cloud/steamrt/sniper/sdk@sha256:2969e5a47146a6494c01d953cd818b1d62712f42f9e54c4809d7a3aa8dc276ce
+FROM ${SNIPER_IMAGE}
+
+ARG QT_VERSION=6.8.3
+ARG AQT_VERSION=3.3.0
+
+USER root
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        file \
+        git \
+        libdrm-dev \
+        libgl1-mesa-dev \
+        libxkbcommon-x11-0 \
+        ninja-build \
+        patchelf \
+        pkg-config \
+        python3-pip \
+        squashfs-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir "aqtinstall==${AQT_VERSION}" \
+    && aqt install-qt linux desktop "${QT_VERSION}" linux_gcc_64 \
+        --outputdir /opt/Qt
+
+RUN curl -fL --retry 3 \
+        https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage \
+        -o /opt/linuxdeploy \
+    && echo "c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  /opt/linuxdeploy" \
+        | sha256sum -c - \
+    && curl -fL --retry 3 \
+        https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage \
+        -o /opt/linuxdeploy-plugin-qt \
+    && echo "15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724  /opt/linuxdeploy-plugin-qt" \
+        | sha256sum -c - \
+    && unsquashfs -o 944632 -d /opt/linuxdeploy.AppDir /opt/linuxdeploy \
+    && unsquashfs -o 778992 -d /opt/linuxdeploy-plugin-qt.AppDir \
+        /opt/linuxdeploy-plugin-qt \
+    && chmod +x \
+        /opt/linuxdeploy.AppDir/AppRun \
+        /opt/linuxdeploy-plugin-qt.AppDir/AppRun \
+    && ln -s /opt/linuxdeploy.AppDir/AppRun /usr/local/bin/linuxdeploy \
+    && ln -s /opt/linuxdeploy-plugin-qt.AppDir/AppRun \
+        /usr/local/bin/linuxdeploy-plugin-qt
+
+ENV PATH="/opt/Qt/${QT_VERSION}/gcc_64/bin:/usr/local/bin:${PATH}"
+ENV CMAKE_PREFIX_PATH="/opt/Qt/${QT_VERSION}/gcc_64"
+ENV QMAKE="/opt/Qt/${QT_VERSION}/gcc_64/bin/qmake6"
+ENV LD_LIBRARY_PATH="/opt/Qt/${QT_VERSION}/gcc_64/lib"
+ENV LINUXDEPLOY=/opt/linuxdeploy.AppDir/AppRun
+ENV LINUXDEPLOY_PLUGIN_QT=/opt/linuxdeploy-plugin-qt.AppDir/AppRun
+ENV STEAM_QT_VERSION="${QT_VERSION}"
+ENV STEAM_QT_SBOM_DIR="/opt/Qt/${QT_VERSION}/gcc_64/sbom"
+
+WORKDIR /src

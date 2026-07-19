@@ -75,7 +75,8 @@ FocusScope {
 
         items.push({ type: "settings_category", label: "Appearance", sectionKey: "appearance" })
         items.push({ type: "settings_category", label: "Features", sectionKey: "features" })
-        items.push({ type: "settings_category", label: "Gamepad", sectionKey: "bluetooth" })
+        if (root.platformCapabilities.controllerMapping)
+            items.push({ type: "settings_category", label: "Gamepad", sectionKey: "bluetooth" })
         items.push({ type: "settings_category", label: "System", sectionKey: "system" })
 
         settingsItems = items
@@ -182,24 +183,29 @@ FocusScope {
             value: clockParts.period
         })
 
-        var ssh = settingsRoot.refreshSshInfo()
-        items.push({
-            type: "ssh_toggle",
-            label: "SSH Access",
-            value: settingsRoot.sshRowValue(ssh),
-            available: !!ssh.available,
-            enabled: !!ssh.enabled
-        })
+        if (root.platformCapabilities.systemServiceControls) {
+            var ssh = settingsRoot.refreshSshInfo()
+            items.push({
+                type: "ssh_toggle",
+                label: "SSH Access",
+                value: settingsRoot.sshRowValue(ssh),
+                available: !!ssh.available,
+                enabled: !!ssh.enabled
+            })
 
-        var fan = settingsRoot.refreshArgonFanInfo()
-        items.push({
-            type: "argon_fan",
-            label: "Argon Fan",
-            value: settingsRoot.argonFanRowValue(fan),
-            available: !!fan.available,
-            options: ["AUTO","OFF","25%","50%","75%","100%"]
-        })
-        items.push({ type: "action", action: "check_updates", label: "Check For Updates", value: root.appVersion })
+            var fan = settingsRoot.refreshArgonFanInfo()
+            items.push({
+                type: "argon_fan",
+                label: "Argon Fan",
+                value: settingsRoot.argonFanRowValue(fan),
+                available: !!fan.available,
+                options: ["AUTO","OFF","25%","50%","75%","100%"]
+            })
+        }
+        if (root.platformCapabilities.selfUpdate)
+            items.push({ type: "action", action: "check_updates", label: "Check For Updates", value: root.appVersion })
+        else
+            items.push({ type: "status", label: "Updates", value: "STEAM" })
     }
 
     function buildFeatureItems(items) {
@@ -222,6 +228,21 @@ FocusScope {
     }
 
     function buildBluetoothItems(items) {
+        if (!root.platformCapabilities.bluetoothServiceControls) {
+            items.push({
+                type: "status",
+                label: "Pair Controllers In Steam",
+                value: inputManager.gamepadConnected ? "READY" : "NO PAD"
+            })
+            items.push({
+                type: "action",
+                action: "map_controller",
+                label: "Map Controller",
+                value: inputManager.gamepadConnected ? "READY" : "NO PAD"
+            })
+            return
+        }
+
         var bt = settingsRoot.refreshBluetoothInfo()
         var knownDevices = []
         var devices = bt.devices || []

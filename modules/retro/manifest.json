@@ -46,13 +46,15 @@
       "label": "CORE INSTALL",
       "type": "list_single",
       "options_source": "dynamic",
-      "options_slot": "load_core_install_status_options"
+      "options_slot": "load_core_install_status_options",
+      "targets": ["raspberry-pi"]
     },
     {
       "key": "install_game_cores",
       "label": "INSTALL / REFRESH CORES",
       "type": "action",
-      "action_slot": "install_game_cores"
+      "action_slot": "install_game_cores",
+      "targets": ["raspberry-pi"]
     },
     {
       "key": "refresh_game_cache",

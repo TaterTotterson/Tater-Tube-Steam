@@ -261,8 +261,21 @@ bool ControlApiServer::startFromEnvironment() {
         qInfo("[ControlApi] disabled by MP240_API_ENABLED=0");
         return false;
     }
+#ifdef TATER_TUBE_STEAM_BUILD
+    if (!ok) {
+        qInfo("[ControlApi] disabled by default in Steam builds");
+        return false;
+    }
+#endif
 
-    const QString host = qEnvironmentVariable("MP240_API_HOST", QStringLiteral("0.0.0.0"));
+    const QString host = qEnvironmentVariable(
+        "MP240_API_HOST",
+#ifdef TATER_TUBE_STEAM_BUILD
+        QStringLiteral("127.0.0.1")
+#else
+        QStringLiteral("0.0.0.0")
+#endif
+    );
     const int envPort = qEnvironmentVariableIntValue("MP240_API_PORT", &ok);
     const int port = ok ? envPort : 24024;
     if (port <= 0 || port > 65535) {
@@ -1264,12 +1277,19 @@ void ControlApiServer::handleSetupRetroConnectRequest(QTcpSocket *socket,
     m_appCore->save_setting(QStringLiteral("com.240mp.retro"), QStringLiteral("retronas_path"), path.isEmpty() ? QStringLiteral("games") : path);
     m_appCore->save_setting(QStringLiteral("com.240mp.retro"), QStringLiteral("retronas_username"), username);
     QString mountPassword = password;
+#ifdef TATER_TUBE_STEAM_BUILD
+    if (password == QStringLiteral("******"))
+        mountPassword.clear();
+    m_appCore->save_setting(QStringLiteral("com.240mp.retro"),
+                            QStringLiteral("retronas_password"), QString());
+#else
     if (password.trimmed().isEmpty() || password == QStringLiteral("******")) {
         mountPassword = m_appCore->get_setting(QStringLiteral("com.240mp.retro"),
                                                QStringLiteral("retronas_password")).toString();
     } else {
         m_appCore->save_setting(QStringLiteral("com.240mp.retro"), QStringLiteral("retronas_password"), password);
     }
+#endif
 
     QPointer<QTcpSocket> safeSocket(socket);
     auto done = std::make_shared<bool>(false);

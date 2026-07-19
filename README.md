@@ -10,6 +10,11 @@
 
 Tater Tube is a retro VCR-style media frontend for Raspberry Pi appliance builds.
 
+An open-source Linux x86_64 desktop target for a free Steam release is now in
+development. It keeps the Tater Tube, PC Link, and Game Center names while
+separating Steam-safe desktop behavior from Raspberry Pi appliance controls.
+See [the Steam port notes](docs/STEAM.md).
+
 It ships as ready-to-flash Raspberry Pi images for:
 
 - Raspberry Pi 4 composite NTSC

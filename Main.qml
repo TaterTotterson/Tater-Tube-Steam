@@ -274,6 +274,8 @@ Window {
     // engine invalidates the root context itself.
     readonly property var hints: inputManager ? inputManager.hints : ({})
     readonly property string appVersion: appCore ? appCore.appVersion : ""
+    readonly property string distributionTarget: appCore ? appCore.distributionTarget : ""
+    readonly property var platformCapabilities: appCore ? appCore.platformCapabilities : ({})
     property bool volumeOverlayVisible: false
 
     // --- APP-LEVEL NAV STACK ---
@@ -322,7 +324,7 @@ Window {
             }
         }
 
-        onLoaded: item.forceActiveFocus()
+        onLoaded: (item as Item).forceActiveFocus()
 
         Connections {
             target: moduleLoader.item

@@ -1,0 +1,13 @@
+"appbuild"
+{
+    "appid"        "YOUR_APP_ID"
+    "desc"         "Tater Tube Linux x86_64"
+    "buildoutput"  "output"
+    "contentroot"  "../../../out/steam/depot"
+    "preview"      "1"
+
+    "depots"
+    {
+        "YOUR_LINUX_DEPOT_ID" "depot_build.vdf.example"
+    }
+}

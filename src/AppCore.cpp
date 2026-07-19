@@ -532,7 +532,26 @@ AppCore::AppCore(const QString &appRoot, const QString &dataRoot, QObject *paren
         m.entryQml = entryQml;
         m.iconRel  = manifest["icon"].toString();
         m.order    = manifest["order"].toInt(1000);
-        m.settings = manifest["settings"].toArray().toVariantList();
+        const QString target = distributionTarget();
+        QVariantList visibleSettings;
+        const QJsonArray settings = manifest["settings"].toArray();
+        for (const QJsonValue &settingValue : settings) {
+            if (!settingValue.isObject())
+                continue;
+
+            const QJsonObject setting = settingValue.toObject();
+            const QJsonArray targets = setting.value(QStringLiteral("targets")).toArray();
+            bool visible = targets.isEmpty();
+            for (const QJsonValue &targetValue : targets) {
+                if (targetValue.toString() == target) {
+                    visible = true;
+                    break;
+                }
+            }
+            if (visible)
+                visibleSettings.append(setting.toVariantMap());
+        }
+        m.settings = visibleSettings;
         m_modules.append(m);
         qDebug("[AppCore] Loaded manifest: %s", qPrintable(id));
     }
@@ -543,6 +562,42 @@ AppCore::AppCore(const QString &appRoot, const QString &dataRoot, QObject *paren
                              return left.order < right.order;
                          return QString::compare(left.name, right.name, Qt::CaseInsensitive) < 0;
                      });
+}
+
+QString AppCore::distributionTarget() const
+{
+#ifdef TATER_TUBE_STEAM_BUILD
+    return QStringLiteral("steam");
+#else
+    return QStringLiteral("raspberry-pi");
+#endif
+}
+
+bool AppCore::isSteamBuild() const
+{
+#ifdef TATER_TUBE_STEAM_BUILD
+    return true;
+#else
+    return false;
+#endif
+}
+
+QVariantMap AppCore::platformCapabilities() const
+{
+    const bool steam = isSteamBuild();
+    return QVariantMap{
+        {QStringLiteral("steam"), steam},
+        {QStringLiteral("appliance"), !steam},
+        {QStringLiteral("systemServiceControls"), !steam},
+        {QStringLiteral("bluetoothServiceControls"), !steam},
+        {QStringLiteral("controllerMapping"), true},
+        {QStringLiteral("selfUpdate"), !steam},
+        {QStringLiteral("retroCoreInstaller"), !steam},
+        {QStringLiteral("retroNetworkMount"), true},
+        {QStringLiteral("retroNetworkMountUsesFuse"), steam},
+        {QStringLiteral("retroNetworkCacheFallback"), steam},
+        {QStringLiteral("controlApiDefaultEnabled"), !steam}
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -811,11 +866,15 @@ QString AppCore::updateManifestUrl() const {
 }
 
 bool AppCore::canInstallUpdates() const {
+#ifdef TATER_TUBE_STEAM_BUILD
+    return false;
+#else
     if (!isAutostartSession() && qEnvironmentVariableIntValue("MP240_ALLOW_UPDATE_INSTALL") != 1)
         return false;
 
     const QFileInfo helperInfo(QString::fromUtf8(kPiUpdateHelper));
     return helperInfo.exists() && helperInfo.isExecutable();
+#endif
 }
 
 QVariantMap AppCore::getUpdateInfo() const {

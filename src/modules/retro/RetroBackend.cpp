@@ -1,16 +1,20 @@
 #include "RetroBackend.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMap>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
@@ -38,16 +42,44 @@ constexpr const char *kModuleId = "com.240mp.retro";
 constexpr const char *kRetroMountHelper = "/usr/local/sbin/240mp-retro-mount";
 constexpr const char *kRetroCoreHelper = "/usr/local/sbin/240mp-retro-core-control";
 constexpr const char *kGameCacheFile = "game-cache.json";
-constexpr int kGameCacheVersion = 2;
+constexpr const char *kRetroNasVirtualPrefix = "retronas-cache:/";
+constexpr int kGameCacheVersion = 3;
 
 QString normalizedRemotePath(QString path)
 {
+    path.replace('\\', '/');
     path = path.trimmed();
     while (path.startsWith('/'))
         path.remove(0, 1);
     while (path.endsWith('/'))
         path.chop(1);
     return path;
+}
+
+QString safeRemoteRelativePath(QString path)
+{
+    path = normalizedRemotePath(path);
+    if (path.isEmpty())
+        return QString();
+
+    const QStringList segments = path.split(QLatin1Char('/'), Qt::KeepEmptyParts);
+    for (const QString &segment : segments) {
+        if (segment.isEmpty() || segment == QLatin1String(".")
+            || segment == QLatin1String("..")
+            || segment.contains(QLatin1Char('\n'))
+            || segment.contains(QLatin1Char('\r'))) {
+            return QString();
+        }
+    }
+    return segments.join(QLatin1Char('/'));
+}
+
+bool lexicalPathIsInside(const QString &child, const QString &parent)
+{
+    const QString childPath = QDir::cleanPath(QFileInfo(child).absoluteFilePath());
+    const QString parentPath = QDir::cleanPath(QFileInfo(parent).absoluteFilePath());
+    return childPath == parentPath
+        || childPath.startsWith(parentPath + QDir::separator());
 }
 
 QString cleanGameTitle(const QString &fileName)
@@ -174,6 +206,16 @@ RetroBackend::RetroBackend(const QString &appRoot, const QString &dataRoot, QObj
 RetroBackend::~RetroBackend()
 {
     stop_game();
+    if (m_retroNasTransferProcess) {
+        m_retroNasTransferProcess->disconnect(this);
+        if (m_retroNasTransferProcess->state() != QProcess::NotRunning) {
+            m_retroNasTransferProcess->kill();
+            m_retroNasTransferProcess->waitForFinished(1000);
+        }
+        delete m_retroNasTransferProcess;
+        m_retroNasTransferProcess = nullptr;
+    }
+    unmountDesktopRetroNas();
     if (m_coreInstallProcess) {
         m_coreInstallProcess->disconnect(this);
         m_coreInstallProcess->deleteLater();
@@ -228,7 +270,304 @@ QString RetroBackend::gamesRoot() const
 
 QString RetroBackend::retroarchPath() const
 {
+    const QString bundled = QDir(m_appRoot).absoluteFilePath(
+        QStringLiteral("vendor/retroarch/bin/retroarch"));
+    const QFileInfo bundledInfo(bundled);
+    if (bundledInfo.exists() && bundledInfo.isExecutable())
+        return bundledInfo.absoluteFilePath();
+
     return QStandardPaths::findExecutable(QStringLiteral("retroarch"), executableSearchPaths());
+}
+
+QString RetroBackend::rclonePath() const
+{
+    const QString bundled = QDir(m_appRoot).absoluteFilePath(
+        QStringLiteral("vendor/rclone/bin/rclone"));
+    const QFileInfo bundledInfo(bundled);
+    if (bundledInfo.exists() && bundledInfo.isExecutable())
+        return bundledInfo.absoluteFilePath();
+
+    return QStandardPaths::findExecutable(QStringLiteral("rclone"), executableSearchPaths());
+}
+
+QString RetroBackend::rcloneConfigPath() const
+{
+    return QDir(m_dataRoot).absoluteFilePath(QStringLiteral("retronas-rclone.conf"));
+}
+
+QString RetroBackend::desktopRetroNasCacheMarkerPath() const
+{
+    return QDir(m_dataRoot).absoluteFilePath(QStringLiteral("retronas-cache-mode"));
+}
+
+bool RetroBackend::desktopRetroNasCacheMode() const
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    return setting(QStringLiteral("local_path")).isEmpty()
+        && QFileInfo::exists(desktopRetroNasCacheMarkerPath());
+#else
+    return false;
+#endif
+}
+
+void RetroBackend::setDesktopRetroNasCacheMode(bool enabled) const
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    if (!enabled) {
+        QFile::remove(desktopRetroNasCacheMarkerPath());
+        return;
+    }
+
+    QSaveFile marker(desktopRetroNasCacheMarkerPath());
+    if (!marker.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+    marker.write("rclone-copy-cache-v1\n");
+    marker.commit();
+#else
+    Q_UNUSED(enabled)
+#endif
+}
+
+QString RetroBackend::desktopRetroNasRemoteRoot() const
+{
+    const QString share = setting(QStringLiteral("retronas_share"),
+                                  QStringLiteral("mister"));
+    const QString remotePath = normalizedRemotePath(
+        setting(QStringLiteral("retronas_path"), QStringLiteral("games")));
+    QString root = QStringLiteral("tater-tube-retronas:") + share;
+    if (!remotePath.isEmpty())
+        root += QLatin1Char('/') + remotePath;
+    return root;
+}
+
+QString RetroBackend::desktopRetroNasDownloadRoot() const
+{
+    const QByteArray sourceKey = QStringLiteral("%1\n%2\n%3")
+                                     .arg(setting(QStringLiteral("retronas_host")),
+                                          setting(QStringLiteral("retronas_share"),
+                                                  QStringLiteral("mister")),
+                                          setting(QStringLiteral("retronas_path"),
+                                                  QStringLiteral("games")))
+                                     .toUtf8();
+    const QString connectionId = QString::fromLatin1(
+        QCryptographicHash::hash(sourceKey, QCryptographicHash::Sha256).toHex().left(16));
+    return QDir(m_dataRoot).absoluteFilePath(
+        QStringLiteral("retronas-download-cache/") + connectionId);
+}
+
+QString RetroBackend::desktopRetroNasVirtualPath(const QString &relativePath) const
+{
+    const QString clean = safeRemoteRelativePath(relativePath);
+    if (clean.isEmpty())
+        return QString();
+    return QString::fromUtf8(kRetroNasVirtualPrefix)
+        + QString::fromLatin1(QUrl::toPercentEncoding(clean, "/"));
+}
+
+QString RetroBackend::desktopRetroNasRelativePath(const QString &virtualPath) const
+{
+    const QString prefix = QString::fromUtf8(kRetroNasVirtualPrefix);
+    if (!virtualPath.startsWith(prefix))
+        return QString();
+    return safeRemoteRelativePath(
+        QUrl::fromPercentEncoding(virtualPath.mid(prefix.size()).toLatin1()));
+}
+
+bool RetroBackend::buildDesktopRetroNasCatalog(QString *errorOut) const
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    const QString bin = rclonePath();
+    if (bin.isEmpty()) {
+        if (errorOut)
+            *errorOut = QStringLiteral("RETRO NETWORK RUNTIME IS NOT INSTALLED");
+        return false;
+    }
+
+    QProcess listProcess;
+    listProcess.setProcessChannelMode(QProcess::SeparateChannels);
+    listProcess.start(bin, {
+        QStringLiteral("lsjson"),
+        desktopRetroNasRemoteRoot(),
+        QStringLiteral("--config"), rcloneConfigPath(),
+        QStringLiteral("--recursive"),
+        QStringLiteral("--files-only"),
+        QStringLiteral("--no-mimetype"),
+        QStringLiteral("--no-modtime")
+    });
+    if (!listProcess.waitForStarted(2000)) {
+        if (errorOut)
+            *errorOut = QStringLiteral("COULD NOT START RETRONAS CATALOG");
+        return false;
+    }
+    if (!listProcess.waitForFinished(120000)) {
+        listProcess.kill();
+        listProcess.waitForFinished(1000);
+        if (errorOut)
+            *errorOut = QStringLiteral("RETRONAS CATALOG TIMED OUT");
+        return false;
+    }
+    if (listProcess.exitStatus() != QProcess::NormalExit || listProcess.exitCode() != 0) {
+        QString output = QString::fromUtf8(listProcess.readAllStandardError()).trimmed();
+        if (output.size() > 400)
+            output = output.right(400);
+        if (errorOut) {
+            *errorOut = output.isEmpty()
+                ? QStringLiteral("COULD NOT READ RETRONAS GAME LIST")
+                : output.toUpper();
+        }
+        return false;
+    }
+
+    const QByteArray catalogJson = listProcess.readAllStandardOutput();
+    if (catalogJson.size() > 50 * 1024 * 1024) {
+        if (errorOut)
+            *errorOut = QStringLiteral("RETRONAS GAME LIST IS TOO LARGE");
+        return false;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(catalogJson, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isArray()) {
+        if (errorOut)
+            *errorOut = QStringLiteral("RETRONAS RETURNED AN INVALID GAME LIST");
+        return false;
+    }
+
+    QMap<QString, QList<QVariantMap>> gamesBySystem;
+    QMap<QString, QString> systemFolders;
+    const QList<SystemDef> definitions = systemDefinitions();
+    for (const QJsonValue &value : document.array()) {
+        const QString relativePath = safeRemoteRelativePath(
+            value.toObject().value(QStringLiteral("Path")).toString());
+        if (relativePath.isEmpty())
+            continue;
+
+        const int slash = relativePath.indexOf(QLatin1Char('/'));
+        if (slash <= 0)
+            continue;
+        const QString topFolder = relativePath.left(slash);
+        const QString withinSystem = relativePath.mid(slash + 1);
+        const QFileInfo remoteInfo(withinSystem);
+        if (remoteInfo.fileName().startsWith(QLatin1Char('.')))
+            continue;
+
+        for (const SystemDef &def : definitions) {
+            bool folderMatches = false;
+            for (const QString &folder : def.folders) {
+                if (topFolder.compare(folder, Qt::CaseInsensitive) == 0) {
+                    folderMatches = true;
+                    break;
+                }
+            }
+            if (!folderMatches || !def.extensions.contains(
+                    remoteInfo.suffix(), Qt::CaseInsensitive)) {
+                continue;
+            }
+            if (corePath(def).isEmpty())
+                break;
+
+            QVariantMap game;
+            game[QStringLiteral("systemId")] = def.id;
+            game[QStringLiteral("title")] = cleanGameTitle(remoteInfo.fileName());
+            game[QStringLiteral("path")] = desktopRetroNasVirtualPath(relativePath);
+            const QString folder = remoteInfo.path() == QLatin1String(".")
+                ? QString()
+                : remoteInfo.path();
+            game[QStringLiteral("folder")] = folder;
+            gamesBySystem[def.id].append(game);
+            systemFolders[def.id] = topFolder;
+            break;
+        }
+    }
+
+    QVariantList systems;
+    QVariantMap cachedGames;
+    for (const SystemDef &def : definitions) {
+        QList<QVariantMap> games = gamesBySystem.value(def.id);
+        if (games.isEmpty())
+            continue;
+        std::sort(games.begin(), games.end(), [](const QVariantMap &left,
+                                                 const QVariantMap &right) {
+            return QString::compare(left.value(QStringLiteral("title")).toString(),
+                                    right.value(QStringLiteral("title")).toString(),
+                                    Qt::CaseInsensitive) < 0;
+        });
+
+        QVariantList gameValues;
+        for (const QVariantMap &game : games)
+            gameValues.append(game);
+
+        QVariantMap system;
+        system[QStringLiteral("id")] = def.id;
+        system[QStringLiteral("label")] = def.label;
+        system[QStringLiteral("path")] = desktopRetroNasVirtualPath(
+            systemFolders.value(def.id) + QStringLiteral("/catalog"));
+        system[QStringLiteral("core")] = corePath(def);
+        system[QStringLiteral("corePackage")] = def.corePackage;
+        system[QStringLiteral("gameCount")] = gameValues.size();
+        systems.append(system);
+        cachedGames.insert(def.id, gameValues);
+    }
+
+    QVariantMap cache;
+    cache[QStringLiteral("version")] = kGameCacheVersion;
+    cache[QStringLiteral("createdAt")] =
+        QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    cache[QStringLiteral("gamesRoot")] = gameCacheRootKey();
+    cache[QStringLiteral("sourceMode")] = QStringLiteral("rclone-copy-cache");
+    cache[QStringLiteral("systems")] = systems;
+    cache[QStringLiteral("games")] = cachedGames;
+    if (!saveGameCache(cache)) {
+        if (errorOut)
+            *errorOut = QStringLiteral("COULD NOT SAVE RETRONAS GAME LIST");
+        return false;
+    }
+    qInfo("[RetroBackend] cached %d remote game system(s)", int(systems.size()));
+    return true;
+#else
+    if (errorOut)
+        *errorOut = QStringLiteral("STEAM RETRONAS CACHE REQUIRES LINUX");
+    return false;
+#endif
+}
+
+bool RetroBackend::unmountDesktopRetroNas() const
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    QString unmountBin = QStandardPaths::findExecutable(
+        QStringLiteral("fusermount3"), executableSearchPaths());
+    if (unmountBin.isEmpty()) {
+        unmountBin = QStandardPaths::findExecutable(
+            QStringLiteral("fusermount"), executableSearchPaths());
+    }
+    if (unmountBin.isEmpty())
+        return false;
+
+    QProcess process;
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    process.start(unmountBin, {QStringLiteral("-u"), mountPoint()});
+    if (!process.waitForStarted(1000))
+        return false;
+    if (!process.waitForFinished(5000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        return false;
+    }
+    if (process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0)
+        return true;
+
+    process.start(unmountBin, {QStringLiteral("-uz"), mountPoint()});
+    if (!process.waitForStarted(1000))
+        return false;
+    if (!process.waitForFinished(5000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        return false;
+    }
+    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+#else
+    return false;
+#endif
 }
 
 QVariantList RetroBackend::coreInstallStatusOptions() const
@@ -491,6 +830,7 @@ const RetroBackend::SystemDef *RetroBackend::systemById(const QString &systemId)
 QString RetroBackend::corePath(const SystemDef &def) const
 {
     const QStringList roots{
+        QDir(m_appRoot).absoluteFilePath(QStringLiteral("vendor/retroarch/cores")),
         "/usr/lib/aarch64-linux-gnu/libretro",
         "/usr/lib/arm-linux-gnueabihf/libretro",
         "/usr/lib/x86_64-linux-gnu/libretro",
@@ -619,6 +959,15 @@ QString RetroBackend::gameCachePath() const
 
 QString RetroBackend::gameCacheRootKey() const
 {
+    if (desktopRetroNasCacheMode()) {
+        return QStringLiteral("rclone-copy-cache:")
+            + QString::fromLatin1(QCryptographicHash::hash(
+                  QStringLiteral("%1\n%2").arg(
+                      setting(QStringLiteral("retronas_host")),
+                      desktopRetroNasRemoteRoot()).toUtf8(),
+                  QCryptographicHash::Sha256).toHex());
+    }
+
     const QFileInfo info(gamesRoot());
     const QString canonical = info.exists() ? info.canonicalFilePath() : QString();
     return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
@@ -751,7 +1100,11 @@ QVariantMap RetroBackend::get_setup_status()
     status["localPath"] = setting(QStringLiteral("local_path"));
     status["mountPoint"] = mountPoint();
     status["gamesRoot"] = gamesRoot();
-    status["gamesRootExists"] = QDir(gamesRoot()).exists();
+    status["accessMode"] = desktopRetroNasCacheMode()
+        ? QStringLiteral("download-cache")
+        : QStringLiteral("filesystem");
+    status["gamesRootExists"] = QDir(gamesRoot()).exists()
+        || (desktopRetroNasCacheMode() && !loadGameCache().isEmpty());
     status["retroarchAvailable"] = !retroarchPath().isEmpty();
     status["running"] = isRunning();
     return status;
@@ -763,8 +1116,201 @@ void RetroBackend::mount_retronas(const QString &host,
                                   const QString &username,
                                   const QString &password)
 {
-    Q_UNUSED(remotePath)
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    const QString cleanHost = host.trimmed();
+    const QString cleanShare = share.trimmed().isEmpty()
+        ? QStringLiteral("mister")
+        : share.trimmed();
+    const QString cleanRemotePath = normalizedRemotePath(remotePath);
+    const QString cleanUsername = username.trimmed().isEmpty()
+        ? QStringLiteral("guest")
+        : username.trimmed();
 
+    const auto containsLineBreak = [](const QString &value) {
+        return value.contains(QLatin1Char('\n')) || value.contains(QLatin1Char('\r'));
+    };
+    if (cleanHost.isEmpty()) {
+        emit mountFinished(false, QStringLiteral("ENTER RETRONAS ADDRESS"));
+        return;
+    }
+    if (containsLineBreak(cleanHost) || containsLineBreak(cleanUsername)
+        || containsLineBreak(cleanShare) || cleanShare.contains(QLatin1Char('/'))
+        || cleanShare.contains(QLatin1Char('\\')) || cleanShare.contains(QLatin1Char(':'))
+        || cleanShare == QLatin1String(".") || cleanShare == QLatin1String("..")) {
+        emit mountFinished(false, QStringLiteral("INVALID RETRONAS CONNECTION INFO"));
+        return;
+    }
+    const QStringList remoteSegments = cleanRemotePath.split(
+        QLatin1Char('/'), Qt::SkipEmptyParts);
+    if (containsLineBreak(cleanRemotePath)
+        || remoteSegments.contains(QStringLiteral("."))
+        || remoteSegments.contains(QStringLiteral(".."))) {
+        emit mountFinished(false, QStringLiteral("INVALID RETRONAS ROM PATH"));
+        return;
+    }
+
+    const QString bin = rclonePath();
+    if (bin.isEmpty()) {
+        emit mountFinished(false, QStringLiteral("RETRO NETWORK RUNTIME IS NOT INSTALLED"));
+        return;
+    }
+
+    QString unmountBin = QStandardPaths::findExecutable(
+        QStringLiteral("fusermount3"), executableSearchPaths());
+    if (unmountBin.isEmpty()) {
+        unmountBin = QStandardPaths::findExecutable(
+            QStringLiteral("fusermount"), executableSearchPaths());
+    }
+
+    QString obscuredPassword;
+    if (password.isEmpty() && QFileInfo::exists(rcloneConfigPath())) {
+        QSettings previousConfig(rcloneConfigPath(), QSettings::IniFormat);
+        previousConfig.beginGroup(QStringLiteral("tater-tube-retronas"));
+        const QString previousHost =
+            previousConfig.value(QStringLiteral("host")).toString();
+        const QString previousUser =
+            previousConfig.value(QStringLiteral("user")).toString();
+        if (previousHost == cleanHost && previousUser == cleanUsername) {
+            obscuredPassword =
+                previousConfig.value(QStringLiteral("pass")).toString();
+        }
+        previousConfig.endGroup();
+    }
+    if (!password.isEmpty()) {
+        QProcess obscure;
+        obscure.setProcessChannelMode(QProcess::SeparateChannels);
+        obscure.start(bin, {QStringLiteral("obscure"), QStringLiteral("-")});
+        if (!obscure.waitForStarted(2000)) {
+            emit mountFinished(false, QStringLiteral("COULD NOT START RETRO NETWORK RUNTIME"));
+            return;
+        }
+        obscure.write(password.toUtf8());
+        obscure.write("\n");
+        obscure.closeWriteChannel();
+        if (!obscure.waitForFinished(5000)
+            || obscure.exitStatus() != QProcess::NormalExit
+            || obscure.exitCode() != 0) {
+            obscure.kill();
+            obscure.waitForFinished(1000);
+            emit mountFinished(false, QStringLiteral("COULD NOT PROTECT RETRONAS LOGIN"));
+            return;
+        }
+        obscuredPassword = QString::fromUtf8(obscure.readAllStandardOutput()).trimmed();
+        if (obscuredPassword.isEmpty()) {
+            emit mountFinished(false, QStringLiteral("COULD NOT PROTECT RETRONAS LOGIN"));
+            return;
+        }
+    }
+
+    QSaveFile configFile(rcloneConfigPath());
+    if (!configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit mountFinished(false, QStringLiteral("COULD NOT SAVE RETRONAS LOGIN"));
+        return;
+    }
+    QTextStream config(&configFile);
+    config << "[tater-tube-retronas]\n";
+    config << "type = smb\n";
+    config << "host = " << cleanHost << "\n";
+    config << "user = " << cleanUsername << "\n";
+    if (!obscuredPassword.isEmpty())
+        config << "pass = " << obscuredPassword << "\n";
+    config.flush();
+    if (!configFile.commit()) {
+        emit mountFinished(false, QStringLiteral("COULD NOT SAVE RETRONAS LOGIN"));
+        return;
+    }
+    QFile::setPermissions(rcloneConfigPath(), QFile::ReadOwner | QFile::WriteOwner);
+
+    bool ready = false;
+    QString output;
+    if (!unmountBin.isEmpty()) {
+        unmountDesktopRetroNas();
+        QDir().mkpath(mountPoint());
+        const QString cachePath = QDir(m_dataRoot).absoluteFilePath(
+            QStringLiteral("retronas-vfs-cache"));
+        QDir().mkpath(cachePath);
+
+        QStringList args{
+            QStringLiteral("mount"),
+            QStringLiteral("tater-tube-retronas:") + cleanShare,
+            mountPoint(),
+            QStringLiteral("--config"), rcloneConfigPath(),
+            QStringLiteral("--read-only"),
+            QStringLiteral("--vfs-cache-mode"), QStringLiteral("full"),
+            QStringLiteral("--cache-dir"), cachePath,
+            QStringLiteral("--vfs-cache-max-age"), QStringLiteral("168h"),
+            QStringLiteral("--vfs-cache-max-size"), QStringLiteral("20G"),
+            QStringLiteral("--dir-cache-time"), QStringLiteral("5m"),
+            QStringLiteral("--attr-timeout"), QStringLiteral("1s"),
+            QStringLiteral("--daemon"),
+            QStringLiteral("--daemon-wait"), QStringLiteral("20s"),
+            QStringLiteral("--log-file"),
+            QDir(m_dataRoot).absoluteFilePath(QStringLiteral("retronas-rclone.log")),
+            QStringLiteral("--log-level"), QStringLiteral("NOTICE")
+        };
+
+        QProcess mountProcess;
+        mountProcess.setProcessChannelMode(QProcess::MergedChannels);
+        mountProcess.start(bin, args);
+        if (mountProcess.waitForStarted(2000)
+            && mountProcess.waitForFinished(30000)) {
+            output = QString::fromUtf8(mountProcess.readAll()).trimmed();
+            const bool mounted = mountProcess.exitStatus() == QProcess::NormalExit
+                && mountProcess.exitCode() == 0;
+            const QString mountedGamesRoot = cleanRemotePath.isEmpty()
+                ? mountPoint()
+                : QDir(mountPoint()).absoluteFilePath(cleanRemotePath);
+            ready = mounted && QDir(mountedGamesRoot).exists();
+        } else if (mountProcess.state() != QProcess::NotRunning) {
+            mountProcess.kill();
+            mountProcess.waitForFinished(1000);
+            output = QStringLiteral("RETRONAS MOUNT TIMED OUT");
+        }
+    }
+
+    if (ready) {
+        setDesktopRetroNasCacheMode(false);
+        buildGameCache();
+        emit authStateChanged();
+        emit mountFinished(true, QStringLiteral("RETRONAS READY"));
+        return;
+    }
+
+    unmountDesktopRetroNas();
+    setDesktopRetroNasCacheMode(true);
+    QString catalogError;
+    const bool catalogReady = buildDesktopRetroNasCatalog(&catalogError);
+    if (!catalogReady)
+        setDesktopRetroNasCacheMode(false);
+
+    emit authStateChanged();
+    emit mountFinished(
+        catalogReady,
+        catalogReady
+            ? QStringLiteral("RETRONAS READY (DOWNLOAD CACHE)")
+            : (!catalogError.isEmpty()
+                   ? catalogError
+                   : (output.isEmpty()
+                          ? QStringLiteral("RETRONAS ROM PATH NOT FOUND")
+                          : output.toUpper())));
+    return;
+#elif defined(TATER_TUBE_STEAM_BUILD)
+    Q_UNUSED(host)
+    Q_UNUSED(share)
+    Q_UNUSED(remotePath)
+    Q_UNUSED(username)
+    Q_UNUSED(password)
+    const bool ready = QDir(gamesRoot()).exists();
+    if (ready)
+        buildGameCache();
+    emit mountFinished(ready,
+                       ready
+                           ? QStringLiteral("LOCAL ROM PATH READY")
+                           : QStringLiteral("STEAM RETRONAS REQUIRES LINUX"));
+    emit authStateChanged();
+    return;
+#else
+    Q_UNUSED(remotePath)
     const QString cleanHost = host.trimmed();
     const QString cleanShare = share.trimmed().isEmpty() ? QStringLiteral("mister") : share.trimmed();
     if (cleanHost.isEmpty()) {
@@ -835,6 +1381,7 @@ void RetroBackend::mount_retronas(const QString &host,
         ? QStringLiteral("RETRONAS READY")
         : (output.isEmpty() ? QStringLiteral("RETRO MOUNT FAILED") : output.toUpper()));
 #endif
+#endif
 }
 
 void RetroBackend::load_systems()
@@ -849,6 +1396,21 @@ void RetroBackend::load_games(const QString &systemId)
 
 void RetroBackend::refresh_game_cache()
 {
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    if (desktopRetroNasCacheMode()) {
+        QString error;
+        if (!buildDesktopRetroNasCatalog(&error)) {
+            emit errorOccurred(error.isEmpty()
+                                   ? QStringLiteral("COULD NOT REFRESH RETRONAS GAME LIST")
+                                   : error);
+            return;
+        }
+        const QVariantMap cache = loadGameCache();
+        emit authStateChanged();
+        emit systemsLoaded(cache.value(QStringLiteral("systems")).toList());
+        return;
+    }
+#endif
     const QVariantMap cache = buildGameCache();
     emit authStateChanged();
     emit systemsLoaded(cache.value(QStringLiteral("systems")).toList());
@@ -979,7 +1541,245 @@ QString RetroBackend::writeRetroarchConfig()
     return cfgPath;
 }
 
+void RetroBackend::pruneDesktopRetroNasDownloadCache() const
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    constexpr qint64 maxBytes = 20LL * 1024LL * 1024LL * 1024LL;
+    constexpr qint64 targetBytes = 18LL * 1024LL * 1024LL * 1024LL;
+    const QString root = QDir(m_dataRoot).absoluteFilePath(
+        QStringLiteral("retronas-download-cache"));
+    if (!QDir(root).exists())
+        return;
+
+    QList<QFileInfo> files;
+    qint64 totalBytes = 0;
+    QDirIterator it(root, QDir::Files | QDir::NoSymLinks,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo info = it.fileInfo();
+        files.append(info);
+        totalBytes += info.size();
+    }
+    if (totalBytes <= maxBytes)
+        return;
+
+    std::sort(files.begin(), files.end(), [](const QFileInfo &left,
+                                             const QFileInfo &right) {
+        return left.lastModified() < right.lastModified();
+    });
+    for (const QFileInfo &info : files) {
+        if (totalBytes <= targetBytes)
+            break;
+        const qint64 size = info.size();
+        if (QFile::remove(info.absoluteFilePath()))
+            totalBytes -= size;
+    }
+#endif
+}
+
+void RetroBackend::queueDesktopRetroNasCompanions(const QString &relativePath,
+                                                   const QString &localPath)
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    const QString suffix = QFileInfo(localPath).suffix().toLower();
+    if (suffix != QLatin1String("cue") && suffix != QLatin1String("m3u"))
+        return;
+
+    QFile file(localPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text) || file.size() > 1024 * 1024)
+        return;
+
+    const QString baseDir = QFileInfo(relativePath).path();
+    const QString text = QString::fromUtf8(file.readAll());
+    const QStringList lines = text.split(QRegularExpression(QStringLiteral("[\\r\\n]+")),
+                                         Qt::SkipEmptyParts);
+    const QRegularExpression cueFile(
+        QStringLiteral("^\\s*FILE\\s+(?:\"([^\"]+)\"|(\\S+))"),
+        QRegularExpression::CaseInsensitiveOption);
+
+    for (QString reference : lines) {
+        reference = reference.trimmed();
+        if (suffix == QLatin1String("cue")) {
+            const QRegularExpressionMatch match = cueFile.match(reference);
+            if (!match.hasMatch())
+                continue;
+            reference = match.captured(1).isEmpty()
+                ? match.captured(2)
+                : match.captured(1);
+        } else if (reference.isEmpty() || reference.startsWith(QLatin1Char('#'))) {
+            continue;
+        }
+
+        reference.replace('\\', '/');
+        const QString resolved = safeRemoteRelativePath(
+            QDir(baseDir).filePath(reference));
+        if (resolved.isEmpty() || m_retroNasQueuedPaths.contains(resolved))
+            continue;
+        m_retroNasQueuedPaths.insert(resolved);
+        m_retroNasTransferQueue.append(resolved);
+    }
+#else
+    Q_UNUSED(relativePath)
+    Q_UNUSED(localPath)
+#endif
+}
+
+void RetroBackend::startDesktopRetroNasDownload(const QString &systemId,
+                                                 const QString &relativePath)
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    const QString clean = safeRemoteRelativePath(relativePath);
+    if (clean.isEmpty()) {
+        emit errorOccurred(QStringLiteral("INVALID RETRONAS ROM PATH"));
+        return;
+    }
+    if (rclonePath().isEmpty() || !QFileInfo::exists(rcloneConfigPath())) {
+        emit errorOccurred(QStringLiteral("RETRO NETWORK RUNTIME IS NOT READY"));
+        return;
+    }
+
+    stop_game();
+    pruneDesktopRetroNasDownloadCache();
+    m_pendingRemoteSystemId = systemId;
+    m_pendingRemotePrimaryPath = clean;
+    m_activeRemoteTransferPath.clear();
+    m_retroNasTransferQueue = {clean};
+    m_retroNasQueuedPaths = {clean};
+    startNextDesktopRetroNasDownload();
+#else
+    Q_UNUSED(systemId)
+    Q_UNUSED(relativePath)
+    emit errorOccurred(QStringLiteral("STEAM RETRONAS CACHE REQUIRES LINUX"));
+#endif
+}
+
+void RetroBackend::startNextDesktopRetroNasDownload()
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    if (m_retroNasTransferProcess
+        && m_retroNasTransferProcess->state() != QProcess::NotRunning) {
+        return;
+    }
+    if (m_retroNasTransferQueue.isEmpty()) {
+        finishDesktopRetroNasDownload(true);
+        return;
+    }
+
+    const QString relativePath = m_retroNasTransferQueue.takeFirst();
+    const QString localPath = QDir(desktopRetroNasDownloadRoot()).absoluteFilePath(
+        relativePath);
+    if (!lexicalPathIsInside(localPath, desktopRetroNasDownloadRoot())) {
+        finishDesktopRetroNasDownload(false,
+                                      QStringLiteral("INVALID RETRONAS CACHE PATH"));
+        return;
+    }
+    QDir().mkpath(QFileInfo(localPath).absolutePath());
+
+    if (QFileInfo(localPath).isFile() && QFileInfo(localPath).size() > 0) {
+        queueDesktopRetroNasCompanions(relativePath, localPath);
+        QTimer::singleShot(0, this, &RetroBackend::startNextDesktopRetroNasDownload);
+        return;
+    }
+
+    const QString source = desktopRetroNasRemoteRoot()
+        + QLatin1Char('/') + relativePath;
+    m_activeRemoteTransferPath = relativePath;
+    m_retroNasTransferProcess = new QProcess(this);
+    m_retroNasTransferProcess->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_retroNasTransferProcess,
+            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this,
+            [this, relativePath, localPath](int exitCode,
+                                            QProcess::ExitStatus exitStatus) {
+        QProcess *finished = m_retroNasTransferProcess;
+        const QString output = finished
+            ? QString::fromUtf8(finished->readAll()).trimmed()
+            : QString();
+        if (finished)
+            finished->deleteLater();
+        m_retroNasTransferProcess = nullptr;
+        m_activeRemoteTransferPath.clear();
+
+        if (exitStatus != QProcess::NormalExit || exitCode != 0
+            || !QFileInfo(localPath).isFile()) {
+            QString error = output;
+            if (error.size() > 400)
+                error = error.right(400);
+            finishDesktopRetroNasDownload(
+                false,
+                error.isEmpty()
+                    ? QStringLiteral("COULD NOT DOWNLOAD RETRONAS ROM")
+                    : error.toUpper());
+            return;
+        }
+
+        queueDesktopRetroNasCompanions(relativePath, localPath);
+        startNextDesktopRetroNasDownload();
+    });
+
+    m_retroNasTransferProcess->start(rclonePath(), {
+        QStringLiteral("copyto"),
+        source,
+        localPath,
+        QStringLiteral("--config"), rcloneConfigPath(),
+        QStringLiteral("--no-traverse"),
+        QStringLiteral("--retries"), QStringLiteral("3"),
+        QStringLiteral("--low-level-retries"), QStringLiteral("10"),
+        QStringLiteral("--contimeout"), QStringLiteral("10s"),
+        QStringLiteral("--timeout"), QStringLiteral("5m")
+    });
+    if (!m_retroNasTransferProcess->waitForStarted(2000)) {
+        m_retroNasTransferProcess->deleteLater();
+        m_retroNasTransferProcess = nullptr;
+        m_activeRemoteTransferPath.clear();
+        finishDesktopRetroNasDownload(
+            false, QStringLiteral("COULD NOT START RETRONAS DOWNLOAD"));
+    } else {
+        qInfo("[RetroBackend] caching remote game file: %s",
+              qPrintable(relativePath));
+    }
+#endif
+}
+
+void RetroBackend::finishDesktopRetroNasDownload(bool ok, const QString &error)
+{
+#if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
+    const QString systemId = m_pendingRemoteSystemId;
+    const QString primaryPath = m_pendingRemotePrimaryPath;
+    m_retroNasTransferQueue.clear();
+    m_retroNasQueuedPaths.clear();
+    m_pendingRemoteSystemId.clear();
+    m_pendingRemotePrimaryPath.clear();
+    m_activeRemoteTransferPath.clear();
+
+    if (!ok) {
+        emit errorOccurred(error.isEmpty()
+                               ? QStringLiteral("RETRONAS DOWNLOAD FAILED")
+                               : error);
+        return;
+    }
+
+    const QString localPath = QDir(desktopRetroNasDownloadRoot()).absoluteFilePath(
+        primaryPath);
+    launchLocalGame(systemId, localPath);
+#else
+    Q_UNUSED(ok)
+    Q_UNUSED(error)
+#endif
+}
+
 void RetroBackend::launch_game(const QString &systemId, const QString &path)
+{
+    const QString remoteRelativePath = desktopRetroNasRelativePath(path);
+    if (!remoteRelativePath.isEmpty()) {
+        startDesktopRetroNasDownload(systemId, remoteRelativePath);
+        return;
+    }
+    launchLocalGame(systemId, path);
+}
+
+void RetroBackend::launchLocalGame(const QString &systemId, const QString &path)
 {
     const SystemDef *def = systemById(systemId);
     if (!def) {
@@ -1000,7 +1800,9 @@ void RetroBackend::launch_game(const QString &systemId, const QString &path)
     }
 
     const QString sysDir = systemDirectory(*def);
-    if (sysDir.isEmpty() || !pathIsInside(path, sysDir)) {
+    const bool cachedRemoteGame = desktopRetroNasCacheMode()
+        && lexicalPathIsInside(path, desktopRetroNasDownloadRoot());
+    if (!cachedRemoteGame && (sysDir.isEmpty() || !pathIsInside(path, sysDir))) {
         emit errorOccurred(QStringLiteral("ROM PATH IS NOT IN THE SYSTEM FOLDER"));
         return;
     }
@@ -1069,6 +1871,21 @@ void RetroBackend::launch_game(const QString &systemId, const QString &path)
 
 void RetroBackend::stop_game()
 {
+    if (m_retroNasTransferProcess) {
+        m_retroNasTransferProcess->disconnect(this);
+        if (m_retroNasTransferProcess->state() != QProcess::NotRunning) {
+            m_retroNasTransferProcess->kill();
+            m_retroNasTransferProcess->waitForFinished(1000);
+        }
+        m_retroNasTransferProcess->deleteLater();
+        m_retroNasTransferProcess = nullptr;
+        m_retroNasTransferQueue.clear();
+        m_retroNasQueuedPaths.clear();
+        m_pendingRemoteSystemId.clear();
+        m_pendingRemotePrimaryPath.clear();
+        m_activeRemoteTransferPath.clear();
+    }
+
     if (!m_process)
         return;
 
@@ -1101,7 +1918,11 @@ void RetroBackend::load_core_install_status_options()
 
 void RetroBackend::install_game_cores()
 {
-#ifndef Q_OS_LINUX
+#ifdef TATER_TUBE_STEAM_BUILD
+    m_coreInstallStatus = QStringLiteral("MANAGED BY STEAM");
+    emitCoreInstallStatus();
+    return;
+#elif !defined(Q_OS_LINUX)
     m_coreInstallStatus = QStringLiteral("PI ONLY");
     emitCoreInstallStatus();
     return;
