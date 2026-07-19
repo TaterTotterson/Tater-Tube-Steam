@@ -1,14 +1,14 @@
 {
-  "version": "v1.5.14",
-  "app_version": "1.5.14",
+  "version": "v1.5.15",
+  "app_version": "1.5.15",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.14/Tater-Tube-v1.5.14-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.14.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.15/Tater-Tube-v1.5.15-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.15.tar.gz",
   "notes": [
-    "Adds 16 rotating Tater Tube bumpers across Live TV, VOD, local media, Public Access, and NZB buffering, with persistent no-repeat rotation and per-area controls.",
-    "Personalizes the Picks menu with the connected assistant's name and plays one AI-generated recommendation briefing through the Player's configured audio output.",
-    "Refreshes the Raspberry Pi boot artwork with the CRT tube-style Tater Tube logo and keeps bumpers and commercials out of viewing history and recommendations."
+    "Adds one universal black video handoff so menus, loading labels, and stale frames cannot flash between Tater bumpers, programs, episodes, or tuned channels.",
+    "Keeps the blackout in place until mpv reports the incoming video is ready across VOD, VOD TV, The Tube, local media, NZB, Public Access, and OTA playback.",
+    "Preserves the visible audio-player interface and quickly releases the transition when playback returns to a menu or an error screen."
   ]
 }

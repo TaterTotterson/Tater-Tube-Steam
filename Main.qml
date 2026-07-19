@@ -344,6 +344,17 @@ Window {
         }
     }
 
+    // A single application-level blackout covers the handoff between separate
+    // mpv processes. The incoming mpv keeps its own matching black surface up
+    // until playback-restart, so no menu, loading label, or stale video frame
+    // can flash between bumpers, programs, episodes, or tuned channels.
+    Rectangle {
+        anchors.fill: parent
+        color: "black"
+        visible: mpvController && mpvController.videoTransitionActive
+        z: 10000
+    }
+
     Rectangle {
         visible: root.sleepTimerWarningVisible
         anchors.top: parent.top

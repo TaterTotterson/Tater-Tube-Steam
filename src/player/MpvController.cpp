@@ -282,6 +282,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         m_pi3SoftwareFallback = false;
     }
     m_currentAudioOnly = audioOnly;
+    setVideoTransitionActive(!audioOnly);
 
     if (m_process && m_process->state() != QProcess::NotRunning &&
         !m_replayingPi3Fallback && !m_viewingEventId.isEmpty()) {
@@ -324,6 +325,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     const QString bin = QStandardPaths::findExecutable("mpv");
     if (bin.isEmpty()) {
         qWarning("[MpvController] mpv not found in PATH");
+        setVideoTransitionActive(false);
         QTimer::singleShot(0, this, [this]() { emit playbackFinished(0, 0); });
         return;
     }
@@ -394,6 +396,13 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     if (hasOscScript)
         args << QString("--script=%1").arg(oscScript);
 
+    // Every ordinary video path gets the same frame-ready blackout. OTA and
+    // Tube modes already provide this surface through ota-osc.lua so their
+    // channel-label transition can remain layered above it.
+    const QString transitionScript = m_appRoot + "/scripts/playback-transition.lua";
+    if (!audioOnly && !isOtaOverlayMode && QFile::exists(transitionScript))
+        args << QString("--script=%1").arg(transitionScript);
+
     // Media-key handling + themed volume bar — loaded for every mode so HID
     // media keys work anytime mpv is playing, not just inside a given module.
     const QString mediaKeysScript = m_appRoot + "/scripts/media-keys.lua";
@@ -459,18 +468,10 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                    << QString("ttota-control_mode=%1").arg(isOtaMode
                                                            ? QStringLiteral("ota")
                                                            : QStringLiteral("playback"))
-                   << QString("240mp-ota-start-black=%1").arg(quietOtaLabel
-                                                               ? QStringLiteral("yes")
-                                                               : QStringLiteral("no"))
-                   << QString("240mp-ota-start_black=%1").arg(quietOtaLabel
-                                                               ? QStringLiteral("yes")
-                                                               : QStringLiteral("no"))
-                   << QString("ttota-start-black=%1").arg(quietOtaLabel
-                                                           ? QStringLiteral("yes")
-                                                           : QStringLiteral("no"))
-                   << QString("ttota-start_black=%1").arg(quietOtaLabel
-                                                           ? QStringLiteral("yes")
-                                                           : QStringLiteral("no"))
+                   << QStringLiteral("240mp-ota-start-black=yes")
+                   << QStringLiteral("240mp-ota-start_black=yes")
+                   << QStringLiteral("ttota-start-black=yes")
+                   << QStringLiteral("ttota-start_black=yes")
                    << QString("240mp-ota-show-initial-label=%1").arg(showInitialOtaLabel
                                                                       ? QStringLiteral("yes")
                                                                       : QStringLiteral("no"))
@@ -671,6 +672,9 @@ bool MpvController::replaceCurrentFile(const QString &url,
     m_duration = 0;
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
+    setVideoTransitionActive(!m_currentAudioOnly);
+    if (!m_currentAudioOnly)
+        sendScriptMessage(QStringLiteral("240mp-transition-black"));
 
     QJsonArray command{
         QStringLiteral("loadfile"),
@@ -915,10 +919,15 @@ void MpvController::onIpcReadyRead() {
             if (event == "end-file") {
                 m_lastEndFileReason = obj["reason"].toString();
                 if (m_currentStayIdle && m_lastEndFileReason == QStringLiteral("eof")) {
+                    if (!m_currentAudioOnly)
+                        setVideoTransitionActive(true);
                     emit playbackFinishedNaturally(m_position, m_duration);
                 } else if (m_currentStayIdle && m_lastEndFileReason == QStringLiteral("error")) {
                     emit playbackFailed();
                 }
+            } else if (event == "playback-restart") {
+                if (!m_currentAudioOnly)
+                    setVideoTransitionActive(false);
             } else if (event == "client-message") {
                 const QJsonArray args = obj["args"].toArray();
                 const QString message = args.size() > 0 ? args.at(0).toString() : QString();
@@ -967,6 +976,10 @@ void MpvController::onIpcReadyRead() {
 }
 
 void MpvController::onProcessFinished() {
+    const bool finishedVideo = !m_currentAudioOnly;
+    if (finishedVideo)
+        setVideoTransitionActive(true);
+
     int exitCode = m_process ? m_process->exitCode() : -1;
     if (m_process) {
         const QByteArray remaining = m_process->readAll();
@@ -1055,6 +1068,8 @@ void MpvController::onProcessFinished() {
             emit playbackFinishedNaturally(pos, dur);
         else
             emit playbackFinished(pos, dur);
+        if (finishedVideo)
+            scheduleVideoTransitionRelease();
     }
 }
 
@@ -1090,6 +1105,7 @@ void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof, bool pl
         emit playbackFinishedNaturally(pos, dur);
     else
         emit playbackFinished(pos, dur);
+    scheduleVideoTransitionRelease();
 }
 
 void MpvController::suspendQtWindows() {
@@ -1119,6 +1135,23 @@ void MpvController::setAudioLevel(double level) {
         return;
     m_audioLevel = bounded;
     emit audioLevelChanged(m_audioLevel);
+}
+
+void MpvController::setVideoTransitionActive(bool active) {
+    if (m_videoTransitionActive == active)
+        return;
+    m_videoTransitionActive = active;
+    emit videoTransitionActiveChanged(active);
+}
+
+void MpvController::scheduleVideoTransitionRelease() {
+    // Give QML one event-loop turn to hand a completed bumper, episode, or
+    // channel to the next video. A new mpv process keeps the blackout active
+    // until its playback-restart event; returning to a menu releases it quickly.
+    QTimer::singleShot(220, this, [this]() {
+        if (!isRunning())
+            setVideoTransitionActive(false);
+    });
 }
 
 void MpvController::setVolumeLevel(double volume, bool persist, bool showOverlay) {

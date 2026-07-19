@@ -39,6 +39,8 @@ class MpvController : public QObject {
     Q_PROPERTY(double volume READ volume NOTIFY volumeChanged)
     Q_PROPERTY(double volumeMax READ volumeMax CONSTANT)
     Q_PROPERTY(bool muted READ muted NOTIFY mutedChanged)
+    Q_PROPERTY(bool videoTransitionActive READ videoTransitionActive
+               NOTIFY videoTransitionActiveChanged)
 
 public:
     explicit MpvController(const QString &appRoot, AppCore *appCore = nullptr,
@@ -54,6 +56,7 @@ public:
     double volume() const { return m_volume; }
     double volumeMax() const { return 200.0; }
     bool muted() const { return m_muted; }
+    bool videoTransitionActive() const { return m_videoTransitionActive; }
     QStringList narrationAudioArgs() const;
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,
@@ -99,6 +102,7 @@ signals:
     void audioLevelChanged(double level);
     void volumeChanged(double volume);
     void mutedChanged(bool muted);
+    void videoTransitionActiveChanged(bool active);
     void volumeOverlayRequested();
     // Emitted when mpv exits because the user quit/stopped playback before the end.
     void playbackFinished(int finalPositionMs, int finalDurationMs);
@@ -153,6 +157,8 @@ private:
     void setAudioLevel(double level);
     void setVolumeLevel(double volume, bool persist, bool showOverlay);
     void setMutedState(bool muted, bool showOverlay);
+    void setVideoTransitionActive(bool active);
+    void scheduleVideoTransitionRelease();
     void showMpvVolumeOverlay();
     void beginViewingSession(const QString &url, const QString &displayTitle,
                              const QString &oscMode, bool audioOnly, bool allowYtdl);
@@ -192,6 +198,7 @@ private:
     double        m_volume       = 100.0;
     bool          m_muted        = false;
     bool          m_paused       = false;
+    bool          m_videoTransitionActive = false;
     bool          m_headlessMode = false;
     int           m_previousVt   = -1;
     int           m_qtDrmFd      = -1;
