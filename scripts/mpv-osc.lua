@@ -331,6 +331,13 @@ mp.register_script_message("240mp-osd-menu-show", function()
     end
 end)
 
+mp.register_script_message("240mp-transition-black", function()
+    if menu_visible then toggle_menu() end
+end)
+mp.register_event("end-file", function()
+    if menu_visible then toggle_menu() end
+end)
+
 mp.add_forced_key_binding("MENU", "open_menu", toggle_menu)
 
 -- ESC / BS quit when the menu is not visible. When the menu opens it adds

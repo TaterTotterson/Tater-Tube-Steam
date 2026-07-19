@@ -1,14 +1,14 @@
 {
-  "version": "v1.6.0",
-  "app_version": "1.6.0",
+  "version": "v1.6.1",
+  "app_version": "1.6.1",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.6.0/Tater-Tube-v1.6.0-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.6.0.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.6.1/Tater-Tube-v1.6.1-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.6.1.tar.gz",
   "notes": [
-    "Adds eight new Tater Tube themes—TaterVision '87, Broadcast Test, Cable After Midnight, Public Access, Woodgrain Console, Tater Satellite, Haunted Tape, and Saturday Morning—each with its own matching animated background.",
-    "Carries the selected theme consistently through the main menu, settings, tuning screens, and every Player module while keeping the original themes and custom colors available.",
-    "Refreshes the boot and update artwork with separate widescreen HDMI and overscan-safe CRT compositions, selected automatically for the connected display."
+    "Makes video handoffs seamless by keeping the active mpv surface black between Tater bumpers, programs, episodes, streams, and channel changes until the next video is ready.",
+    "Prevents the Tater Tube menus, loading labels, stale frames, and player overlays from flashing between playback items across VOD, NZB streaming, local media, Public Access, OTA, and TV modes.",
+    "Makes Back consistently return one level at a time, including nested module screens and temporary error pages, while filtering duplicate remote-control Back events."
   ]
 }

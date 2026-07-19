@@ -428,6 +428,11 @@ mp.register_event("playback-restart", function()
     mp.commandv("script-message", "240mp-ota-file-loaded")
 end)
 
+mp.register_event("end-file", function()
+    hide()
+    show_transition_black()
+end)
+
 mp.register_event("shutdown", function()
     overlay:remove()
     transition_overlay:remove()

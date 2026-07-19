@@ -19,6 +19,7 @@ FocusScope {
     property bool   loopOn:              false
     property bool   shuffleOn:           false
     property string resumeSetting:       "ask"
+    property bool   finishingPlayback:   false
 
     // Track last non-null values during playback for robust save on exit
     property int    lastKnownPositionMs:  0
@@ -31,6 +32,31 @@ FocusScope {
     // after each advancement past that point.
     property int    resumedFromPlaylistPos: -1
     property bool   needsSeekToZero:        false
+
+    function finishPlayback(finalPositionMs, finalDurationMs) {
+        if (finishingPlayback)
+            return
+        finishingPlayback = true
+
+        var pos   = lastKnownPositionMs  || finalPositionMs
+        var dur   = lastKnownDurationMs  || finalDurationMs
+        var plPos = lastKnownPlaylistPos
+
+        if (isPlaylist(filePath)) {
+            // Always save playlist state — skip completion detection
+            if (pos > 0 || plPos >= 0)
+                localFilesBackend.savePosition(filePath, pos, plPos)
+        } else {
+            // Single file: clear if near completion, save otherwise
+            if (dur > 0 && pos >= dur * 0.95)
+                localFilesBackend.clearPosition(filePath)
+            else if (pos > 5000)
+                localFilesBackend.savePosition(filePath, pos, -1)
+        }
+        if (mpvController.running)
+            mpvController.stop()
+        goBack()
+    }
 
     focus: true
 
@@ -119,26 +145,17 @@ FocusScope {
         }
 
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
-            var pos   = lastKnownPositionMs  || finalPositionMs
-            var dur   = lastKnownDurationMs  || finalDurationMs
-            var plPos = lastKnownPlaylistPos
+            playerRoot.finishPlayback(finalPositionMs, finalDurationMs)
+        }
 
-            if (isPlaylist(filePath)) {
-                // Always save playlist state — skip completion detection
-                if (pos > 0 || plPos >= 0)
-                    localFilesBackend.savePosition(filePath, pos, plPos)
-            } else {
-                // Single file: clear if near completion, save otherwise
-                if (dur > 0 && pos >= dur * 0.95)
-                    localFilesBackend.clearPosition(filePath)
-                else if (pos > 5000)
-                    localFilesBackend.savePosition(filePath, pos, -1)
-            }
-            goBack()
+        function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
+            playerRoot.finishPlayback(finalPositionMs, finalDurationMs)
         }
 
         function onPlaybackFailed() {
             noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
         }
     }
 
@@ -180,6 +197,11 @@ FocusScope {
                                           0.0, "", false, "", false, itemTitle)
             }
         }
+    }
+
+    Component.onDestruction: {
+        if (mpvController.running)
+            mpvController.stop()
     }
 
     Rectangle {

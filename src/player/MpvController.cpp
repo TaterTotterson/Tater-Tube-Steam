@@ -102,6 +102,41 @@ static QStringList redactedMpvArgs(const QStringList &args)
     return safeArgs;
 }
 
+enum class MpvSurfaceKind {
+    Audio,
+    StandardVideo,
+    TubeVideo,
+    OtaVideo
+};
+
+static MpvSurfaceKind mpvSurfaceKind(const QString &oscMode, bool audioOnly)
+{
+    if (audioOnly)
+        return MpvSurfaceKind::Audio;
+    if (oscMode == QStringLiteral("tube"))
+        return MpvSurfaceKind::TubeVideo;
+    if (oscMode == QStringLiteral("ota") ||
+        oscMode == QStringLiteral("ota-quiet") ||
+        oscMode == QStringLiteral("ota-tune") ||
+        oscMode == QStringLiteral("ota-tv") ||
+        oscMode == QStringLiteral("ota-tv-quiet"))
+        return MpvSurfaceKind::OtaVideo;
+    return MpvSurfaceKind::StandardVideo;
+}
+
+static bool isOtaTvMode(const QString &oscMode)
+{
+    return oscMode == QStringLiteral("ota-tv") ||
+        oscMode == QStringLiteral("ota-tv-quiet");
+}
+
+static bool isTubeTvHlsUrl(const QString &url)
+{
+    return url.contains(QStringLiteral("/api/tater/tv/channel/"),
+                        Qt::CaseInsensitive) &&
+        url.contains(QStringLiteral("/playlist.m3u8"), Qt::CaseInsensitive);
+}
+
 static bool readSavedMpvVolume(double *volumeOut)
 {
     if (!volumeOut)
@@ -204,6 +239,7 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
         sendCommand({"observe_property", 4, "pause"});
         sendCommand({"observe_property", 5, "volume"});
         sendCommand({"observe_property", 6, "mute"});
+        sendCommand({"observe_property", 7, "playlist-count"});
     });
     connect(m_ipc, &QLocalSocket::readyRead, this, &MpvController::onIpcReadyRead);
 
@@ -217,11 +253,13 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
     m_watchdogTimer->setInterval(10000);
     connect(m_watchdogTimer, &QTimer::timeout, this, [this] {
         if (m_ipc->state() != QLocalSocket::ConnectedState) return;
+        if (m_paused || m_endFileSignalDelivered) return;
         qint64 silenceMs = QDateTime::currentMSecsSinceEpoch() - m_lastIpcEventMs;
         if (silenceMs > 30000) {
             qWarning("[MpvController] WATCHDOG: no IPC time-pos event for %lld s — possible freeze",
                      silenceMs / 1000);
-            if (m_currentStayIdle && m_process && m_process->state() != QProcess::NotRunning) {
+            if (m_currentWatchdogKillStalled &&
+                m_process && m_process->state() != QProcess::NotRunning) {
                 qWarning("[MpvController] WATCHDOG: killing stalled live TV mpv process");
                 m_process->kill();
             }
@@ -258,25 +296,36 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                                  bool audioOnly,
                                  bool allowYtdl,
                                  const QString &ytdlFormat) {
+    const PlaybackRequest request{
+        url,
+        startSeconds,
+        audioTrack,
+        subTrack,
+        subFiles,
+        loop,
+        playlistStart,
+        transcodeOffsetSec,
+        httpHeaderFields,
+        muteAudio,
+        oscMode,
+        shuffle,
+        displayTitle,
+        audioOnly,
+        allowYtdl,
+        ytdlFormat
+    };
+
+    if (!m_replayingPi3Fallback && canReuseCurrentPlayback(request) &&
+        replaceCurrentPlayback(request)) {
+        m_lastPlaybackRequest = request;
+        m_hasLastPlaybackRequest = true;
+        m_pi3FallbackAttempted = false;
+        m_pi3SoftwareFallback = false;
+        return;
+    }
+
     if (!m_replayingPi3Fallback) {
-        m_lastPlaybackRequest = PlaybackRequest{
-            url,
-            startSeconds,
-            audioTrack,
-            subTrack,
-            subFiles,
-            loop,
-            playlistStart,
-            transcodeOffsetSec,
-            httpHeaderFields,
-            muteAudio,
-            oscMode,
-            shuffle,
-            displayTitle,
-            audioOnly,
-            allowYtdl,
-            ytdlFormat
-        };
+        m_lastPlaybackRequest = request;
         m_hasLastPlaybackRequest = true;
         m_pi3FallbackAttempted = false;
         m_pi3SoftwareFallback = false;
@@ -303,12 +352,14 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     m_position    = 0;
     m_duration    = 0;
     m_playlistPos = -1;
+    m_playlistCount = 0;
     setAudioLevel(0.0);
     if (m_paused) {
         m_paused = false;
         emit pausedChanged(m_paused);
     }
     m_lastEndFileReason.clear();
+    m_endFileSignalDelivered = false;
 
 #ifdef Q_OS_MACOS
     // .app bundles launched via double-click get a minimal PATH that excludes
@@ -333,12 +384,10 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     if (!m_replayingPi3Fallback)
         beginViewingSession(url, displayTitle, oscMode, audioOnly, allowYtdl);
 
-    const bool isOtaTvMode = (oscMode == "ota-tv" || oscMode == "ota-tv-quiet");
-    const bool isTubeTvHls = url.contains(QStringLiteral("/api/tater/tv/channel/"),
-                                          Qt::CaseInsensitive)
-        && url.contains(QStringLiteral("/playlist.m3u8"), Qt::CaseInsensitive);
+    const bool otaTvMode = isOtaTvMode(oscMode);
+    const bool isTubeTvHls = isTubeTvHlsUrl(url);
     const bool isOtaMode = (oscMode == "ota" || oscMode == "ota-quiet" ||
-                            oscMode == "ota-tune" || isOtaTvMode);
+                            oscMode == "ota-tune" || otaTvMode);
     const bool isOtaOverlayMode = isOtaMode || oscMode == "tube";
     const bool quietOtaLabel = (oscMode == "ota-quiet" || oscMode == "ota-tune" ||
                                 oscMode == "ota-tv-quiet");
@@ -371,9 +420,15 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << QString("--volume=%1").arg(m_volume, 0, 'f', 3);
     if (m_muted)
         args << QStringLiteral("--mute=yes");
-    if (isOtaTvMode) {
+    if (!audioOnly) {
+        // Keep one mpv/DRM surface alive between sequential videos. The
+        // transition script paints that retained surface black while loadfile
+        // replaces the media, so Qt's menu framebuffer never becomes visible.
         args << QStringLiteral("--idle=yes")
-             << QStringLiteral("--cache=yes")
+             << QStringLiteral("--force-window=yes");
+    }
+    if (otaTvMode) {
+        args << QStringLiteral("--cache=yes")
              << QStringLiteral("--cache-pause=no")
              << QStringLiteral("--network-timeout=15");
         if (isTubeTvHls) {
@@ -391,7 +446,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                  << QStringLiteral("--demuxer-max-back-bytes=16MiB");
         }
     }
-    m_currentStayIdle = isOtaTvMode;
+    m_currentStayIdle = !audioOnly;
+    m_currentWatchdogKillStalled = otaTvMode;
 
     if (hasOscScript)
         args << QString("--script=%1").arg(oscScript);
@@ -652,38 +708,124 @@ bool MpvController::replaceCurrentFile(const QString &url,
                                        float startSeconds,
                                        const QString &httpHeaderFields,
                                        const QString &displayTitle) {
-    if (url.isEmpty() || !isRunning() || m_ipc->state() != QLocalSocket::ConnectedState)
+    PlaybackRequest request = m_lastPlaybackRequest;
+    request.url = url;
+    request.startSeconds = startSeconds;
+    request.httpHeaderFields = httpHeaderFields;
+    request.displayTitle = displayTitle;
+    return replaceCurrentPlayback(request);
+}
+
+bool MpvController::canReuseCurrentPlayback(const PlaybackRequest &request) const {
+    if (request.url.isEmpty() || request.audioOnly || m_currentAudioOnly ||
+        !m_hasLastPlaybackRequest || !isRunning() ||
+        m_ipc->state() != QLocalSocket::ConnectedState)
+        return false;
+
+    if (mpvSurfaceKind(m_lastPlaybackRequest.oscMode,
+                       m_lastPlaybackRequest.audioOnly) !=
+        mpvSurfaceKind(request.oscMode, request.audioOnly))
+        return false;
+
+    // These modes add process-wide cache/DRM behavior that cannot be changed
+    // safely with a per-file loadfile option.
+    if (isOtaTvMode(m_lastPlaybackRequest.oscMode) != isOtaTvMode(request.oscMode))
+        return false;
+    if (isTubeTvHlsUrl(m_lastPlaybackRequest.url) != isTubeTvHlsUrl(request.url))
+        return false;
+
+    // mpv-osc.lua reads this script option once at process startup.
+    if (qAbs(m_lastPlaybackRequest.transcodeOffsetSec -
+             request.transcodeOffsetSec) > 0.01f)
+        return false;
+
+    // External subtitle lists are append-style file options in mpv. Restart
+    // that uncommon path so a subtitle from the previous file cannot leak
+    // into the next loadfile handoff.
+    if (!m_lastPlaybackRequest.subFiles.isEmpty() || !request.subFiles.isEmpty())
+        return false;
+
+    return true;
+}
+
+bool MpvController::replaceCurrentPlayback(const PlaybackRequest &request) {
+    if (request.url.isEmpty() || !isRunning() ||
+        m_ipc->state() != QLocalSocket::ConnectedState)
         return false;
 
     sendViewingEvent(QStringLiteral("stopped"));
-    beginViewingSession(url, displayTitle, m_lastPlaybackRequest.oscMode,
-                        m_currentAudioOnly, m_lastPlaybackRequest.allowYtdl);
+    beginViewingSession(request.url, request.displayTitle, request.oscMode,
+                        request.audioOnly, request.allowYtdl);
 
     QJsonObject options;
-    if (startSeconds > 0.5f)
-        options[QStringLiteral("start")] = QString::number(double(startSeconds), 'f', 3);
-    if (!displayTitle.isEmpty())
-        options[QStringLiteral("force-media-title")] = displayTitle;
-    if (!httpHeaderFields.isEmpty())
-        options[QStringLiteral("http-header-fields")] = httpHeaderFields;
+    options[QStringLiteral("start")] = request.startSeconds > 0.5f
+        ? QString::number(double(request.startSeconds), 'f', 3)
+        : QStringLiteral("none");
+    options[QStringLiteral("force-media-title")] = request.displayTitle;
+    options[QStringLiteral("http-header-fields")] = request.httpHeaderFields;
+    options[QStringLiteral("pause")] = QStringLiteral("no");
+    options[QStringLiteral("loop-playlist")] = request.loop
+        ? QStringLiteral("inf")
+        : QStringLiteral("no");
+    options[QStringLiteral("playlist-start")] = request.playlistStart >= 0
+        ? QString::number(request.playlistStart)
+        : QStringLiteral("auto");
+    options[QStringLiteral("shuffle")] = request.shuffle
+        ? QStringLiteral("yes")
+        : QStringLiteral("no");
+    options[QStringLiteral("ytdl")] = request.allowYtdl
+        ? QStringLiteral("yes")
+        : QStringLiteral("no");
+    options[QStringLiteral("ytdl-format")] = request.ytdlFormat;
+
+    if (request.muteAudio)
+        options[QStringLiteral("aid")] = QStringLiteral("no");
+    else if (request.audioTrack > 0)
+        options[QStringLiteral("aid")] = QString::number(request.audioTrack);
+    else
+        options[QStringLiteral("aid")] = QStringLiteral("auto");
+
+    if (request.subTrack > 0)
+        options[QStringLiteral("sid")] = QString::number(request.subTrack);
+    else if (request.subFiles.isEmpty() || request.subTrack < 0)
+        options[QStringLiteral("sid")] = QStringLiteral("no");
+    else
+        options[QStringLiteral("sid")] = QStringLiteral("auto");
 
     m_lastEndFileReason.clear();
+    m_endFileSignalDelivered = false;
     m_position = 0;
     m_duration = 0;
+    m_playlistPos = -1;
+    m_playlistCount = 0;
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
+    emit playlistPosChanged(m_playlistPos);
+    m_currentAudioOnly = request.audioOnly;
     setVideoTransitionActive(!m_currentAudioOnly);
     if (!m_currentAudioOnly)
         sendScriptMessage(QStringLiteral("240mp-transition-black"));
+    if (request.oscMode == QStringLiteral("ota-quiet") ||
+        request.oscMode == QStringLiteral("ota-tv-quiet"))
+        sendScriptMessage(QStringLiteral("240mp-ota-quiet-next-file"));
 
     QJsonArray command{
         QStringLiteral("loadfile"),
-        url,
+        request.url,
         QStringLiteral("replace"),
         -1,
         options
     };
     sendCommand(command);
+    m_lastPlaybackRequest = request;
+    m_hasLastPlaybackRequest = true;
+    m_currentStayIdle = !request.audioOnly;
+    m_currentWatchdogKillStalled = isOtaTvMode(request.oscMode);
+    m_lastIpcEventMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_paused) {
+        m_paused = false;
+        emit pausedChanged(m_paused);
+    }
     sendViewingEvent(QStringLiteral("started"));
     return true;
 }
@@ -918,11 +1060,35 @@ void MpvController::onIpcReadyRead() {
             // so onProcessFinished can distinguish a natural finish from a quit.
             if (event == "end-file") {
                 m_lastEndFileReason = obj["reason"].toString();
-                if (m_currentStayIdle && m_lastEndFileReason == QStringLiteral("eof")) {
-                    if (!m_currentAudioOnly)
+                const bool playlistWillContinue =
+                    m_lastPlaybackRequest.loop ||
+                    (m_playlistCount > 1 && m_playlistPos >= 0 &&
+                     m_playlistPos < m_playlistCount - 1);
+                if (m_currentStayIdle && !m_endFileSignalDelivered &&
+                    !playlistWillContinue &&
+                    m_lastEndFileReason == QStringLiteral("eof")) {
+                    m_endFileSignalDelivered = true;
+                    if (!m_currentAudioOnly) {
                         setVideoTransitionActive(true);
+                        sendScriptMessage(QStringLiteral("240mp-transition-black"));
+                    }
+                    sendViewingEvent(QStringLiteral("completed"),
+                                     m_duration > 0 ? m_duration : m_position,
+                                     m_duration);
+                    m_viewingEventId.clear();
+                    m_currentViewingContext.clear();
                     emit playbackFinishedNaturally(m_position, m_duration);
-                } else if (m_currentStayIdle && m_lastEndFileReason == QStringLiteral("error")) {
+                } else if (m_currentStayIdle && !m_endFileSignalDelivered &&
+                           !playlistWillContinue &&
+                           m_lastEndFileReason == QStringLiteral("error")) {
+                    m_endFileSignalDelivered = true;
+                    if (!m_currentAudioOnly) {
+                        setVideoTransitionActive(true);
+                        sendScriptMessage(QStringLiteral("240mp-transition-black"));
+                    }
+                    sendViewingEvent(QStringLiteral("stopped"));
+                    m_viewingEventId.clear();
+                    m_currentViewingContext.clear();
                     emit playbackFailed();
                 }
             } else if (event == "playback-restart") {
@@ -959,6 +1125,8 @@ void MpvController::onIpcReadyRead() {
         } else if (name == "playlist-pos") {
             m_playlistPos = int(val);
             emit playlistPosChanged(m_playlistPos);
+        } else if (name == "playlist-count") {
+            m_playlistCount = int(val);
         } else if (name == "pause") {
             const bool paused = data.toBool();
             if (m_paused != paused) {
@@ -990,6 +1158,8 @@ void MpvController::onProcessFinished() {
         qWarning("[MpvController] mpv exited with code %d", exitCode);
     m_connectTimer->stop();
     m_watchdogTimer->stop();
+    m_currentStayIdle = false;
+    m_currentWatchdogKillStalled = false;
     // Drain any buffered-but-unread IPC data before tearing the socket down.
     // readyRead and QProcess::finished are independent event-loop signals with
     // no ordering guarantee, so mpv's final "end-file" event may still be sitting
@@ -997,6 +1167,7 @@ void MpvController::onProcessFinished() {
     // accurate, so a natural EOF reliably triggers autoplay-next.
     if (m_ipc->state() == QLocalSocket::ConnectedState)
         onIpcReadyRead();
+    const bool completionAlreadyDelivered = m_endFileSignalDelivered;
     m_ipc->abort();
     QFile::remove(m_socketPath);
 
@@ -1058,22 +1229,28 @@ void MpvController::onProcessFinished() {
         // the kernel falls back to showing the text console on Qt's VT.
         // 200 ms is more than three VSync periods at 60 Hz — enough to clear
         // any in-flight commit without a perceptible delay for the user.
-        QTimer::singleShot(200, this, [this, pos, dur, naturalEof, playbackError]() {
-            doHeadlessRestore(pos, dur, naturalEof, playbackError);
+        QTimer::singleShot(200, this, [this, pos, dur, naturalEof, playbackError,
+                                      completionAlreadyDelivered]() {
+            doHeadlessRestore(pos, dur, naturalEof, playbackError,
+                              completionAlreadyDelivered);
         });
     } else {
-        if (playbackError)
-            emit playbackFailed();
-        else if (naturalEof)
-            emit playbackFinishedNaturally(pos, dur);
-        else
-            emit playbackFinished(pos, dur);
+        if (!completionAlreadyDelivered) {
+            if (playbackError)
+                emit playbackFailed();
+            else if (naturalEof)
+                emit playbackFinishedNaturally(pos, dur);
+            else
+                emit playbackFinished(pos, dur);
+        }
         if (finishedVideo)
             scheduleVideoTransitionRelease();
     }
 }
 
-void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof, bool playbackError) {
+void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof,
+                                      bool playbackError,
+                                      bool completionAlreadyDelivered) {
 #ifdef Q_OS_LINUX
     if (m_qtDrmFd >= 0) {
         if (m_qtDrmMasterDropped && ::ioctl(m_qtDrmFd, DRM_IOCTL_SET_MASTER, 0) < 0) {
@@ -1099,12 +1276,14 @@ void MpvController::doHeadlessRestore(int pos, int dur, bool naturalEof, bool pl
     }
     resumeQtWindows();
     m_headlessMode = false;
-    if (playbackError)
-        emit playbackFailed();
-    else if (naturalEof)
-        emit playbackFinishedNaturally(pos, dur);
-    else
-        emit playbackFinished(pos, dur);
+    if (!completionAlreadyDelivered) {
+        if (playbackError)
+            emit playbackFailed();
+        else if (naturalEof)
+            emit playbackFinishedNaturally(pos, dur);
+        else
+            emit playbackFinished(pos, dur);
+    }
     scheduleVideoTransitionRelease();
 }
 
@@ -1145,9 +1324,9 @@ void MpvController::setVideoTransitionActive(bool active) {
 }
 
 void MpvController::scheduleVideoTransitionRelease() {
-    // Give QML one event-loop turn to hand a completed bumper, episode, or
-    // channel to the next video. A new mpv process keeps the blackout active
-    // until its playback-restart event; returning to a menu releases it quickly.
+    // Give QML one event-loop turn to hand a completed video to the next item.
+    // Persistent mpv handoffs release on playback-restart; returning to a menu
+    // exits mpv and releases this application-level fallback shortly afterward.
     QTimer::singleShot(220, this, [this]() {
         if (!isRunning())
             setVideoTransitionActive(false);

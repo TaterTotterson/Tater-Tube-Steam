@@ -475,6 +475,8 @@ FocusScope {
             } else {
                 noSignalVisible = true
                 playbackStarted = false
+                if (mpvController.running)
+                    mpvController.stop()
             }
         }
     }
@@ -504,6 +506,11 @@ FocusScope {
         } else {
             beginPlayback(viewOffset)
         }
+    }
+
+    Component.onDestruction: {
+        if (mpvController.running)
+            mpvController.stop()
     }
 
     Rectangle {

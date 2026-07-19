@@ -50,6 +50,7 @@ FocusScope {
     property var pendingPlaybackItem: ({})
     property bool nzbMovieBumperActive: false
     property bool nzbStreamResponseReady: false
+    property string messageReturnMode: ""
 
     focus: true
 
@@ -148,6 +149,9 @@ FocusScope {
     }
 
     function loadCategories() {
+        if (mode === "categories" || mode === "subcategories" ||
+                mode === "items" || mode === "search")
+            messageReturnMode = mode
         mode = "loading"
         statusText = "LOADING CATEGORIES..."
         usenetBackend.load_categories()
@@ -176,6 +180,7 @@ FocusScope {
         }
         pendingSearchMediaType = String(mediaTypeHint || "").toLowerCase()
         currentCategoryTitle = "Search: " + query
+        messageReturnMode = mode
         mode = "loading"
         statusText = "SEARCHING " + query
         usenetBackend.search_items(query)
@@ -362,6 +367,7 @@ FocusScope {
             navigateTo("TubeTvMenu.qml", { categories: categories }, { currentIndex: categoryList.currentIndex })
             return
         }
+        messageReturnMode = mode
         currentCategoryTitle = row.fullTitle || row.title || "CATEGORY"
         mode = "loading"
         if (row.type === "trending") {
@@ -444,6 +450,47 @@ FocusScope {
         setListIndex(categoryList, currentCategoryIndex)
     }
 
+    function returnFromMessage() {
+        var targetMode = messageReturnMode
+        messageReturnMode = ""
+        if (targetMode === "search") {
+            showSearch()
+            return
+        }
+        if (targetMode === "items" && items.length > 0) {
+            mode = "items"
+            setListIndex(activeItemList(), currentItemIndex)
+            return
+        }
+        if (targetMode === "subcategories" && subcategories.length > 0) {
+            mode = "subcategories"
+            setListIndex(categoryList, currentSubcategoryIndex)
+            return
+        }
+        if (targetMode === "categories" &&
+                (categories.length > 0 || shortcutRows.length > 0)) {
+            mode = "categories"
+            setListIndex(categoryList, currentCategoryIndex)
+            return
+        }
+        if (items.length > 0) {
+            mode = "items"
+            setListIndex(activeItemList(), currentItemIndex)
+            return
+        }
+        if (subcategories.length > 0) {
+            mode = "subcategories"
+            setListIndex(categoryList, currentSubcategoryIndex)
+            return
+        }
+        if (categories.length > 0 || shortcutRows.length > 0) {
+            mode = "categories"
+            setListIndex(categoryList, currentCategoryIndex)
+            return
+        }
+        goBack()
+    }
+
     function resetCategoryDrilldown() {
         subcategories = []
         categoryStack = []
@@ -483,6 +530,7 @@ FocusScope {
                 index: index
             }])
             currentCategoryTitle = row.title || "Local"
+            messageReturnMode = "items"
             mode = "loading"
             statusText = "LOADING " + currentCategoryTitle
             usenetBackend.load_local_items(row.categoryId || "", row.path || "", row.sourceIndex || 0, currentCategoryTitle)
@@ -498,6 +546,7 @@ FocusScope {
             return
         }
         pendingPlaybackItem = row
+        messageReturnMode = "items"
         nzbStreamResponseReady = false
         streams = []
         pendingRequestId = newRequestId()
@@ -793,7 +842,7 @@ FocusScope {
                 refresh()
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                goBack()
+                returnFromMessage()
                 event.accepted = true
             }
         }
@@ -971,6 +1020,8 @@ FocusScope {
                 currentPlaybackItem = ({})
                 currentPlaybackBaseOffsetMs = 0
                 mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
+                if (mpvController.running)
+                    mpvController.stop()
             }
         }
 
@@ -985,8 +1036,11 @@ FocusScope {
                 currentStreamUsesServer = false
                 currentPlaybackItem = ({})
                 currentPlaybackBaseOffsetMs = 0
+                messageReturnMode = "items"
                 mode = "message"
                 statusText = "THE TUBE PLAYBACK FAILED"
+                if (mpvController.running)
+                    mpvController.stop()
             }
         }
 

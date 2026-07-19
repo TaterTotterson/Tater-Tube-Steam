@@ -28,6 +28,7 @@ FocusScope {
     property int fastForwardTargetIndex: -1
     property int visualTick: 0
     property string musicProvider: "Video on Demand"
+    property string messageReturnMode: ""
 
     focus: true
 
@@ -122,6 +123,7 @@ FocusScope {
 
     function selectLibrary(index) {
         if (index < 0 || index >= libraries.length) return
+        messageReturnMode = mode === "libraries" ? "libraries" : ""
         currentLibraryIndex = index
         var library = libraries[index] || ({})
         currentLibraryTitle = library.title || "TAPE DECK"
@@ -138,6 +140,7 @@ FocusScope {
 
     function selectAlbum(index) {
         if (index < 0 || index >= albums.length) return
+        messageReturnMode = "albums"
         currentAlbumIndex = index
         albumList.currentIndex = index
         var album = albums[index] || ({})
@@ -154,6 +157,7 @@ FocusScope {
 
     function playTrack(index) {
         if (index < 0 || index >= tracks.length) return
+        messageReturnMode = "tracks"
         fastForwardTimer.stop()
         fastForwarding = false
         fastForwardTargetIndex = -1
@@ -189,6 +193,42 @@ FocusScope {
         ignoringPreviousTrackExit = false
         if (returnToTracks)
             mode = "tracks"
+    }
+
+    function returnFromMessage() {
+        var targetMode = messageReturnMode
+        messageReturnMode = ""
+        if (targetMode === "tracks" && tracks.length > 0) {
+            mode = "tracks"
+            trackList.currentIndex = Math.max(0, Math.min(trackIndex, tracks.length - 1))
+            return
+        }
+        if (targetMode === "albums" && albums.length > 0) {
+            mode = "albums"
+            albumList.currentIndex = Math.max(0, Math.min(currentAlbumIndex, albums.length - 1))
+            return
+        }
+        if (targetMode === "libraries" && libraries.length > 0) {
+            mode = "libraries"
+            libraryList.currentIndex = Math.max(0, Math.min(currentLibraryIndex, libraries.length - 1))
+            return
+        }
+        if (tracks.length > 0) {
+            mode = "tracks"
+            trackList.currentIndex = Math.max(0, Math.min(trackIndex, tracks.length - 1))
+            return
+        }
+        if (albums.length > 0) {
+            mode = "albums"
+            albumList.currentIndex = Math.max(0, Math.min(currentAlbumIndex, albums.length - 1))
+            return
+        }
+        if (!skippedLibraryPicker && libraries.length > 0) {
+            mode = "libraries"
+            libraryList.currentIndex = Math.max(0, Math.min(currentLibraryIndex, libraries.length - 1))
+            return
+        }
+        goBack()
     }
 
     function nextTrack() {
@@ -279,6 +319,8 @@ FocusScope {
                     goBack()
                 else
                     mode = "libraries"
+            } else if (mode === "message") {
+                returnFromMessage()
             } else {
                 goBack()
             }

@@ -18,6 +18,7 @@ FocusScope {
     // Internal navigation state
     property var navStack: []
     property var currentParams: ({})
+    property double lastBackNavigationAtMs: 0
 
     function loginView() {
         return embyBackend.get_media_provider() === "PLEX" ? "PlexLogin.qml" : "LocalLogin.qml"
@@ -46,6 +47,10 @@ FocusScope {
     }
 
     function navigateBack() {
+        var now = Date.now()
+        if (now - lastBackNavigationAtMs < 220)
+            return
+        lastBackNavigationAtMs = now
         if (navStack.length === 0) {
             moduleRoot.goBack()
             return

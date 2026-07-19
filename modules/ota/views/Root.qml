@@ -119,8 +119,8 @@ FocusScope {
         pendingChannelId = channel.id
 
         if (mpvController.running) {
-            stoppingForTune = true
-            mpvController.stop()
+            stoppingForTune = false
+            mpvController.sendScriptMessage("240mp-ota-tune-transition", statusText)
         }
     }
 
@@ -139,6 +139,10 @@ FocusScope {
             streamRequestActive = false
             tuningStaticVisible = false
             noSignalVisible = true
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
         appCore.save_setting(moduleId, "last_hdhomerun_channel_id", channel.id)
@@ -408,15 +412,29 @@ FocusScope {
             if (!leaving && hasStartedPlayback)
                 goBack()
         }
+        function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
+            if (leaving)
+                return
+            hasStartedPlayback = false
+            statusText = "OTA SIGNAL ENDED"
+            streamRequestActive = false
+            tuningStaticVisible = false
+            noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
+        }
         function onPlaybackFailed() {
             if (stoppingForTune) {
                 stoppingForTune = false
                 return
             }
+            hasStartedPlayback = false
             statusText = "OTA PLAYBACK FAILED"
             streamRequestActive = false
             tuningStaticVisible = false
             noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
         }
         function onScriptMessageReceived(message, arg) {
             if (message === "240mp-ota-tune-now") {

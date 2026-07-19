@@ -36,6 +36,7 @@ end
 -- The navigation menu (mpv-osc.lua) broadcasts this when it opens; the volume
 -- bar and the menu share the same spot, so we stand down.
 mp.register_script_message("240mp-osd-volume-hide", hide_bar)
+mp.register_script_message("240mp-transition-black", hide_bar)
 
 local function read_volume_state()
     local file = io.open(VOLUME_STATE_PATH, "r")
@@ -171,6 +172,7 @@ mp.add_forced_key_binding("MUTE",        "mk-mute",     function() mp.command("n
 
 mp.register_event("start-file", restore_volume_state)
 mp.register_event("file-loaded", restore_volume_state)
+mp.register_event("end-file", hide_bar)
 
 mp.observe_property("volume", "number", function(_, value)
     if value ~= nil and volume_state_ready then

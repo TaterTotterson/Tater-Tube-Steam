@@ -557,14 +557,14 @@ FocusScope {
     }
 
     function showTvStaticForChannel(channel) {
-        tvTransitionBlankVisible = false
-        tvTuningStaticVisible = true
+        tvTransitionBlankVisible = mpvController.running
+        tvTuningStaticVisible = !mpvController.running
         tvStreamStarted = false
         cancelTvResolve()
         statusText = tvChannelLabel(channel)
         if (mpvController.running) {
-            tvStoppingForTune = true
-            mpvController.stop()
+            tvStoppingForTune = false
+            mpvController.sendScriptMessage("240mp-ota-tune-transition", statusText)
         }
     }
 
@@ -598,8 +598,13 @@ FocusScope {
         var resolved = findTvScheduleItem(channel)
         if (!resolved || !resolved.item || !resolved.item.url) {
             tvTuningStaticVisible = true
+            tvTransitionBlankVisible = false
             tvStreamStarted = false
             statusText = tvChannelLabel(channel)
+            if (mpvController.running) {
+                tvStoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
@@ -967,6 +972,8 @@ FocusScope {
         mode = videos.length > 0 ? "list" : "message"
         if (videos.length > 0)
             setVideoRowIndex(videoRowForVideoIndex(currentVideoIndex))
+        if (mpvController.running)
+            mpvController.stop()
     }
 
     function pageVideoList(direction) {
@@ -1297,6 +1304,10 @@ FocusScope {
                 tvTuningStaticVisible = true
                 tvStreamStarted = false
                 statusText = tvChannels.length > 0 ? tvChannelLabel(tvChannels[tvCurrentChannelIndex]) : "TV MODE"
+                if (mpvController.running) {
+                    tvStoppingForTune = true
+                    mpvController.stop()
+                }
                 tvTuneTimer.restart()
                 return
             }
@@ -1306,6 +1317,8 @@ FocusScope {
             }
             mode = "message"
             statusText = "YOUTUBE PLAYBACK FAILED"
+            if (mpvController.running)
+                mpvController.stop()
         }
 
         function onScriptMessageReceived(message, arg) {

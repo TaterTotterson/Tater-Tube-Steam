@@ -569,8 +569,8 @@ FocusScope {
 
     function showStaticForChannel(channel) {
         scheduleAdvanceTimer.stop()
-        transitionBlankVisible = false
-        tuningStaticVisible = true
+        transitionBlankVisible = mpvController.running
+        tuningStaticVisible = !mpvController.running
         noSignalVisible = false
         streamStarted = false
         streamRequestActive = false
@@ -581,8 +581,8 @@ FocusScope {
         statusText = channelLabel(channel)
 
         if (mpvController.running) {
-            stoppingForTune = true
-            mpvController.stop()
+            stoppingForTune = false
+            mpvController.sendScriptMessage("240mp-ota-tune-transition", statusText)
         }
     }
 
@@ -595,6 +595,10 @@ FocusScope {
             tuningStaticVisible = false
             noSignalVisible = true
             statusText = "VOD TV CHANNEL EMPTY"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
@@ -653,6 +657,10 @@ FocusScope {
             tuningStaticVisible = false
             streamRequestActive = false
             statusText = "VOD TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
@@ -832,6 +840,10 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
 
         function onErrorOccurred(message) {
@@ -842,6 +854,10 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
     }
 
@@ -885,6 +901,10 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = "VOD TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
 
         function onScriptMessageReceived(message, arg) {

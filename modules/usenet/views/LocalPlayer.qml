@@ -350,11 +350,10 @@ FocusScope {
     }
 
     Component.onDestruction: {
-        if (playbackStarted) {
-            if (!playingTaterBumper)
-                saveCurrentPlayState(false)
+        if (playbackStarted && !playingTaterBumper)
+            saveCurrentPlayState(false)
+        if (mpvController.running)
             mpvController.stop()
-        }
     }
 
     Timer {
@@ -464,6 +463,8 @@ FocusScope {
             saveCurrentPlayState(false)
             playbackStarted = false
             noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
         }
 
         function onScriptMessageReceived(message, arg) {

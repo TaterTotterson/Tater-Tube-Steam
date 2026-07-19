@@ -343,6 +343,22 @@ Window {
     // --- APP-LEVEL NAV STACK ---
     property var appNavStack: []
     property var appCurrentParams: ({})
+    property double lastBackKeyAtMs: 0
+    property double lastAppBackAtMs: 0
+
+    function isBackKey(key) {
+        return key === Qt.Key_Escape || key === Qt.Key_Backspace || key === Qt.Key_Back
+    }
+
+    function consumeDuplicateBack(event) {
+        if (!root.isBackKey(event.key))
+            return false
+        var now = Date.now()
+        var duplicate = event.isAutoRepeat || now - root.lastBackKeyAtMs < 220
+        if (!duplicate)
+            root.lastBackKeyAtMs = now
+        return duplicate
+    }
 
     function goHome() {
         if (mpvController && mpvController.running)
@@ -378,11 +394,16 @@ Window {
         focus: true;
         source: "views/ModuleList.qml";
 
+        Keys.priority: Keys.BeforeItem
         Keys.onPressed: (event) => {
             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Q) {
                 Qt.quit()
             } else if (event.key === Qt.Key_Home) {
                 root.goHome()
+                event.accepted = true
+            } else if (root.consumeDuplicateBack(event)) {
+                // Some remotes emit a second Back-shaped event for one press.
+                // Consume it before a newly loaded view can pop another level.
                 event.accepted = true
             }
         }
@@ -400,6 +421,10 @@ Window {
             }
 
             function onGoBack() {
+                var now = Date.now()
+                if (now - root.lastAppBackAtMs < 220)
+                    return
+                root.lastAppBackAtMs = now
                 if (root.appNavStack.length === 0) return
                 var prev = root.appNavStack.pop()
                 root.appCurrentParams = prev.params
@@ -409,10 +434,9 @@ Window {
         }
     }
 
-    // A single application-level blackout covers the handoff between separate
-    // mpv processes. The incoming mpv keeps its own matching black surface up
-    // until playback-restart, so no menu, loading label, or stale video frame
-    // can flash between bumpers, programs, episodes, or tuned channels.
+    // App-level fallback for first/last playback and the rare transition that
+    // changes mpv surface type. Sequential video handoffs stay inside one mpv
+    // surface, whose matching black overlay remains up until playback-restart.
     Rectangle {
         anchors.fill: parent
         color: "black"

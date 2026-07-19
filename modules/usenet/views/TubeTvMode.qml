@@ -1641,6 +1641,10 @@ FocusScope {
             tuningStaticVisible = false
             noSignalVisible = true
             statusText = "LOCAL TV CHANNEL EMPTY"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
@@ -1748,6 +1752,10 @@ FocusScope {
             noSignalVisible = true
             tuningStaticVisible = false
             statusText = "LOCAL TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 

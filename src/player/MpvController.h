@@ -144,7 +144,8 @@ private:
     };
 
     void sendCommand(const QJsonArray &args);
-    void doHeadlessRestore(int pos, int dur, bool naturalEof, bool playbackError);
+    void doHeadlessRestore(int pos, int dur, bool naturalEof, bool playbackError,
+                           bool completionAlreadyDelivered);
     bool shouldRetryPi3SoftwareFallback(bool playbackError) const;
     bool detectHeadlessMode() const;
     VideoProfile detectVideoProfile() const;
@@ -159,6 +160,8 @@ private:
     void setMutedState(bool muted, bool showOverlay);
     void setVideoTransitionActive(bool active);
     void scheduleVideoTransitionRelease();
+    bool canReuseCurrentPlayback(const PlaybackRequest &request) const;
+    bool replaceCurrentPlayback(const PlaybackRequest &request);
     void showMpvVolumeOverlay();
     void beginViewingSession(const QString &url, const QString &displayTitle,
                              const QString &oscMode, bool audioOnly, bool allowYtdl);
@@ -194,6 +197,7 @@ private:
     int           m_position     = 0;
     int           m_duration     = 0;
     int           m_playlistPos  = -1;
+    int           m_playlistCount = 0;
     double        m_audioLevel   = 0.0;
     double        m_volume       = 100.0;
     bool          m_muted        = false;
@@ -209,6 +213,8 @@ private:
     bool          m_pi3SoftwareFallback = false;
     bool          m_currentAudioOnly = false;
     bool          m_currentStayIdle = false;
+    bool          m_currentWatchdogKillStalled = false;
+    bool          m_endFileSignalDelivered = false;
     QVariantMap   m_pendingViewingContext;
     QVariantMap   m_currentViewingContext;
     QString       m_viewingEventId;

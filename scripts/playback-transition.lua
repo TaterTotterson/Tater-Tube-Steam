@@ -38,6 +38,7 @@ mp.register_event("file-loaded", function()
         show_black()
     end
 end)
+mp.register_event("end-file", show_black)
 mp.register_event("playback-restart", hide_black)
 mp.register_event("shutdown", function()
     overlay:remove()
