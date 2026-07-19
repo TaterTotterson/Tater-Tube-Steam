@@ -29,7 +29,7 @@ FocusScope {
         if (picks.length > 0) {
             rows.unshift({
                 id: "com.tater.picks",
-                name: "TATER'S PICKS",
+                name: appCore.taterPicksTitle,
                 entry_point: "views/TaterPicks.qml"
             })
         }

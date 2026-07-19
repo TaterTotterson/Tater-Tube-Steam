@@ -828,7 +828,8 @@ void MpvController::beginViewingSession(const QString &url, const QString &displ
 }
 
 void MpvController::sendViewingEvent(const QString &state, int positionMs, int durationMs) {
-    if (!m_appCore || m_viewingEventId.isEmpty())
+    if (!m_appCore || m_viewingEventId.isEmpty()
+        || m_currentViewingContext.value(QStringLiteral("suppress_viewing_event")).toBool())
         return;
     const QString token =
         m_appCore->get_setting(QStringLiteral("com.240mp.usenet"),

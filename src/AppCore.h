@@ -27,6 +27,7 @@ class AppCore : public QObject {
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
     Q_PROPERTY(QVariantList taterRecommendations READ taterRecommendations NOTIFY taterRecommendationsChanged)
     Q_PROPERTY(QVariantMap taterRecommendationBatch READ taterRecommendationBatch NOTIFY taterRecommendationsChanged)
+    Q_PROPERTY(QString taterPicksTitle READ taterPicksTitle NOTIFY taterRecommendationsChanged)
     Q_PROPERTY(bool taterNarrating READ taterNarrating NOTIFY taterNarratingChanged)
 public:
     explicit AppCore(const QString &appRoot, const QString &dataRoot, QObject *parent = nullptr);
@@ -36,6 +37,7 @@ public:
     QString dataRoot() const { return m_dataRoot; }
     QVariantList taterRecommendations() const { return m_taterRecommendations; }
     QVariantMap taterRecommendationBatch() const { return m_taterRecommendationBatch; }
+    QString taterPicksTitle() const;
     bool taterNarrating() const { return m_taterNarrating; }
     void setMpvController(MpvController *controller) { m_mpvController = controller; }
 
@@ -119,6 +121,7 @@ private:
     bool canInstallUpdates() const;
     QString taterServerApiUrl(const QString &path) const;
     QString taterServerToken() const;
+    void scheduleTaterRecommendationsRetry();
     bool taterPicksNarrationEnabled() const;
     void requestTaterNarration(const QJsonObject &identity);
     void pollTaterNarrationRequest();
@@ -133,6 +136,7 @@ private:
     QNetworkAccessManager *m_updateNetwork = nullptr;
     MpvController *m_mpvController = nullptr;
     QTimer *m_taterRecommendationsTimer = nullptr;
+    QTimer *m_taterRecommendationsRetryTimer = nullptr;
     QTimer *m_taterNarrationPollTimer = nullptr;
     QProcess *m_taterNarrationProcess = nullptr;
     QVariantList m_taterRecommendations;
@@ -140,5 +144,7 @@ private:
     QString m_taterNarrationRequestId;
     quint64 m_taterNarrationGeneration = 0;
     int m_taterNarrationPollAttempts = 0;
+    int m_taterRecommendationsRetryAttempts = 0;
+    bool m_taterRecommendationsRequestInFlight = false;
     bool m_taterNarrating = false;
 };

@@ -1,14 +1,14 @@
 {
-  "version": "v1.5.13",
-  "app_version": "1.5.13",
+  "version": "v1.5.14",
+  "app_version": "1.5.14",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.13/Tater-Tube-v1.5.13-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.13.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.5.14/Tater-Tube-v1.5.14-linux-arm64.tar.gz",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.5.14.tar.gz",
   "notes": [
-    "Moves the Why This Pick card above the recommending mascot so the artwork and Tater's face remain unobstructed.",
-    "Routes Tater's Picks narration through the Player's active volume, mute, custom mpv audio, and Raspberry Pi HDMI or headphone output settings.",
-    "Shows Tater Is Talking only after narration audio playback actually starts instead of while the TTS request is still being prepared."
+    "Adds 16 rotating Tater Tube bumpers across Live TV, VOD, local media, Public Access, and NZB buffering, with persistent no-repeat rotation and per-area controls.",
+    "Personalizes the Picks menu with the connected assistant's name and plays one AI-generated recommendation briefing through the Player's configured audio output.",
+    "Refreshes the Raspberry Pi boot artwork with the CRT tube-style Tater Tube logo and keeps bumpers and commercials out of viewing history and recommendations."
   ]
 }

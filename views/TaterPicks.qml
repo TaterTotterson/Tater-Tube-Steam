@@ -140,7 +140,7 @@ FocusScope {
     }
 
     AppBar {
-        title: "TATER'S PICKS"
+        title: appCore.taterPicksTitle
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.125

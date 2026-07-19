@@ -75,6 +75,7 @@ FocusScope {
 
         items.push({ type: "settings_category", label: "Appearance", sectionKey: "appearance" })
         items.push({ type: "settings_category", label: "Features", sectionKey: "features" })
+        items.push({ type: "settings_category", label: "Tater Bumpers", sectionKey: "tater_bumpers" })
         items.push({ type: "settings_category", label: "Gamepad", sectionKey: "bluetooth" })
         items.push({ type: "settings_category", label: "System", sectionKey: "system" })
 
@@ -86,6 +87,7 @@ FocusScope {
         if (sectionKey === "appearance") return "Appearance"
         if (sectionKey === "system") return "System"
         if (sectionKey === "features") return "Features"
+        if (sectionKey === "tater_bumpers") return "Tater Bumpers"
         if (sectionKey === "bluetooth") return "Gamepad"
         return "Settings"
     }
@@ -104,6 +106,8 @@ FocusScope {
             buildSystemItems(items)
         } else if (sectionKey === "features") {
             buildFeatureItems(items)
+        } else if (sectionKey === "tater_bumpers") {
+            buildTaterBumperItems(items)
         } else if (sectionKey === "bluetooth") {
             buildBluetoothItems(items)
         }
@@ -219,6 +223,44 @@ FocusScope {
         } else {
             items.push({ type: "status", label: "No Feature Settings", value: "" })
         }
+    }
+
+    function bumperSettingEnabled(key) {
+        var raw = appSettings[key]
+        return !(raw === false || raw === 0 || raw === "0" ||
+                 String(raw || "").trim().toLowerCase() === "off" ||
+                 String(raw || "").trim().toLowerCase() === "false")
+    }
+
+    function addBumperToggle(items, key, label) {
+        var enabled = bumperSettingEnabled(key)
+        items.push({
+            type: "toggle",
+            key: key,
+            label: label,
+            value: enabled ? "ON" : "OFF",
+            enabled: enabled,
+            moduleId: ""
+        })
+    }
+
+    function buildTaterBumperItems(items) {
+        items.push({ type: "section", label: "Live TV:" })
+        addBumperToggle(items, "tater_bumpers_live_tv", "Live TV Breaks")
+
+        items.push({ type: "section", label: "Video On Demand:" })
+        addBumperToggle(items, "tater_bumpers_vod_movies", "Before Movies")
+        addBumperToggle(items, "tater_bumpers_vod_series", "Between Episodes")
+
+        items.push({ type: "section", label: "Server Local:" })
+        addBumperToggle(items, "tater_bumpers_local_movies", "Before Movies")
+        addBumperToggle(items, "tater_bumpers_local_series", "Between Episodes")
+
+        items.push({ type: "section", label: "Public Access:" })
+        addBumperToggle(items, "tater_bumpers_public_access_series", "Between Videos")
+
+        items.push({ type: "section", label: "NZB Streaming:" })
+        addBumperToggle(items, "tater_bumpers_nzb_movies", "While Movie Buffers")
     }
 
     function buildBluetoothItems(items) {

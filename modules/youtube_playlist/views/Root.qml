@@ -1,5 +1,6 @@
 import QtQuick
 import Components
+import "../../shared/TaterBumpers.js" as TaterBumpers
 
 FocusScope {
     id: mixRoot
@@ -33,6 +34,8 @@ FocusScope {
     property int currentPlaylistIndex: 0
     property int currentVideoIndex: 0
     property int playbackVideoIndex: 0
+    property bool playingTaterBumper: false
+    property int pendingBumperVideoIndex: -1
     property bool loadingPlaylist: false
     property bool addingPlaylist: false
     property bool stoppingPlayback: false
@@ -474,6 +477,11 @@ FocusScope {
         return Math.max(5, value)
     }
 
+    function isTvInterstitialItem(item) {
+        var kind = String((item && item.kind) || "").toLowerCase()
+        return kind === "commercial" || kind === "bumper" || kind === "tater_bumper"
+    }
+
     function tvChannelLabel(channel) {
         if (!channel) return "CH --"
         return "CH " + (channel.number || "--")
@@ -567,10 +575,14 @@ FocusScope {
             youtubePlaylistBackend.cancel_video_stream_resolve()
     }
 
-    function launchTvPlayback(url, offset, label, allowYtdl, format) {
+    function launchTvPlayback(url, offset, label, allowYtdl, format, item) {
         tvStreamStarted = true
         tvStoppingForTune = false
         var oscMode = tvTransitionBlankVisible ? "ota-quiet" : "ota"
+        mpvController.setViewingContext(
+            isTvInterstitialItem(item)
+                ? ({ suppress_viewing_event: true })
+                : ({}))
         mpvController.loadAndPlay(url || "", offset || 0.0, 0, -1, [],
                                   false, -1, 0.0, "", false, oscMode, false,
                                   label, false, !!allowYtdl, format || "")
@@ -597,7 +609,8 @@ FocusScope {
         tvCurrentScheduleIndex = resolved.index
         var format = youtubePlaylistBackend.ytdl_format_for_quality(playbackQuality())
         if (resolved.item.kind === "commercial" && resolved.item.local === true) {
-            launchTvPlayback(resolved.item.url || "", resolved.offset || 0.0, label, false, "")
+            launchTvPlayback(resolved.item.url || "", resolved.offset || 0.0,
+                             label, false, "", resolved.item)
             return
         }
         var requestId = "tv-" + (++tvResolveSerial)
@@ -606,7 +619,8 @@ FocusScope {
             url: resolved.item.url || "",
             offset: resolved.offset || 0.0,
             label: label,
-            format: format
+            format: format,
+            item: resolved.item
         }
         statusText = label
         youtubePlaylistBackend.resolve_video_stream(requestId, resolved.item.url || "", playbackQuality())
@@ -621,12 +635,14 @@ FocusScope {
         tvPendingPlayback = ({})
         var directUrl = result && result.ok === true ? (result.url || "") : ""
         if (directUrl !== "") {
-            launchTvPlayback(directUrl, pending.offset || 0.0, pending.label || statusText, false, "")
+            launchTvPlayback(directUrl, pending.offset || 0.0,
+                             pending.label || statusText, false, "", pending.item)
             return
         }
 
         launchTvPlayback(pending.url || "", pending.offset || 0.0,
-                         pending.label || statusText, true, pending.format || "")
+                         pending.label || statusText, true, pending.format || "",
+                         pending.item)
     }
 
     function playNextTvScheduleItem() {
@@ -853,6 +869,8 @@ FocusScope {
 
     function playPlaybackVideoIndex(index) {
         if (index < 0 || index >= playbackVideos.length) return
+        playingTaterBumper = false
+        pendingBumperVideoIndex = -1
         playbackVideoIndex = index
         var item = playbackVideos[index] || ({})
         currentVideoIndex = Math.max(0, Math.min(videos.length - 1, videoIndexForItem(item, index)))
@@ -863,8 +881,41 @@ FocusScope {
         mode = "playing"
         stoppingPlayback = false
         var format = youtubePlaylistBackend.ytdl_format_for_quality(playbackQuality())
+        mpvController.setViewingContext({})
         mpvController.loadAndPlay(item.url || "", 0.0, 0, -1, [], false, -1, 0.0,
                                   "", false, "", false, title, false, true, format)
+    }
+
+    function publicAccessSeriesKey() {
+        return String(currentPlaylist.input || currentPlaylist.url ||
+                      playlistInput || playlistTitle || "public-access").trim()
+    }
+
+    function playTaterBumperBeforeVideo(index) {
+        var bumper = TaterBumpers.next(appCore, "public-access-series")
+        if (!bumper || !bumper.url) {
+            playPlaybackVideoIndex(index)
+            return
+        }
+        playingTaterBumper = true
+        pendingBumperVideoIndex = index
+        mode = "playing"
+        stoppingPlayback = false
+        statusText = "TATER TUBE"
+        mpvController.setViewingContext({ suppress_viewing_event: true })
+        mpvController.loadAndPlay(bumper.url, 0.0, 0, -1, [], false, -1, 0.0,
+                                  "", false, "", false, "TATER TUBE")
+    }
+
+    function finishTaterBumper() {
+        var nextIndex = pendingBumperVideoIndex
+        playingTaterBumper = false
+        pendingBumperVideoIndex = -1
+        if (nextIndex >= 0 && nextIndex < playbackVideos.length) {
+            playPlaybackVideoIndex(nextIndex)
+            return
+        }
+        returnToVideoList()
     }
 
     function playIndex(index) {
@@ -1069,6 +1120,8 @@ FocusScope {
 
         if (mode === "playing") {
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                playingTaterBumper = false
+                pendingBumperVideoIndex = -1
                 stoppingPlayback = true
                 mpvController.stop()
                 returnToVideoList()
@@ -1194,8 +1247,20 @@ FocusScope {
                 return
             }
             if (mode !== "playing") return
+            if (playingTaterBumper) {
+                finishTaterBumper()
+                return
+            }
             if (autoplayNext() && playbackVideoIndex + 1 < playbackVideos.length) {
-                playPlaybackVideoIndex(playbackVideoIndex + 1)
+                var nextIndex = playbackVideoIndex + 1
+                if (TaterBumpers.enabledByDefault(
+                            appCore.get_setting("", "tater_bumpers_public_access_series")) &&
+                        TaterBumpers.shouldPlayBetweenEpisodes(
+                            "public-access", publicAccessSeriesKey())) {
+                    playTaterBumperBeforeVideo(nextIndex)
+                } else {
+                    playPlaybackVideoIndex(nextIndex)
+                }
                 return
             }
             returnToVideoList()
@@ -1214,6 +1279,10 @@ FocusScope {
                 stoppingPlayback = false
                 return
             }
+            if (playingTaterBumper) {
+                finishTaterBumper()
+                return
+            }
             if (mode === "playing")
                 returnToVideoList()
         }
@@ -1229,6 +1298,10 @@ FocusScope {
                 tvStreamStarted = false
                 statusText = tvChannels.length > 0 ? tvChannelLabel(tvChannels[tvCurrentChannelIndex]) : "TV MODE"
                 tvTuneTimer.restart()
+                return
+            }
+            if (playingTaterBumper) {
+                finishTaterBumper()
                 return
             }
             mode = "message"

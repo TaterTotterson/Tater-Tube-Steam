@@ -1,5 +1,6 @@
 import QtQuick
 import Components
+import "../../shared/TaterBumpers.js" as TaterBumpers
 
 FocusScope {
     id: playerRoot
@@ -20,6 +21,7 @@ FocusScope {
     property string sessionId:    navParams.sessionId    || ""
     property int    viewOffset:   navParams.viewOffset   || 0
     property string itemTitle:    navParams.title        || ""
+    property string mediaType:    navParams.mediaType    || ""
     property string overlayTitle: navParams.grandparentTitle || navParams.title || ""
     property var    audioStreams:     navParams.audioStreams     || []
     property var    subtitleStreams:  navParams.subtitleStreams  || []
@@ -44,6 +46,11 @@ FocusScope {
     property bool   pendingNextEpisode: false
     property string carryAudioLang:     ""        // language code of the chosen audio track
     property string carrySubLang:       "__off__" // language code, or "__off__" when subtitles are off
+    property bool   playingTaterBumper: false
+    property bool   movieBumperPlayed: false
+    property string bumperContinuation: ""
+    property int    pendingProgramOffsetMs: 0
+    property var    pendingEpisodeDetail: ({})
 
     property int lastKnownPositionMs: 0
     property int lastKnownDurationMs: 0
@@ -203,8 +210,58 @@ FocusScope {
     }
 
     function beginPlayback(offsetMs) {
+        if (String(mediaType || "").toLowerCase() === "movie" && !movieBumperPlayed &&
+                TaterBumpers.enabledByDefault(
+                    appCore.get_setting("", "tater_bumpers_vod_movies"))) {
+            movieBumperPlayed = true
+            pendingProgramOffsetMs = offsetMs
+            playTaterBumper("movie")
+            return
+        }
+        queueProgramPlayback(offsetMs)
+    }
+
+    function queueProgramPlayback(offsetMs) {
         startTimer.pendingOffset = offsetMs
         startTimer.restart()
+    }
+
+    function playTaterBumper(continuation) {
+        var bumper = TaterBumpers.next(
+                    appCore, continuation === "movie" ? "vod-movie" : "vod-series")
+        if (!bumper || !bumper.url) {
+            bumperContinuation = continuation
+            finishTaterBumper()
+            return
+        }
+        bumperContinuation = continuation
+        playingTaterBumper = true
+        playbackStarted = false
+        noSignalVisible = false
+        mpvController.setViewingContext({ suppress_viewing_event: true })
+        mpvController.loadAndPlay(bumper.url, 0.0, 0, -1, [], false, -1, 0.0,
+                                  "", false, "", false, "TATER TUBE")
+    }
+
+    function finishTaterBumper() {
+        var continuation = bumperContinuation
+        bumperContinuation = ""
+        playingTaterBumper = false
+        playbackStarted = false
+        if (continuation === "movie") {
+            var offsetMs = pendingProgramOffsetMs
+            pendingProgramOffsetMs = 0
+            queueProgramPlayback(offsetMs)
+            return
+        }
+        if (continuation === "episode") {
+            var detail = pendingEpisodeDetail || ({})
+            pendingEpisodeDetail = ({})
+            if (detail.ratingKey)
+                advanceToEpisode(detail)
+            else
+                goBack()
+        }
     }
 
     function doStartPlayback(offsetMs) {
@@ -283,6 +340,15 @@ FocusScope {
                 goBack()
                 return
             }
+            pendingNextEpisode = false
+            var seriesKey = detail.grandparentTitle || overlayTitle || detail.parentRatingKey || ratingKey
+            if (TaterBumpers.enabledByDefault(
+                        appCore.get_setting("", "tater_bumpers_vod_series")) &&
+                    TaterBumpers.shouldPlayBetweenEpisodes("vod", seriesKey)) {
+                pendingEpisodeDetail = detail
+                playTaterBumper("episode")
+                return
+            }
             playerRoot.advanceToEpisode(detail)
         }
     }
@@ -294,6 +360,7 @@ FocusScope {
         partKey     = detail.partKey      || ""
         partId      = detail.partId       || ""
         itemTitle   = detail.title        || ""
+        mediaType   = detail.type         || "episode"
         overlayTitle = detail.grandparentTitle || detail.title || ""
         audioStreams    = detail.audioStreams    || []
         subtitleStreams = detail.subtitleStreams || []
@@ -368,12 +435,23 @@ FocusScope {
         }
 
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
+            if (playingTaterBumper) {
+                playingTaterBumper = false
+                bumperContinuation = ""
+                pendingEpisodeDetail = ({})
+                goBack()
+                return
+            }
             // mpv exited because the user quit/stopped — return to the detail view.
             reportStopped(finalPositionMs, finalDurationMs)
             goBack()
         }
 
         function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
+            if (playingTaterBumper) {
+                finishTaterBumper()
+                return
+            }
             // mpv reached the end of the file. Mark it stopped (watched) in Emby/Jellyfin,
             // then auto-advance to the next episode if the feature is enabled.
             reportStopped(finalPositionMs, finalDurationMs)
@@ -383,6 +461,10 @@ FocusScope {
         }
 
         function onPlaybackFailed() {
+            if (playingTaterBumper) {
+                finishTaterBumper()
+                return
+            }
             if (!isTranscoding) {
                 // Direct play failed (e.g. HTTP 500 from PMS on WAN). Retry
                 // transparently with transcoding at the same resume offset.
@@ -402,7 +484,7 @@ FocusScope {
         repeat:   true
         running:  true
         onTriggered: {
-            if (mpvController.position > 0)
+            if (!playingTaterBumper && mpvController.position > 0)
                 embyBackend.update_timeline(ratingKey, partKey, "playing",
                                             mpvController.position, mpvController.duration)
         }

@@ -77,13 +77,13 @@ FocusScope {
         } else if (launch.type === "localFolder" && (launch.mediaType || "") === "show") {
             navigateTo("LocalShow.qml", {
                 item: launch,
-                libraryName: "TATER'S PICKS"
+                libraryName: appCore.taterPicksTitle
             })
         } else if (launch.type === "localFolder" && (launch.mediaType || "") === "season") {
             navigateTo("LocalSeason.qml", {
                 item: launch,
                 showTitle: launch.title || "TATER'S PICK",
-                libraryName: "TATER'S PICKS"
+                libraryName: appCore.taterPicksTitle
             })
         } else {
             navigateTo("Browse.qml", {})
