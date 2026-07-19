@@ -118,7 +118,12 @@ FocusScope {
     }
 
     function buildAppearanceItems(items) {
-        var colorOpts = ["Off Air","Video 1","Late Night","Synthwave","Terminal","T-120","Amber","Kinescope"]
+        var colorOpts = [
+            "Off Air", "TaterVision '87", "Broadcast Test", "Cable After Midnight",
+            "Public Access", "Woodgrain Console", "Tater Satellite", "Haunted Tape",
+            "Saturday Morning", "Video 1", "Late Night", "Synthwave", "Terminal",
+            "T-120", "Amber", "Kinescope"
+        ]
         var custom = appCore.getCustomColorScheme()
         if (Object.keys(custom).length === 5) colorOpts.push("Custom")
         var showMascots = appSettings["show_module_mascots"]
@@ -128,7 +133,7 @@ FocusScope {
         items.push({
             type: "list_single",
             key: "color_scheme",
-            label: "Color Scheme",
+            label: "Theme",
             options: colorOpts,
             value: appSettings["color_scheme"] || "Off Air",
             moduleId: ""
@@ -972,6 +977,7 @@ FocusScope {
 
         StaticBackground {
             anchors.fill: parent
+            themeName: root.currentTheme
             visible: root.staticBackgroundEnabled
             running: visible
         }

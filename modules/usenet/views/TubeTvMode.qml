@@ -2055,6 +2055,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: tvRoot.tuningStaticVisible
         running: visible
     }

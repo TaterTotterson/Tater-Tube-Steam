@@ -540,6 +540,7 @@ FocusScope {
 
         StaticBackground {
             anchors.fill: parent
+            themeName: root.currentTheme
             visible: root.staticBackgroundEnabled
             running: visible
         }

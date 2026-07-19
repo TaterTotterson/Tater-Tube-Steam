@@ -451,6 +451,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: otaRoot.tuningStaticVisible
         running: visible
     }

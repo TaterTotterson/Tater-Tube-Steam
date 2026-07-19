@@ -1337,6 +1337,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: mixRoot.backgroundStaticVisible
         running: visible
     }

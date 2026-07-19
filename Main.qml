@@ -64,6 +64,70 @@ Window {
             "surface": "#121212",
             "accent": "#FFFFFF"
         },
+        "TaterVision '87": {
+            "primary": "#FFF2CE",
+            "secondary": "#E6B76E",
+            "tertiary": "#8F5F38",
+            "surface": "#211008",
+            "accent": "#FF7A1A",
+            "static": true
+        },
+        "Broadcast Test": {
+            "primary": "#FFFFFF",
+            "secondary": "#B9E9FF",
+            "tertiary": "#657A87",
+            "surface": "#090D12",
+            "accent": "#FFE44A",
+            "static": true
+        },
+        "Cable After Midnight": {
+            "primary": "#E7F8FF",
+            "secondary": "#83D9FF",
+            "tertiary": "#7556A8",
+            "surface": "#050819",
+            "accent": "#FF4EDB",
+            "static": true
+        },
+        "Public Access": {
+            "primary": "#FFFFFF",
+            "secondary": "#71F4FF",
+            "tertiary": "#8558B8",
+            "surface": "#10105A",
+            "accent": "#FF4FA3",
+            "static": true
+        },
+        "Woodgrain Console": {
+            "primary": "#FFF0C2",
+            "secondary": "#D9A45E",
+            "tertiary": "#80502C",
+            "surface": "#1B0D06",
+            "accent": "#F5A623",
+            "static": true
+        },
+        "Tater Satellite": {
+            "primary": "#E9FFF7",
+            "secondary": "#6DDBB5",
+            "tertiary": "#376B66",
+            "surface": "#020B12",
+            "accent": "#FF7A1A",
+            "static": true
+        },
+        "Haunted Tape": {
+            "primary": "#D8F5D0",
+            "secondary": "#8DBB83",
+            "tertiary": "#496445",
+            "surface": "#07100A",
+            "accent": "#B8FF6A",
+            "static": true
+        },
+        "Saturday Morning": {
+            "primary": "#FFFFFF",
+            "secondary": "#72E8FF",
+            "tertiary": "#6652AE",
+            "surface": "#11185A",
+            "accent": "#FFD53D",
+            "static": true
+        },
         "Off Air": {
             "primary": "#FFFFFF",
             "secondary": "#E8E8E8",
@@ -303,6 +367,7 @@ Window {
     // --- MODULE LOADER ---
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: root.staticBackgroundEnabled
         running: visible
     }
