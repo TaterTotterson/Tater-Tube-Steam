@@ -83,13 +83,30 @@ sibling runtime directory:
 ```
 
 The script verifies release-asset SHA-256 hashes and records the versions,
-source URLs, and license notices. mpv, Moonlight, RetroArch, and every selected
-core remain separate build-and-license work because their dependency and core
-licenses must be reviewed as a unit.
+source URLs, and license notices.
+
+Build mpv, Moonlight, RetroArch, and the approved x86-64 core bundle in the
+same pinned sniper SDK:
+
+```bash
+./scripts/build-steam-runtimes.sh ../Tater-Tube-Steam-Runtime
+```
+
+The build pins source revisions for mpv, FFmpeg, libplacebo, Moonlight,
+RetroArch, and every core. Approved cores are written to `retroarch/cores`.
+Their corresponding-source archives, upstream license files, manifest, and
+SHA-256 inventories are written beneath `notices/retroarch-cores` and enter
+the depot with the binaries. The source packager excludes common ROM, disc,
+game-data, and firmware extensions so unrelated upstream test assets cannot
+silently enter the customer depot. Each core is compiled from that repacked
+archive rather than from the unfiltered download.
 
 Use the prepared tools in a Sniper development depot with:
 
 ```bash
+STEAM_MPV_BUNDLE=../Tater-Tube-Steam-Runtime/mpv \
+STEAM_MOONLIGHT_BUNDLE=../Tater-Tube-Steam-Runtime/moonlight-sdl \
+STEAM_RETROARCH_BUNDLE=../Tater-Tube-Steam-Runtime/retroarch \
 STEAM_RCLONE_BUNDLE=../Tater-Tube-Steam-Runtime/rclone \
 STEAM_YTDLP_BUNDLE=../Tater-Tube-Steam-Runtime/yt-dlp \
 STEAM_THIRD_PARTY_NOTICES_DIR=../Tater-Tube-Steam-Runtime/notices \
@@ -118,6 +135,17 @@ depot validator rejects any bundled core not present in that list.
 Sniper builds also copy Qt's official SPDX documents for Qt Base, Declarative,
 and SVG into `THIRD_PARTY_NOTICES/qt-sbom`. Every depot includes Tater Tube's
 `LICENSE.txt`, exact source revision, and corresponding-source location.
+
+The Steam replacements intentionally omit the Pi edition's personal or
+non-commercial cores. bsnes replaces Snes9x, BlastEm replaces Genesis Plus GX
+for supported Mega Drive/Genesis cartridge formats, Geolith handles `.neo` and
+Neo Geo CD content, and current MAME handles arcade and zipped Neo Geo sets.
+There is currently no bundled Sega CD or Sega 32X replacement. BlastEm does
+not accept SMD images in this build, and current MAME may require ROM sets
+matching its newer database rather than old MAME 2000/2003 sets.
+The distributable blueMSX databases and C-BIOS machine are bundled and seeded
+to the user's writable RetroArch system directory; proprietary BIOS files are
+never included.
 
 Run the validator directly against an existing depot with:
 
@@ -164,6 +192,35 @@ Example ContentBuilder manifests live in `packaging/steam/steamworks`. Copy
 them without the `.example` suffix and replace the app and depot placeholders.
 Keep `preview` enabled until the private test branch has passed.
 
+After Steam assigns the numeric IDs, generate preview-mode manifests without
+editing the checked-in templates:
+
+```bash
+STEAM_APP_ID=123456 \
+STEAM_LINUX_DEPOT_ID=123457 \
+./scripts/prepare-steamworks-manifests.sh
+```
+
+The private manifests are written to `out/steamworks`, which is ignored by Git.
+
+Required store and library artwork is under `assets/steam/store`. Rebuild and
+validate it with:
+
+```bash
+./scripts/build-steam-assets.sh
+```
+
+Store screenshots are separate 1920x1080 captures from the real application;
+do not substitute generated or composited UI. Re-capture them from the staged
+depot with:
+
+```bash
+./scripts/capture-steam-screenshots.sh
+```
+
+Marketing artwork and screenshots are source/release materials and are
+explicitly excluded from the customer depot.
+
 The shipped application deliberately does not link the Steamworks SDK and does
 not use Steam DRM. Valve's ContentBuilder upload tool stays outside the depot;
 Valve documents that the SDK is required for uploading but its application
@@ -185,8 +242,8 @@ Before uploading a public build:
 2. Bundle every required shared library and QML/Qt plugin; validate the depot
    on a clean machine.
 3. Record license notices and exact source revisions for every bundled runtime.
-4. Include only RetroArch cores whose copyright holders have explicitly allowed
-   this distribution. Free price and open source do not override core licenses.
+4. Confirm the pinned core manifest and bundled license/source inventory still
+   match the release. Free price and open source do not override core licenses.
 5. Complete the GPL/Steam Distribution Agreement rights review without assuming
    that the app being free or open source resolves Steamworks compatibility.
 6. Test controller-only navigation, suspend/resume, display scaling, video

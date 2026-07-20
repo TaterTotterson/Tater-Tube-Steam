@@ -1,0 +1,97 @@
+Tater Tube Steam libretro core bundle
+======================================
+
+The Steam edition builds every shipped core from a revision pinned in
+packaging/steam/core-manifest.tsv. Corresponding-source archives, upstream
+license files, and SHA-256 inventories accompany the binaries under:
+
+  THIRD_PARTY_NOTICES/retroarch-cores/
+
+No ROM, disc image, game data, or proprietary console BIOS is included.
+Players must supply content they are legally entitled to use and any firmware
+required by that content.
+
+The corresponding-source archives are repacked from the pinned upstream
+revisions with common ROM, disc, game-data, and firmware file types excluded.
+This prevents unrelated test or support content in an upstream repository from
+silently entering the Steam depot. The repository and exact revision for each
+archive remain recorded in CORE-MANIFEST.tsv. Each core binary is built from
+its repacked archive, proving that the shipped source package still contains
+the files needed for the pinned build.
+
+Redistributable support files
+-----------------------------
+
+The blueMSX databases and the "MSX - C-BIOS" machine are included under
+retroarch/system/bluemsx. C-BIOS is a freely redistributable substitute BIOS;
+its cbios.txt license accompanies the files. Tater Tube copies these support
+files into the user's writable RetroArch system directory without overwriting
+anything already present.
+
+Pi-equivalent cores
+-------------------
+
+stella_libretro.so              GPL-2.0
+stella2014_libretro.so          GPL-2.0
+atari800_libretro.so            GPL-2.0
+prosystem_libretro.so           GPL-2.0
+handy_libretro.so               zlib
+bluemsx_libretro.so             GPL-2.0
+freeintv_libretro.so            GPL-2.0-or-later
+o2em_libretro.so                Artistic-1.0
+vecx_libretro.so                GPL-3.0
+fceumm_libretro.so              GPL-2.0
+nestopia_libretro.so            GPL-2.0
+gearsystem_libretro.so          GPL-3.0
+gambatte_libretro.so            GPL-2.0
+mgba_libretro.so                MPL-2.0
+pokemini_libretro.so            GPL-3.0
+mednafen_pce_fast_libretro.so   GPL-2.0
+mednafen_supergrafx_libretro.so GPL-2.0
+mednafen_vb_libretro.so         GPL-2.0
+mednafen_wswan_libretro.so      GPL-2.0
+race_libretro.so                GPL-2.0
+pcsx_rearmed_libretro.so        GPL-2.0
+prboom_libretro.so              GPL-2.0
+tyrquake_libretro.so            GPL-2.0
+
+Steam replacements
+------------------
+
+bsnes_libretro.so               GPL-3.0
+  Replaces the personal/non-commercial Snes9x core.
+
+blastem_libretro.so             GPL-3.0
+  Replaces Genesis Plus GX/PicoDrive for supported Mega Drive/Genesis content.
+
+geolith_libretro.so             BSD-3-Clause AND MIT
+  Handles .neo cartridge images and Neo Geo CD CUE/CHD content. Current MAME
+  handles zipped Neo Geo arcade sets.
+
+mame_libretro.so                GPL-2.0-or-later AND BSD-3-Clause
+  Replaces the old non-commercial MAME 2000/2003/2003-Plus arcade cores.
+
+Not shipped
+-----------
+
+The following Pi cores are deliberately excluded from the Steam depot:
+
+  genesis_plus_gx_libretro.so
+  picodrive_libretro.so
+  snes9x_libretro.so
+  fbneo_libretro.so
+  mame2000_libretro.so
+  mame2003_libretro.so
+  mame2003_plus_libretro.so
+
+Known replacement limits
+------------------------
+
+The current replacement inventory does not provide Sega CD or Sega 32X
+emulation. BlastEm handles Mega Drive/Genesis md, gen, bin, rom, zip, and 7z
+content, but does not handle SMD images in this build. SMD content must be
+converted to a supported cartridge format.
+
+Current MAME replaces the historical MAME 2000/2003 cores, but it expects ROM
+sets compatible with the bundled MAME revision. Old MAME 2000/2003 sets are
+not guaranteed to work unchanged.

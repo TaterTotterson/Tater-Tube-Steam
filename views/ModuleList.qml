@@ -9,6 +9,7 @@ FocusScope {
 
     property var navParams: ({})
     property var navListState: ({})
+    property var installedModuleRows: []
     property bool showModuleMascots: true
     property var mascotByModuleId: ({
         "com.240mp.ota": "../assets/images/mascots/over-the-air.png",
@@ -18,8 +19,24 @@ FocusScope {
         "com.240mp.audio_tapes": "../assets/images/mascots/tape-deck.png",
         "com.240mp.retro": "../assets/images/mascots/game-center.png",
         "com.240mp.local_files": "../assets/images/mascots/local-files.png",
-        "com.240mp.moonlight": "../assets/images/mascots/pc-link.png"
+        "com.240mp.moonlight": "../assets/images/mascots/pc-link.png",
+        "com.tater.picks": "../assets/images/mascots/tater-picks.png"
     })
+
+    function rebuildMenu() {
+        var rows = (installedModuleRows || []).slice()
+        var picks = appCore.taterRecommendations || []
+        if (picks.length > 0) {
+            rows.unshift({
+                id: "com.tater.picks",
+                name: appCore.taterPicksTitle,
+                entry_point: "views/TaterPicks.qml"
+            })
+        }
+        menuList.model = rows
+        if (rows.length > 0 && menuList.currentIndex < 0)
+            menuList.currentIndex = 0
+    }
 
     function selectedModule() {
         if (!menuList.model || menuList.currentIndex < 0 || menuList.currentIndex >= menuList.count)
@@ -50,6 +67,7 @@ FocusScope {
 
     Component.onCompleted: {
         loadMascotSetting()
+        appCore.refreshTaterRecommendations()
         appCore.scan_for_modules()
     }
 
@@ -64,11 +82,24 @@ FocusScope {
                 appCore.scan_for_modules()
         }
         function onModulesLoaded(moduleData) {
-            menuList.model = moduleData
-            if (moduleData.length > 0) {
+            installedModuleRows = moduleData
+            rebuildMenu()
+            if (menuList.count > 0) {
                 var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-                menuList.currentIndex = Math.min(restore, moduleData.length - 1)
+                menuList.currentIndex = Math.min(restore, menuList.count - 1)
                 menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
+            }
+        }
+        function onTaterRecommendationsChanged() {
+            var selectedId = selectedModule().id || ""
+            rebuildMenu()
+            if (selectedId !== "") {
+                for (var i = 0; i < menuList.count; i++) {
+                    if ((menuList.model[i].id || "") === selectedId) {
+                        menuList.currentIndex = i
+                        return
+                    }
+                }
             }
         }
     }

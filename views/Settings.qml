@@ -75,6 +75,7 @@ FocusScope {
 
         items.push({ type: "settings_category", label: "Appearance", sectionKey: "appearance" })
         items.push({ type: "settings_category", label: "Features", sectionKey: "features" })
+        items.push({ type: "settings_category", label: "Tater Bumpers", sectionKey: "tater_bumpers" })
         if (root.platformCapabilities.controllerMapping)
             items.push({ type: "settings_category", label: "Gamepad", sectionKey: "bluetooth" })
         items.push({ type: "settings_category", label: "System", sectionKey: "system" })
@@ -87,6 +88,7 @@ FocusScope {
         if (sectionKey === "appearance") return "Appearance"
         if (sectionKey === "system") return "System"
         if (sectionKey === "features") return "Features"
+        if (sectionKey === "tater_bumpers") return "Tater Bumpers"
         if (sectionKey === "bluetooth") return "Gamepad"
         return "Settings"
     }
@@ -105,6 +107,8 @@ FocusScope {
             buildSystemItems(items)
         } else if (sectionKey === "features") {
             buildFeatureItems(items)
+        } else if (sectionKey === "tater_bumpers") {
+            buildTaterBumperItems(items)
         } else if (sectionKey === "bluetooth") {
             buildBluetoothItems(items)
         }
@@ -115,7 +119,12 @@ FocusScope {
     }
 
     function buildAppearanceItems(items) {
-        var colorOpts = ["Off Air","Video 1","Late Night","Synthwave","Terminal","T-120","Amber","Kinescope"]
+        var colorOpts = [
+            "Off Air", "TaterVision '87", "Broadcast Test", "Cable After Midnight",
+            "Public Access", "Woodgrain Console", "Tater Satellite", "Haunted Tape",
+            "Saturday Morning", "Video 1", "Late Night", "Synthwave", "Terminal",
+            "T-120", "Amber", "Kinescope"
+        ]
         var custom = appCore.getCustomColorScheme()
         if (Object.keys(custom).length === 5) colorOpts.push("Custom")
         var showMascots = appSettings["show_module_mascots"]
@@ -125,7 +134,7 @@ FocusScope {
         items.push({
             type: "list_single",
             key: "color_scheme",
-            label: "Color Scheme",
+            label: "Theme",
             options: colorOpts,
             value: appSettings["color_scheme"] || "Off Air",
             moduleId: ""
@@ -225,6 +234,44 @@ FocusScope {
         } else {
             items.push({ type: "status", label: "No Feature Settings", value: "" })
         }
+    }
+
+    function bumperSettingEnabled(key) {
+        var raw = appSettings[key]
+        return !(raw === false || raw === 0 || raw === "0" ||
+                 String(raw || "").trim().toLowerCase() === "off" ||
+                 String(raw || "").trim().toLowerCase() === "false")
+    }
+
+    function addBumperToggle(items, key, label) {
+        var enabled = bumperSettingEnabled(key)
+        items.push({
+            type: "toggle",
+            key: key,
+            label: label,
+            value: enabled ? "ON" : "OFF",
+            enabled: enabled,
+            moduleId: ""
+        })
+    }
+
+    function buildTaterBumperItems(items) {
+        items.push({ type: "section", label: "Live TV:" })
+        addBumperToggle(items, "tater_bumpers_live_tv", "Live TV Breaks")
+
+        items.push({ type: "section", label: "Video On Demand:" })
+        addBumperToggle(items, "tater_bumpers_vod_movies", "Before Movies")
+        addBumperToggle(items, "tater_bumpers_vod_series", "Between Episodes")
+
+        items.push({ type: "section", label: "Server Local:" })
+        addBumperToggle(items, "tater_bumpers_local_movies", "Before Movies")
+        addBumperToggle(items, "tater_bumpers_local_series", "Between Episodes")
+
+        items.push({ type: "section", label: "Public Access:" })
+        addBumperToggle(items, "tater_bumpers_public_access_series", "Between Videos")
+
+        items.push({ type: "section", label: "NZB Streaming:" })
+        addBumperToggle(items, "tater_bumpers_nzb_movies", "While Movie Buffers")
     }
 
     function buildBluetoothItems(items) {
@@ -951,6 +998,7 @@ FocusScope {
 
         StaticBackground {
             anchors.fill: parent
+            themeName: root.currentTheme
             visible: root.staticBackgroundEnabled
             running: visible
         }

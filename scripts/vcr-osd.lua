@@ -93,6 +93,7 @@ end
 mp.register_script_message("240mp-vcr-status", function(label, detail)
     show_status(label, detail or "", 1.8)
 end)
+mp.register_script_message("240mp-transition-black", hide)
 
 mp.register_event("file-loaded", function()
     loaded = true

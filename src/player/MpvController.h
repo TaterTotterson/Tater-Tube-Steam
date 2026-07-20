@@ -7,8 +7,10 @@
 #include <QList>
 #include <QPointer>
 #include <QStringList>
+#include <QVariantMap>
 
 class AppCore;
+class QNetworkAccessManager;
 class QWindow;
 
 #ifdef Q_OS_LINUX
@@ -37,6 +39,8 @@ class MpvController : public QObject {
     Q_PROPERTY(double volume READ volume NOTIFY volumeChanged)
     Q_PROPERTY(double volumeMax READ volumeMax CONSTANT)
     Q_PROPERTY(bool muted READ muted NOTIFY mutedChanged)
+    Q_PROPERTY(bool videoTransitionActive READ videoTransitionActive
+               NOTIFY videoTransitionActiveChanged)
 
 public:
     explicit MpvController(const QString &appRoot, AppCore *appCore = nullptr,
@@ -47,11 +51,14 @@ public:
     int duration()    const { return m_duration;    }
     int playlistPos() const { return m_playlistPos; }
     bool isRunning() const;
+    bool isAudioOnly() const { return m_currentAudioOnly; }
     bool paused() const { return m_paused; }
     double audioLevel() const { return m_audioLevel; }
     double volume() const { return m_volume; }
     double volumeMax() const { return 200.0; }
     bool muted() const { return m_muted; }
+    bool videoTransitionActive() const { return m_videoTransitionActive; }
+    QStringList narrationAudioArgs() const;
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,
                                   int audioTrack, int subTrack,
@@ -85,6 +92,7 @@ public:
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void setPlaybackSpeed(double speed);
     Q_INVOKABLE void setAudioPitchCorrection(bool enabled);
+    Q_INVOKABLE void setViewingContext(const QVariantMap &context);
 
 signals:
     void positionChanged(int ms);
@@ -95,6 +103,7 @@ signals:
     void audioLevelChanged(double level);
     void volumeChanged(double volume);
     void mutedChanged(bool muted);
+    void videoTransitionActiveChanged(bool active);
     void volumeOverlayRequested();
     // Emitted when mpv exits because the user quit/stopped playback before the end.
     void playbackFinished(int finalPositionMs, int finalDurationMs);
@@ -136,7 +145,8 @@ private:
     };
 
     void sendCommand(const QJsonArray &args);
-    void doHeadlessRestore(int pos, int dur, bool naturalEof, bool playbackError);
+    void doHeadlessRestore(int pos, int dur, bool naturalEof, bool playbackError,
+                           bool completionAlreadyDelivered);
     bool shouldRetryPi3SoftwareFallback(bool playbackError) const;
     bool detectHeadlessMode() const;
     VideoProfile detectVideoProfile() const;
@@ -149,7 +159,16 @@ private:
     void setAudioLevel(double level);
     void setVolumeLevel(double volume, bool persist, bool showOverlay);
     void setMutedState(bool muted, bool showOverlay);
+    void setVideoTransitionActive(bool active);
+    void scheduleVideoTransitionRelease();
+    bool canReuseCurrentPlayback(const PlaybackRequest &request) const;
+    bool replaceCurrentPlayback(const PlaybackRequest &request);
     void showMpvVolumeOverlay();
+    void beginViewingSession(const QString &url, const QString &displayTitle,
+                             const QString &oscMode, bool audioOnly, bool allowYtdl);
+    void sendViewingEvent(const QString &state, int positionMs = -1,
+                          int durationMs = -1);
+    QString taterServerApiUrl(const QString &path) const;
     int  getActiveVt() const;
     int  findFreeVt() const;
     int  findQtDrmFd() const;
@@ -167,6 +186,8 @@ private:
     QLocalSocket *m_ipc            = nullptr;
     QTimer       *m_connectTimer   = nullptr;
     QTimer       *m_watchdogTimer  = nullptr;
+    QTimer       *m_telemetryTimer = nullptr;
+    QNetworkAccessManager *m_taterNetwork = nullptr;
     qint64        m_lastIpcEventMs = 0;
     QString       m_appRoot;
     QString       m_socketPath;
@@ -177,10 +198,12 @@ private:
     int           m_position     = 0;
     int           m_duration     = 0;
     int           m_playlistPos  = -1;
+    int           m_playlistCount = 0;
     double        m_audioLevel   = 0.0;
     double        m_volume       = 100.0;
     bool          m_muted        = false;
     bool          m_paused       = false;
+    bool          m_videoTransitionActive = false;
     bool          m_headlessMode = false;
     int           m_previousVt   = -1;
     int           m_qtDrmFd      = -1;
@@ -191,6 +214,12 @@ private:
     bool          m_pi3SoftwareFallback = false;
     bool          m_currentAudioOnly = false;
     bool          m_currentStayIdle = false;
+    bool          m_currentWatchdogKillStalled = false;
+    bool          m_endFileSignalDelivered = false;
+    QVariantMap   m_pendingViewingContext;
+    QVariantMap   m_currentViewingContext;
+    QString       m_viewingEventId;
+    int           m_lastTelemetryPosition = -1;
     QList<QPointer<QWindow>> m_suspendedQtWindows;
 #ifdef Q_OS_LINUX
     DrmSavedState m_savedDrm     = {};

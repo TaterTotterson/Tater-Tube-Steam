@@ -34,6 +34,7 @@ public:
     ~InputManager() override;
 
     void setTargetWindow(QQuickWindow *window);
+    void setFullscreenPlayerActive(bool active) { m_fullscreenPlayerActive = active; }
 
     bool gamepadConnected() const { return !m_controllers.isEmpty() || !m_rawJoystickNames.isEmpty(); }
     Q_INVOKABLE QVariantMap getControllerMapping() const;
@@ -51,8 +52,8 @@ signals:
     void powerRequested();
     void controllerMappingInput(const QVariantMap &input);
     // Emitted instead of posting a key event when the Qt window is inactive
-    // (fullscreen mpv holds OS focus on macOS, which clears QML active focus).
-    // main.cpp connects this to MpvController::sendKey.
+    // (fullscreen mpv holds OS focus in desktop builds, which clears QML active
+    // focus). main.cpp connects this to MpvController::sendKey.
     void mpvKeyRequested(const QString &key);
 
 protected:
@@ -134,6 +135,7 @@ private:
 #endif
 
     QQuickWindow *m_window = nullptr;
+    bool m_fullscreenPlayerActive = false;
     QString m_dataRoot;
     bool m_sdlReady = false;
     bool m_controllerMappingActive = false;

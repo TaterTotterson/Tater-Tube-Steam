@@ -1,5 +1,6 @@
 import QtQuick
 import Components
+import "../../shared/TaterBumpers.js" as TaterBumpers
 
 FocusScope {
     id: tvRoot
@@ -168,6 +169,8 @@ FocusScope {
             return "SPOT"
         if (kind === "BUMPER")
             return "BUMPER"
+        if (kind === "TATER_BUMPER")
+            return "TATER"
         if (kind === "EPISODE")
             return "TV"
         if (kind === "MOVIE")
@@ -177,7 +180,7 @@ FocusScope {
 
     function isInterstitialItem(item) {
         var kind = String((item && item.kind) || "").toLowerCase()
-        return kind === "commercial" || kind === "bumper"
+        return kind === "commercial" || kind === "bumper" || kind === "tater_bumper"
     }
 
     function guideNextRows(channel, currentIndex, count) {
@@ -641,10 +644,13 @@ FocusScope {
     }
 
     function plannedStreamInfo(playbackUrl, item) {
-        if (isInterstitialItem(item))
+        if (isInterstitialItem(item)) {
+            if (item.kind === "tater_bumper")
+                return "TATER BUMPER | DIRECT PLAY"
             return item.kind === "bumper"
                 ? "SERVER BUMPER | DIRECT PLAY"
                 : "SERVER SPOT | DIRECT PLAY"
+        }
         if (queryValue(playbackUrl, "transcode") === "0")
             return "SERVER STREAM | DIRECT PLAY"
 
@@ -932,7 +938,7 @@ FocusScope {
     function lastProgramKey(schedule) {
         for (var i = (schedule || []).length - 1; i >= 0; i--) {
             var item = schedule[i] || ({})
-            if (item.kind !== "commercial") {
+            if (!isInterstitialItem(item)) {
                 var key = mediaItemKey(item)
                 if (key !== "")
                     return key
@@ -1635,10 +1641,29 @@ FocusScope {
             tuningStaticVisible = false
             noSignalVisible = true
             statusText = "LOCAL TV CHANNEL EMPTY"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
         currentScheduleIndex = index
+        if (String(item.kind || "").toLowerCase() === "tater_bumper" &&
+                !TaterBumpers.enabledByDefault(
+                    appCore.get_setting("", "tater_bumpers_live_tv"))) {
+            playNextScheduleItem()
+            return
+        }
+        if (String(item.kind || "").toLowerCase() === "tater_bumper") {
+            var replacement = TaterBumpers.claimScheduled(
+                        appCore, item, "server-live-tv")
+            if (replacement) {
+                item = Object.assign({}, item, replacement, {
+                    kind: "tater_bumper"
+                })
+            }
+        }
         var label = channelLabel(channel)
         statusText = label
         var url = isInterstitialItem(item)
@@ -1727,6 +1752,10 @@ FocusScope {
             noSignalVisible = true
             tuningStaticVisible = false
             statusText = "LOCAL TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
@@ -1742,6 +1771,10 @@ FocusScope {
         var oscMode = showChannelLabelAfterTransition
             ? "ota-tune"
             : (transitionBlankVisible ? "ota-quiet" : "ota")
+        mpvController.setViewingContext(
+            isInterstitialItem(item)
+                ? ({ suppress_viewing_event: true })
+                : ({}))
         mpvController.loadAndPlay(playbackUrl, offset || 0.0, 0, -1, [], false, -1, 0.0,
                                   "", false, oscMode, false, label || statusText)
 
@@ -2030,6 +2063,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: tvRoot.tuningStaticVisible
         running: visible
     }

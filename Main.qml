@@ -64,6 +64,70 @@ Window {
             "surface": "#121212",
             "accent": "#FFFFFF"
         },
+        "TaterVision '87": {
+            "primary": "#FFF2CE",
+            "secondary": "#E6B76E",
+            "tertiary": "#8F5F38",
+            "surface": "#211008",
+            "accent": "#FF7A1A",
+            "static": true
+        },
+        "Broadcast Test": {
+            "primary": "#FFFFFF",
+            "secondary": "#B9E9FF",
+            "tertiary": "#657A87",
+            "surface": "#090D12",
+            "accent": "#FFE44A",
+            "static": true
+        },
+        "Cable After Midnight": {
+            "primary": "#E7F8FF",
+            "secondary": "#83D9FF",
+            "tertiary": "#7556A8",
+            "surface": "#050819",
+            "accent": "#FF4EDB",
+            "static": true
+        },
+        "Public Access": {
+            "primary": "#FFFFFF",
+            "secondary": "#71F4FF",
+            "tertiary": "#8558B8",
+            "surface": "#10105A",
+            "accent": "#FF4FA3",
+            "static": true
+        },
+        "Woodgrain Console": {
+            "primary": "#FFF0C2",
+            "secondary": "#D9A45E",
+            "tertiary": "#80502C",
+            "surface": "#1B0D06",
+            "accent": "#F5A623",
+            "static": true
+        },
+        "Tater Satellite": {
+            "primary": "#E9FFF7",
+            "secondary": "#6DDBB5",
+            "tertiary": "#376B66",
+            "surface": "#020B12",
+            "accent": "#FF7A1A",
+            "static": true
+        },
+        "Haunted Tape": {
+            "primary": "#D8F5D0",
+            "secondary": "#8DBB83",
+            "tertiary": "#496445",
+            "surface": "#07100A",
+            "accent": "#B8FF6A",
+            "static": true
+        },
+        "Saturday Morning": {
+            "primary": "#FFFFFF",
+            "secondary": "#72E8FF",
+            "tertiary": "#6652AE",
+            "surface": "#11185A",
+            "accent": "#FFD53D",
+            "static": true
+        },
         "Off Air": {
             "primary": "#FFFFFF",
             "secondary": "#E8E8E8",
@@ -106,6 +170,14 @@ Window {
 
     readonly property real sw: width
     readonly property real sh: height
+
+    function openTaterKeyboard(target, prompt, password, onAccepted, onCanceled) {
+        taterKeyboard.open(target, prompt, password, onAccepted, onCanceled)
+    }
+
+    function dismissTaterKeyboard() {
+        taterKeyboard.dismiss()
+    }
 
     Connections {
         target: appCore
@@ -281,8 +353,25 @@ Window {
     // --- APP-LEVEL NAV STACK ---
     property var appNavStack: []
     property var appCurrentParams: ({})
+    property double lastBackKeyAtMs: 0
+    property double lastAppBackAtMs: 0
+
+    function isBackKey(key) {
+        return key === Qt.Key_Escape || key === Qt.Key_Backspace || key === Qt.Key_Back
+    }
+
+    function consumeDuplicateBack(event) {
+        if (!root.isBackKey(event.key))
+            return false
+        var now = Date.now()
+        var duplicate = event.isAutoRepeat || now - root.lastBackKeyAtMs < 220
+        if (!duplicate)
+            root.lastBackKeyAtMs = now
+        return duplicate
+    }
 
     function goHome() {
+        root.dismissTaterKeyboard()
         if (mpvController && mpvController.running)
             mpvController.stop()
         root.appNavStack = []
@@ -305,6 +394,7 @@ Window {
     // --- MODULE LOADER ---
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: root.staticBackgroundEnabled
         running: visible
     }
@@ -315,11 +405,16 @@ Window {
         focus: true;
         source: "views/ModuleList.qml";
 
+        Keys.priority: Keys.BeforeItem
         Keys.onPressed: (event) => {
             if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_Q) {
                 Qt.quit()
             } else if (event.key === Qt.Key_Home) {
                 root.goHome()
+                event.accepted = true
+            } else if (root.consumeDuplicateBack(event)) {
+                // Some remotes emit a second Back-shaped event for one press.
+                // Consume it before a newly loaded view can pop another level.
                 event.accepted = true
             }
         }
@@ -337,6 +432,10 @@ Window {
             }
 
             function onGoBack() {
+                var now = Date.now()
+                if (now - root.lastAppBackAtMs < 220)
+                    return
+                root.lastAppBackAtMs = now
                 if (root.appNavStack.length === 0) return
                 var prev = root.appNavStack.pop()
                 root.appCurrentParams = prev.params
@@ -344,6 +443,29 @@ Window {
             }
 
         }
+    }
+
+    TaterKeyboard {
+        id: taterKeyboard
+        anchors.fill: parent
+        screenWidth: root.sw
+        screenHeight: root.sh
+        primaryColor: root.primaryColor
+        secondaryColor: root.secondaryColor
+        surfaceColor: root.surfaceColor
+        accentColor: "#FF4A00"
+        fontFamily: root.globalFont
+        z: 20000
+    }
+
+    // App-level fallback for first/last playback and the rare transition that
+    // changes mpv surface type. Sequential video handoffs stay inside one mpv
+    // surface, whose matching black overlay remains up until playback-restart.
+    Rectangle {
+        anchors.fill: parent
+        color: "black"
+        visible: mpvController && mpvController.videoTransitionActive
+        z: 10000
     }
 
     Rectangle {

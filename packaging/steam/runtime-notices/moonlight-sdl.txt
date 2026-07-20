@@ -1,0 +1,9 @@
+Moonlight Embedded 2.7.1
+Source revision: 775444287305849ebdf4736c75298ad0713e2d5d
+Source: https://github.com/moonlight-stream/moonlight-embedded/tree/v2.7.1
+License: GNU GPL version 3
+
+Tater Tube builds Moonlight Embedded from source and applies the controller
+compatibility transformations recorded in scripts/build-moonlight-sdl.sh.
+Moonlight's pinned submodule revisions are recorded by the upstream 2.7.1
+source tree.

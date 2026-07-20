@@ -83,6 +83,31 @@ FocusScope {
         return channels[currentIndex]
     }
 
+    function recommendedChannelIndex() {
+        var recommendation = navParams.recommendation || ({})
+        var launch = recommendation.launch || ({})
+        var wantedNumber = (launch.channelNumber || "").toString()
+        var wantedName = (launch.channelName || "").toString().toLowerCase()
+        if (wantedNumber === "" && wantedName === "")
+            return -1
+
+        var numberMatch = -1
+        var nameMatch = -1
+        for (var i = 0; i < channels.length; i++) {
+            var channel = channels[i] || {}
+            var number = (channel.number || "").toString()
+            var name = (channel.name || "").toString().toLowerCase()
+            if (wantedNumber !== "" && wantedName !== ""
+                    && number === wantedNumber && name === wantedName)
+                return i
+            if (numberMatch < 0 && wantedNumber !== "" && number === wantedNumber)
+                numberMatch = i
+            if (nameMatch < 0 && wantedName !== "" && name === wantedName)
+                nameMatch = i
+        }
+        return numberMatch >= 0 ? numberMatch : nameMatch
+    }
+
     function showStaticForChannel(channel) {
         if (!channel || !channel.id) return
 
@@ -94,8 +119,8 @@ FocusScope {
         pendingChannelId = channel.id
 
         if (mpvController.running) {
-            stoppingForTune = true
-            mpvController.stop()
+            stoppingForTune = false
+            mpvController.sendScriptMessage("240mp-ota-tune-transition", statusText)
         }
     }
 
@@ -114,6 +139,10 @@ FocusScope {
             streamRequestActive = false
             tuningStaticVisible = false
             noSignalVisible = true
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
         appCore.save_setting(moduleId, "last_hdhomerun_channel_id", channel.id)
@@ -130,6 +159,18 @@ FocusScope {
         tuningStaticVisible = false
         noSignalVisible = false
         streamRequestActive = false
+        var channelNumber = (channel.number || "").toString()
+        var channelName = (channel.name || "").toString()
+        var channelIdentity = "ota:" + channelNumber + ":" + channelName
+        mpvController.setViewingContext({
+            source: "over_the_air",
+            media_id: channelIdentity,
+            media_type: "live",
+            title: label,
+            module_id: moduleId,
+            channel_number: channelNumber,
+            channel_name: channelName
+        })
         mpvController.loadAndPlay(url, 0.0, 0, -1, [], false, -1, 0.0,
                                   httpHeaderFields || "", false, "ota", false, label)
     }
@@ -263,12 +304,15 @@ FocusScope {
                 return
             }
 
-            var restoreId = appCore.get_setting(moduleId, "last_hdhomerun_channel_id") || ""
-            var restoreIndex = 0
-            for (var j = 0; j < channels.length; j++) {
-                if (channels[j].id === restoreId) {
-                    restoreIndex = j
-                    break
+            var restoreIndex = recommendedChannelIndex()
+            if (restoreIndex < 0) {
+                var restoreId = appCore.get_setting(moduleId, "last_hdhomerun_channel_id") || ""
+                restoreIndex = 0
+                for (var j = 0; j < channels.length; j++) {
+                    if (channels[j].id === restoreId) {
+                        restoreIndex = j
+                        break
+                    }
                 }
             }
             tuneIndex(restoreIndex, false)
@@ -368,15 +412,29 @@ FocusScope {
             if (!leaving && hasStartedPlayback)
                 goBack()
         }
+        function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
+            if (leaving)
+                return
+            hasStartedPlayback = false
+            statusText = "OTA SIGNAL ENDED"
+            streamRequestActive = false
+            tuningStaticVisible = false
+            noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
+        }
         function onPlaybackFailed() {
             if (stoppingForTune) {
                 stoppingForTune = false
                 return
             }
+            hasStartedPlayback = false
             statusText = "OTA PLAYBACK FAILED"
             streamRequestActive = false
             tuningStaticVisible = false
             noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
         }
         function onScriptMessageReceived(message, arg) {
             if (message === "240mp-ota-tune-now") {
@@ -411,6 +469,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: otaRoot.tuningStaticVisible
         running: visible
     }
@@ -464,13 +523,26 @@ FocusScope {
                 font.pixelSize: root.sh * 0.05
                 clip: true
 
-                Keys.onReturnPressed: otaRoot.saveHdhomerunSetup()
-                Keys.onEnterPressed: otaRoot.saveHdhomerunSetup()
+                function openInputKeyboard() {
+                    root.openTaterKeyboard(
+                                hdhomerunHostField, "HDHOMERUN ADDRESS", false,
+                                function() { otaRoot.saveHdhomerunSetup() },
+                                function() {
+                                    hdhomerunHostField.forceActiveFocus()
+                                })
+                }
+
+                Keys.onReturnPressed: hdhomerunHostField.openInputKeyboard()
+                Keys.onEnterPressed: hdhomerunHostField.openInputKeyboard()
                 Keys.onPressed: function(event) {
                     if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                         otaRoot.exitOta()
                         event.accepted = true
                     }
+                }
+
+                TapHandler {
+                    onTapped: hdhomerunHostField.openInputKeyboard()
                 }
             }
         }

@@ -98,15 +98,25 @@ int main(int argc, char *argv[]) {
     UsenetBackend       usenetBackend(appRoot, dataRoot);
     MpvController       mpvController(appRoot, &appCore);
     InputManager        inputManager(dataRoot);
+    appCore.setMpvController(&mpvController);
     ControlApiServer    controlApi(&mpvController, &appCore, &embyBackend,
                                     &retroBackend, &moonlightBackend);
 
     controlApi.startFromEnvironment();
 
-    // When the Qt window is inactive (fullscreen mpv has OS focus on macOS),
-    // gamepad actions bypass QML and drive mpv directly over IPC.
+    // When the Qt window is inactive (fullscreen mpv has OS focus in desktop
+    // builds), gamepad actions bypass QML and drive mpv directly over IPC.
     QObject::connect(&inputManager, &InputManager::mpvKeyRequested,
                      &mpvController, &MpvController::sendKey);
+#ifdef TATER_TUBE_STEAM_BUILD
+    // Gamescope does not always expose desktop focus changes in the same way as
+    // a conventional X11 window manager. Track fullscreen video explicitly so
+    // Deck controls are sent to mpv even if Qt still reports its window active.
+    QObject::connect(&mpvController, &MpvController::runningChanged,
+                     &inputManager, [&inputManager, &mpvController](bool running) {
+        inputManager.setFullscreenPlayerActive(running && !mpvController.isAudioOnly());
+    });
+#endif
 
     // Each module backend is wired in one call: stored for action routing, exposed to QML
     // under its context-property name, and its optional signals/slots connected by

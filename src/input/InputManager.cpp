@@ -1608,18 +1608,31 @@ void InputManager::releaseAction(Action a) {
         m_repeatTimer.stop();
     }
     // mpv's "keypress" command is one-shot — releases only matter for QML.
+#ifdef TATER_TUBE_STEAM_BUILD
+    if (m_fullscreenPlayerActive)
+        return;
+#endif
     if (windowActive())
         postKey(qtKeyForAction(a), QEvent::KeyRelease, false);
 }
 
 // While the Qt window is active, actions become posted key events into QML.
-// When it isn't — fullscreen mpv owns OS focus on macOS, and a deactivated
-// QQuickWindow has no activeFocusItem for key events to land on — actions go
-// straight to mpv over IPC instead, mirroring what the Player views' key
-// forwarding does on platforms where the window stays active (RPi/EGLFS).
+// When it isn't — fullscreen mpv owns OS focus on desktop builds, and a
+// deactivated QQuickWindow has no activeFocusItem for key events to land on —
+// actions go straight to mpv over IPC instead, mirroring what the Player views'
+// key forwarding does on platforms where the window stays active (RPi/EGLFS).
 // When mpv isn't running either, sendKey is a no-op, so background presses
 // while the user is in another app do nothing — same as keyboard.
 void InputManager::deliverPress(Action a, bool autoRepeat) {
+#ifdef TATER_TUBE_STEAM_BUILD
+    // mpv is a separate fullscreen window in the Steam build. Route video
+    // controls over IPC explicitly instead of relying only on the window
+    // manager to update QQuickWindow::isActive() under Gamescope.
+    if (m_fullscreenPlayerActive) {
+        emit mpvKeyRequested(mpvKeyForAction(a));
+        return;
+    }
+#endif
     if (windowActive())
         postKey(qtKeyForAction(a), QEvent::KeyPress, autoRepeat);
     else
@@ -1640,20 +1653,28 @@ void InputManager::onRepeatTick() {
 }
 
 bool InputManager::windowActive() const {
-#ifdef Q_OS_LINUX
+#if defined(TATER_TUBE_STEAM_BUILD)
+    // Gamescope can briefly report the Qt window inactive after asynchronous
+    // work (for example a RetroNAS mount) even though Tater Tube is still the
+    // visible game. Fullscreen mpv is routed explicitly before this helper is
+    // consulted, so keep visible app menus responsive to controller events.
+    return m_window && m_window->isVisible();
+#elif defined(Q_OS_LINUX)
     // EGLFS can report the kiosk window as inactive even while it owns the only
     // screen. Keep routing remote/gamepad actions through QML on Pi; Player
     // views forward those same keys to mpv during playback.
     return m_window != nullptr;
 #else
+    // Steam launches mpv as a separate fullscreen desktop window. Once mpv
+    // takes focus, bypass the inactive Qt window and send controller actions
+    // to mpv's IPC socket instead.
     return m_window && m_window->isActive();
 #endif
 }
 
 // Post to the root QQuickWindow, not QGuiApplication::focusWindow(): Qt Quick
-// delivers posted key events to the window's activeFocusItem even when the
-// window has no OS-level focus, which is exactly the state during fullscreen
-// mpv playback on macOS.
+// delivers posted key events to the window's activeFocusItem. Desktop playback
+// is routed around this method while the separate mpv window owns OS focus.
 void InputManager::postKey(int qtKey, QEvent::Type type, bool autoRepeat) {
     if (!m_window)
         return;

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Components
+import "../../shared/TaterBumpers.js" as TaterBumpers
 
 FocusScope {
     id: usenetRoot
@@ -37,6 +38,7 @@ FocusScope {
     property string currentGroupTitle: ""
     property string currentCategoryTitle: ""
     property string searchQuery: ""
+    property string pendingSearchMediaType: ""
     property string pendingRequestId: ""
     property string pendingTitle: ""
     property bool playbackStarted: false
@@ -45,6 +47,10 @@ FocusScope {
     property var currentPlaybackItem: ({})
     property int currentPlaybackBaseOffsetMs: 0
     property bool currentPlaybackCompleted: false
+    property var pendingPlaybackItem: ({})
+    property bool nzbMovieBumperActive: false
+    property bool nzbStreamResponseReady: false
+    property string messageReturnMode: ""
 
     focus: true
 
@@ -143,6 +149,9 @@ FocusScope {
     }
 
     function loadCategories() {
+        if (mode === "categories" || mode === "subcategories" ||
+                mode === "items" || mode === "search")
+            messageReturnMode = mode
         mode = "loading"
         statusText = "LOADING CATEGORIES..."
         usenetBackend.load_categories()
@@ -157,18 +166,21 @@ FocusScope {
 
     function runSearch() {
         var query = (searchField.text || "").trim()
-        searchForTitle(query)
+        searchForTitle(query, "")
     }
 
-    function searchForTitle(query) {
+    function searchForTitle(query, mediaTypeHint) {
         query = (query || "").trim()
         searchQuery = query
         if (query.length < 3) {
+            pendingSearchMediaType = ""
             statusText = "ENTER 3 OR MORE LETTERS"
             searchFocusTimer.restart()
             return
         }
+        pendingSearchMediaType = String(mediaTypeHint || "").toLowerCase()
         currentCategoryTitle = "Search: " + query
+        messageReturnMode = mode
         mode = "loading"
         statusText = "SEARCHING " + query
         usenetBackend.search_items(query)
@@ -355,6 +367,7 @@ FocusScope {
             navigateTo("TubeTvMenu.qml", { categories: categories }, { currentIndex: categoryList.currentIndex })
             return
         }
+        messageReturnMode = mode
         currentCategoryTitle = row.fullTitle || row.title || "CATEGORY"
         mode = "loading"
         if (row.type === "trending") {
@@ -437,6 +450,47 @@ FocusScope {
         setListIndex(categoryList, currentCategoryIndex)
     }
 
+    function returnFromMessage() {
+        var targetMode = messageReturnMode
+        messageReturnMode = ""
+        if (targetMode === "search") {
+            showSearch()
+            return
+        }
+        if (targetMode === "items" && items.length > 0) {
+            mode = "items"
+            setListIndex(activeItemList(), currentItemIndex)
+            return
+        }
+        if (targetMode === "subcategories" && subcategories.length > 0) {
+            mode = "subcategories"
+            setListIndex(categoryList, currentSubcategoryIndex)
+            return
+        }
+        if (targetMode === "categories" &&
+                (categories.length > 0 || shortcutRows.length > 0)) {
+            mode = "categories"
+            setListIndex(categoryList, currentCategoryIndex)
+            return
+        }
+        if (items.length > 0) {
+            mode = "items"
+            setListIndex(activeItemList(), currentItemIndex)
+            return
+        }
+        if (subcategories.length > 0) {
+            mode = "subcategories"
+            setListIndex(categoryList, currentSubcategoryIndex)
+            return
+        }
+        if (categories.length > 0 || shortcutRows.length > 0) {
+            mode = "categories"
+            setListIndex(categoryList, currentCategoryIndex)
+            return
+        }
+        goBack()
+    }
+
     function resetCategoryDrilldown() {
         subcategories = []
         categoryStack = []
@@ -451,7 +505,7 @@ FocusScope {
         currentItemIndex = index
         var row = items[index] || ({})
         if (row.type === "discovery") {
-            searchForTitle(row.searchQuery || row.title || "")
+            searchForTitle(row.searchQuery || row.title || "", row.mediaType || "")
             return
         }
         if (row.type === "localFolder") {
@@ -476,20 +530,90 @@ FocusScope {
                 index: index
             }])
             currentCategoryTitle = row.title || "Local"
+            messageReturnMode = "items"
             mode = "loading"
             statusText = "LOADING " + currentCategoryTitle
             usenetBackend.load_local_items(row.categoryId || "", row.path || "", row.sourceIndex || 0, currentCategoryTitle)
             return
         }
         if (row.type === "localFile") {
-            playStream({ url: row.streamUrl || "", title: row.title || "LOCAL" }, row.title || "LOCAL", row)
+            navigateTo("LocalPlayer.qml", {
+                item: row,
+                title: row.title || "LOCAL"
+            }, {
+                currentIndex: currentItemIndex
+            })
             return
         }
+        pendingPlaybackItem = row
+        messageReturnMode = "items"
+        nzbStreamResponseReady = false
+        streams = []
         pendingRequestId = newRequestId()
         pendingTitle = row.title || "THE TUBE"
         mode = "loading"
         statusText = "TUNING " + pendingTitle
+        if (isNzbMovieItem(row) &&
+                TaterBumpers.enabledByDefault(
+                    appCore.get_setting("", "tater_bumpers_nzb_movies")) &&
+                usenetBackend.tater_bumper_enabled("nzb_movies", true))
+            playNzbMovieBumper()
         usenetBackend.request_streams(pendingRequestId, row)
+    }
+
+    function isNzbMovieItem(item) {
+        if (!item || (item.type || "") === "localFile")
+            return false
+        var mediaType = String(item.mediaType || "").toLowerCase()
+        if (mediaType === "movie")
+            return true
+        if (mediaType === "series" || mediaType === "episode" ||
+                mediaType === "tv" || mediaType === "audio")
+            return false
+        var categoryText = String(item.category || "") + " " + currentCategoryTitle
+        return categoryText.toLowerCase().indexOf("movie") >= 0
+    }
+
+    function playNzbMovieBumper() {
+        var bumper = TaterBumpers.next(appCore, "nzb-movie")
+        if (!bumper || !bumper.url)
+            return
+        nzbMovieBumperActive = true
+        playbackStarted = true
+        currentStreamUsesServer = false
+        currentPlaybackItem = ({})
+        currentPlaybackBaseOffsetMs = 0
+        mode = "playing"
+        statusText = "TATER TUBE"
+        streamInfoText = "NZB BUFFERING | TATER BUMPER"
+        mpvController.setViewingContext({ suppress_viewing_event: true })
+        mpvController.loadAndPlay(bumper.url, 0.0, 0, -1, [], false, -1, 0.0,
+                                  "", false, "tube", false, "TATER TUBE")
+    }
+
+    function beginPreparedNzbPlayback() {
+        if (!nzbStreamResponseReady)
+            return
+        if (streams.length === 1) {
+            playStream(streams[0], streams[0].title || pendingTitle,
+                       pendingPlaybackItem)
+            return
+        }
+        playbackStarted = false
+        currentStreamUsesServer = false
+        mode = "streams"
+        setListIndex(streamList, 0)
+    }
+
+    function finishNzbMovieBumper() {
+        nzbMovieBumperActive = false
+        playbackStarted = false
+        if (nzbStreamResponseReady) {
+            beginPreparedNzbPlayback()
+            return
+        }
+        mode = "loading"
+        statusText = "BUFFERING " + (pendingTitle || "MOVIE")
     }
 
     function playStream(stream, title, item) {
@@ -498,14 +622,18 @@ FocusScope {
             statusText = "STREAM URL MISSING"
             return
         }
+        var playbackItem = item || pendingPlaybackItem || ({})
+        nzbMovieBumperActive = false
+        nzbStreamResponseReady = false
         playbackStarted = true
         currentPlaybackCompleted = false
-        currentPlaybackItem = item || ({})
+        currentPlaybackItem = playbackItem
+        pendingPlaybackItem = ({})
         currentPlaybackBaseOffsetMs = 0
         mode = "playing"
         statusText = "PLAYING " + (title || stream.title || "THE TUBE")
         var rawUrl = stream.url
-        var startOffsetMs = itemViewOffsetMs(item)
+        var startOffsetMs = itemViewOffsetMs(playbackItem)
         var startOffset = startOffsetMs / 1000.0
         if (startOffset > 0 && usenetBackend.uses_server_seek()) {
             rawUrl = urlWithStartOffset(rawUrl, startOffset)
@@ -515,11 +643,27 @@ FocusScope {
         var playbackUrl = usenetBackend.playback_url(rawUrl, Math.round(root.sw), Math.round(root.sh))
         currentStreamUsesServer = true
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl))
+        mpvController.setViewingContext({
+            module_id: moduleId,
+            source: (playbackItem.type === "localFile") ? "local_media" : "stream",
+            media_id: (playbackItem.playStateId || playbackItem.ratingKey ||
+                       playbackItem.key || playbackItem.guid)
+                      || (title || stream.title || "THE TUBE"),
+            media_type: playbackItem.mediaType || "video",
+            title: playbackItem.title || title || stream.title || "THE TUBE",
+            series_title: playbackItem.seriesTitle || "",
+            season: playbackItem.season || 0,
+            episode: playbackItem.episode || 0
+        })
         mpvController.loadAndPlay(playbackUrl, startOffset, 0, -1, [], false, -1, 0.0,
                                   "", false, "tube", false, title || stream.title || "THE TUBE")
     }
 
     function stopPlayback() {
+        pendingRequestId = ""
+        pendingPlaybackItem = ({})
+        nzbMovieBumperActive = false
+        nzbStreamResponseReady = false
         saveCurrentPlayState(false)
         playbackStarted = false
         currentStreamUsesServer = false
@@ -650,9 +794,13 @@ FocusScope {
                 event.accepted = true
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 currentStreamIndex = streamList.currentIndex
-                playStream(streams[currentStreamIndex], streams[currentStreamIndex].title || pendingTitle)
+                playStream(streams[currentStreamIndex],
+                           streams[currentStreamIndex].title || pendingTitle,
+                           pendingPlaybackItem)
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                pendingPlaybackItem = ({})
+                nzbStreamResponseReady = false
                 mode = "items"
                 setListIndex(activeItemList(), currentItemIndex)
                 event.accepted = true
@@ -694,13 +842,16 @@ FocusScope {
                 refresh()
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                goBack()
+                returnFromMessage()
                 event.accepted = true
             }
         }
     }
 
-    Component.onCompleted: refresh()
+    Component.onCompleted: {
+        usenetBackend.load_tater_bumper_settings()
+        refresh()
+    }
 
     Component.onDestruction: {
         if (playbackStarted) {
@@ -761,7 +912,19 @@ FocusScope {
 
         function onItemsLoaded(categoryTitle, rows) {
             currentCategoryTitle = categoryTitle || currentCategoryTitle
-            items = rows || []
+            var loadedRows = rows || []
+            if (pendingSearchMediaType !== "") {
+                var annotatedRows = []
+                for (var i = 0; i < loadedRows.length; i++) {
+                    var annotated = Object.assign({}, loadedRows[i] || ({}))
+                    if (!annotated.mediaType || annotated.mediaType === "nzb")
+                        annotated.mediaType = pendingSearchMediaType
+                    annotatedRows.push(annotated)
+                }
+                loadedRows = annotatedRows
+                pendingSearchMediaType = ""
+            }
+            items = loadedRows
             if (items.length === 0) {
                 mode = "message"
                 statusText = "NO ITEMS IN " + currentCategoryTitle
@@ -775,12 +938,12 @@ FocusScope {
             if (requestId !== pendingRequestId)
                 return
             streams = rows || []
-            if (streams.length === 1) {
-                playStream(streams[0], title || pendingTitle)
+            nzbStreamResponseReady = true
+            if (title)
+                pendingTitle = title
+            if (nzbMovieBumperActive)
                 return
-            }
-            mode = "streams"
-            setListIndex(streamList, 0)
+            beginPreparedNzbPlayback()
         }
 
         function onActiveStreamsLoaded(streams) {
@@ -800,6 +963,16 @@ FocusScope {
         }
 
         function onErrorOccurred(message) {
+            pendingRequestId = ""
+            pendingPlaybackItem = ({})
+            pendingSearchMediaType = ""
+            nzbStreamResponseReady = false
+            if (nzbMovieBumperActive) {
+                nzbMovieBumperActive = false
+                playbackStarted = false
+                if (mpvController.running)
+                    mpvController.stop()
+            }
             mode = "message"
             statusText = message || "THE TUBE FAILED"
         }
@@ -821,6 +994,10 @@ FocusScope {
         target: mpvController
 
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
+            if (nzbMovieBumperActive) {
+                finishNzbMovieBumper()
+                return
+            }
             if (mode === "playing") {
                 saveCurrentPlayState(false)
                 playbackStarted = false
@@ -832,6 +1009,10 @@ FocusScope {
         }
 
         function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
+            if (nzbMovieBumperActive) {
+                finishNzbMovieBumper()
+                return
+            }
             if (mode === "playing") {
                 saveCurrentPlayState(true)
                 playbackStarted = false
@@ -839,18 +1020,27 @@ FocusScope {
                 currentPlaybackItem = ({})
                 currentPlaybackBaseOffsetMs = 0
                 mode = items.length > 0 ? "items" : (subcategories.length > 0 ? "subcategories" : "categories")
+                if (mpvController.running)
+                    mpvController.stop()
             }
         }
 
         function onPlaybackFailed() {
+            if (nzbMovieBumperActive) {
+                finishNzbMovieBumper()
+                return
+            }
             if (mode === "playing") {
                 saveCurrentPlayState(false)
                 playbackStarted = false
                 currentStreamUsesServer = false
                 currentPlaybackItem = ({})
                 currentPlaybackBaseOffsetMs = 0
+                messageReturnMode = "items"
                 mode = "message"
                 statusText = "THE TUBE PLAYBACK FAILED"
+                if (mpvController.running)
+                    mpvController.stop()
             }
         }
 
@@ -866,6 +1056,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: root.staticBackgroundEnabled && mode !== "playing"
         running: visible
     }
@@ -1005,14 +1196,25 @@ FocusScope {
                 font.pixelSize: root.sh * 0.04
                 clip: true
 
-                Keys.onReturnPressed: runSearch()
-                Keys.onEnterPressed: runSearch()
+                function openInputKeyboard() {
+                    root.openTaterKeyboard(
+                                searchField, "SEARCH", false,
+                                function() { runSearch() },
+                                function() { searchField.forceActiveFocus() })
+                }
+
+                Keys.onReturnPressed: searchField.openInputKeyboard()
+                Keys.onEnterPressed: searchField.openInputKeyboard()
                 Keys.onPressed: function(event) {
                     if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back) {
                         mode = "categories"
                         setListIndex(categoryList, currentCategoryIndex)
                         event.accepted = true
                     }
+                }
+
+                TapHandler {
+                    onTapped: searchField.openInputKeyboard()
                 }
             }
         }
@@ -1339,6 +1541,7 @@ FocusScope {
     }
 
     component SetupField: Item {
+        id: setupFieldControl
         property alias text: fieldInput.text
         property string label: ""
         property bool selected: false
@@ -1346,6 +1549,20 @@ FocusScope {
 
         function forceInputFocus() {
             fieldInput.forceActiveFocus()
+        }
+
+        function finishInput() {
+            if (setupRow === setupConnectRow - 1)
+                saveSetup()
+            else
+                setupNext()
+        }
+
+        function openInputKeyboard() {
+            root.openTaterKeyboard(
+                        fieldInput, label, password,
+                        function() { setupFieldControl.finishInput() },
+                        function() { setupFieldControl.forceInputFocus() })
         }
 
         width: setupForm.width
@@ -1385,20 +1602,19 @@ FocusScope {
 
             Keys.onUpPressed: setupPrevious()
             Keys.onDownPressed: setupNext()
-            Keys.onReturnPressed: {
-                if (setupRow === setupConnectRow - 1) saveSetup()
-                else setupNext()
-            }
-            Keys.onEnterPressed: {
-                if (setupRow === setupConnectRow - 1) saveSetup()
-                else setupNext()
-            }
+            Keys.onReturnPressed: setupFieldControl.openInputKeyboard()
+            Keys.onEnterPressed: setupFieldControl.openInputKeyboard()
             Keys.onPressed: function(event) {
                 if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back) {
                     goBack()
                     event.accepted = true
                 }
             }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: setupFieldControl.openInputKeyboard()
         }
     }
 }

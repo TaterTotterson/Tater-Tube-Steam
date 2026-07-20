@@ -1,0 +1,8 @@
+RetroArch 1.22.2
+Source revision: 69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576
+Source: https://github.com/libretro/RetroArch/tree/v1.22.2
+License: GNU GPL version 3
+
+The full RetroArch license text is included in the RetroArch runtime bundle.
+RetroArch is shipped without cores until the exact core inventory receives the
+project's final distribution-rights approval.

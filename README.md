@@ -8,20 +8,19 @@
 
 # Tater Tube
 
-Tater Tube is a retro VCR-style media frontend for Raspberry Pi appliance builds.
+Tater Tube is a free, open-source, retro VCR-style media frontend for Linux
+x86_64. This repository is the desktop edition being prepared for release on
+Steam. It keeps the Tater Tube, PC Link, Game Center, and RetroNAS features
+while replacing Raspberry Pi appliance controls with desktop-safe behavior.
 
-An open-source Linux x86_64 desktop target for a free Steam release is now in
-development. It keeps the Tater Tube, PC Link, and Game Center names while
-separating Steam-safe desktop behavior from Raspberry Pi appliance controls.
-See [the Steam port notes](docs/STEAM.md).
+The original ready-to-flash Raspberry Pi edition remains available in the
+[Tater Tube Pi repository](https://github.com/TaterTotterson/Tater-Tube).
+The two repositories are independent, so Steam-specific packaging work does
+not replace or overwrite the Pi project.
 
-It ships as ready-to-flash Raspberry Pi images for:
-
-- Raspberry Pi 4 composite NTSC
-- Raspberry Pi 4 composite PAL
-- Raspberry Pi 5 HDMI auto-resolution
-
-The image boots straight into Tater Tube with the boot screen, Argon IR defaults, Bluetooth gamepad pairing, SSH for debugging, RetroArch support, yt-dlp support, and the module runtime already installed.
+See [Steam build and packaging](docs/STEAM.md) and the
+[release-readiness checklist](docs/STEAM-RELEASE-CHECKLIST.md). Draft text for
+the Steam partner page is in [docs/STEAM-STORE-COPY.md](docs/STEAM-STORE-COPY.md).
 
 ## Modules
 
@@ -92,7 +91,14 @@ Run Tater Tube Server on a NAS, desktop, or home server, usually through Docker.
 
 ## Web Setup
 
-Open this from a phone or computer on the same network:
+Steam builds keep the setup service disabled by default. To opt in, launch
+Tater Tube with `MP240_API_ENABLED=1`, then open:
+
+```text
+http://127.0.0.1:24024/setup
+```
+
+The Raspberry Pi edition enables Web Setup on the local network and uses:
 
 ```text
 http://tatertube.local:24024/setup
@@ -106,7 +112,9 @@ If `MP240_API_TOKEN` is set, Web Setup and API calls require `Authorization: Bea
 
 ## Local API
 
-Tater Tube includes a small HTTP API for companion apps and voice-assistant bridges. It runs on port `24024` in the Pi image.
+Tater Tube includes a small HTTP API for companion apps and voice-assistant
+bridges. Steam builds disable it by default and bind it to localhost when
+enabled. The Pi edition runs it on port `24024` on the local network.
 
 ```bash
 curl http://tatertube.local:24024/api/v1/status
@@ -135,20 +143,19 @@ Search results return launch IDs such as `vod:movie:...`, `vod:show:...`, and `g
 
 ## Install
 
-- [Flash the ready-to-flash Raspberry Pi image](INSTALL.md#flash-the-ready-to-flash-image)
-- [Update an existing Tater Tube image](INSTALL.md#update-an-existing-tater-tube-image)
-- [Build a custom image](INSTALL.md#build-a-custom-image)
-- [Development builds](BUILDING.md)
+The public Steam build is still in pre-release testing. Linux developers can
+create the same staged depot through Valve's Steam Linux Runtime 3.0 SDK:
 
-Download the latest `.img.xz` for your display from the GitHub release page, flash it with Raspberry Pi Imager or Balena Etcher, and boot the Pi.
+```bash
+./scripts/build-steam-sniper.sh
+```
 
-## Hardware Notes
+The depot is written to `out/steam/depot`. See [docs/STEAM.md](docs/STEAM.md)
+for runtime bundles, validation, and Steamworks manifests.
 
-- Pi 4 composite images default to analog video and analog audio
-- Pi 5 HDMI image uses the display's preferred EDID mode
-- Argon IR receiver default is GPIO23, physical pin 16
-- Argon ONE fan control supports Auto, Off, and fixed-speed settings
-- SSH is enabled for debugging on the ready-to-flash images
+For Raspberry Pi images, installation, GPIO/Argon support, and appliance
+updates, use the
+[Tater Tube Pi repository](https://github.com/TaterTotterson/Tater-Tube).
 
 ## License
 
@@ -158,4 +165,4 @@ You are free to use, study, and modify this code. If you distribute a modified v
 
 ## Credits
 
-Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This fork is focused on appliance-style Pi images, The Tube, Emby/Jellyfin and Plex playback, HDHomeRun OTA, Public Access playlists, Tape Deck, RetroNAS games, PC Link, and Argon IR defaults.
+Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This desktop edition focuses on The Tube, Emby/Jellyfin and Plex playback, HDHomeRun OTA, Public Access playlists, Tape Deck, RetroNAS games, and PC Link. Raspberry Pi appliance and Argon hardware support remain in the separate Pi repository.

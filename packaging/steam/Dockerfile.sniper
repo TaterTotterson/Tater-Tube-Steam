@@ -28,6 +28,22 @@ RUN python3 -m pip install --no-cache-dir "aqtinstall==${AQT_VERSION}" \
     && aqt install-qt linux desktop "${QT_VERSION}" linux_gcc_64 \
         --outputdir /opt/Qt
 
+# Make every shared-library dependency used by the separately built desktop
+# runtimes visible to linuxdeploy. This lets it copy non-runtime libraries into
+# the depot instead of silently relying on packages from the build container.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libavahi-client-dev \
+        libass-dev \
+        libavcodec-dev \
+        libavutil-dev \
+        libevdev-dev \
+        liblua5.2-0 \
+        libssl-dev \
+        libva-dev \
+        libvdpau-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN curl -fL --retry 3 \
         https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage \
         -o /opt/linuxdeploy \

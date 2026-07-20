@@ -758,21 +758,31 @@ pi240_install_boot_splash() {
         return 0
     fi
 
-    local boot_image_source=""
-    local boot_image_candidate
-    for boot_image_candidate in \
-        /opt/240mp/share/240mp/assets/images/tater-tube-boot.png \
-        /usr/local/share/240mp/assets/images/tater-tube-boot.png \
-        /opt/240mp-src/assets/images/tater-tube-boot.png \
-        ./assets/images/tater-tube-boot.png; do
-        if [ -f "$boot_image_candidate" ]; then
-            boot_image_source="$boot_image_candidate"
+    local boot_image_dir=""
+    local boot_image_candidate_dir
+    for boot_image_candidate_dir in \
+        /opt/240mp/share/240mp/assets/images \
+        /usr/local/share/240mp/assets/images \
+        /opt/240mp-src/assets/images \
+        ./assets/images; do
+        if [ -f "$boot_image_candidate_dir/tater-tube-boot.png" ]; then
+            boot_image_dir="$boot_image_candidate_dir"
             break
         fi
     done
 
-    if [ -n "$boot_image_source" ]; then
-        pi240_root install -D -m 0644 "$boot_image_source" /usr/share/plymouth/themes/240mp/tater-tube-boot.png
+    if [ -n "$boot_image_dir" ]; then
+        local boot_image_name
+        for boot_image_name in \
+            tater-tube-boot.png \
+            tater-tube-boot-hdmi.png \
+            tater-tube-boot-crt.png; do
+            if [ -f "$boot_image_dir/$boot_image_name" ]; then
+                pi240_root install -D -m 0644 \
+                    "$boot_image_dir/$boot_image_name" \
+                    "/usr/share/plymouth/themes/240mp/$boot_image_name"
+            fi
+        done
     fi
 
     pi240_install_file_from_stdin /usr/share/plymouth/themes/240mp/240mp.plymouth 0644 <<'PLYMOUTH_THEME'
@@ -805,16 +815,37 @@ fun center_sprite(sprite, image) {
     sprite.SetY((screen_height - image.GetHeight()) / 2);
 }
 
-boot_image = Image("tater-tube-boot.png");
+boot_image = Image("tater-tube-boot-hdmi.png");
+if (boot_image.GetWidth() < 1) {
+    boot_image = Image("tater-tube-boot.png");
+}
+
+crt_layout = 0;
+if ((screen_width * 5) < (screen_height * 8)) {
+    crt_image = Image("tater-tube-boot-crt.png");
+    if (crt_image.GetWidth() > 0) {
+        if (crt_image.GetHeight() > 0) {
+            boot_image = crt_image;
+            crt_layout = 1;
+        }
+    }
+}
+
 boot_sprite = Sprite();
 
 if (boot_image.GetWidth() > 0 && boot_image.GetHeight() > 0) {
-    fit_width = screen_width;
-    fit_height = screen_height;
-    scale = min((fit_width * 1.0) / boot_image.GetWidth(), (fit_height * 1.0) / boot_image.GetHeight());
-    scaled_width = boot_image.GetWidth() * scale;
-    scaled_height = boot_image.GetHeight() * scale;
-    boot_image = boot_image.Scale(scaled_width, scaled_height);
+    if (crt_layout == 1) {
+        # Composite modes use non-square pixels, so fitting the 4:3 artwork to
+        # the full framebuffer produces the correct physical television shape.
+        boot_image = boot_image.Scale(screen_width, screen_height);
+    } else {
+        fit_width = screen_width;
+        fit_height = screen_height;
+        scale = min((fit_width * 1.0) / boot_image.GetWidth(), (fit_height * 1.0) / boot_image.GetHeight());
+        scaled_width = boot_image.GetWidth() * scale;
+        scaled_height = boot_image.GetHeight() * scale;
+        boot_image = boot_image.Scale(scaled_width, scaled_height);
+    }
     boot_sprite.SetImage(boot_image);
     center_sprite(boot_sprite, boot_image);
 } else {
