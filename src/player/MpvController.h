@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QLocalSocket>
 #include <QTimer>
 #include <QJsonArray>
@@ -58,6 +59,8 @@ public:
     double volumeMax() const { return 200.0; }
     bool muted() const { return m_muted; }
     bool videoTransitionActive() const { return m_videoTransitionActive; }
+    QString executablePath() const;
+    QProcessEnvironment processEnvironment() const;
     QStringList narrationAudioArgs() const;
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,

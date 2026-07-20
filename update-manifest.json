@@ -1,14 +1,15 @@
 {
-  "version": "v1.6.2",
-  "app_version": "1.6.2",
+  "version": "v1.6.3",
+  "app_version": "1.6.3",
   "channel": "main",
-  "repo": "https://github.com/TaterTotterson/Tater-Tube",
-  "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube/releases/download/v1.6.2/Tater-Tube-v1.6.2-linux-arm64.tar.gz",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube/archive/refs/tags/v1.6.2.tar.gz",
+  "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
+  "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube-Steam/main/update-manifest.json",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.6.3/Tater-Tube-Steam-v1.6.3-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.6.3.tar.gz",
   "notes": [
-    "Adds the app-wide Tater on-screen keyboard to every text field, including PC Link, with the orange-red Tater color treatment.",
-    "Adds a controller-friendly Series Archive for browsing and opening local series folders.",
-    "Makes linked Tater Picks use the configured Tater Assistant first name and accept supported current and legacy recommendation response layouts."
+    "Adds Exit to Steam at the bottom of Settings > System for a clean return to the Steam menu.",
+    "Makes the universal on-screen keyboard highlight follow the active Tater Tube theme.",
+    "Standardizes module list navigation with Left and Right page jumps plus L2 and R2 fast Page Up and Page Down controls.",
+    "Fixes Tater Picks narration by playing server-generated speech through the bundled Steam mpv runtime."
   ]
 }

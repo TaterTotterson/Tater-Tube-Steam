@@ -1449,6 +1449,14 @@ bool MpvController::hasPiHeadphonesAudioDevice() const {
 #endif
 }
 
+QString MpvController::executablePath() const {
+    return mpvExecutable(m_appRoot);
+}
+
+QProcessEnvironment MpvController::processEnvironment() const {
+    return mpvProcessEnvironment(m_appRoot);
+}
+
 QStringList MpvController::narrationAudioArgs() const {
     QStringList args{
         QStringLiteral("--volume-max=200"),

@@ -215,6 +215,9 @@ FocusScope {
             items.push({ type: "action", action: "check_updates", label: "Check For Updates", value: root.appVersion })
         else
             items.push({ type: "status", label: "Updates", value: "STEAM" })
+
+        if (root.platformCapabilities.steam)
+            items.push({ type: "action", action: "exit_to_steam", label: "Exit to Steam", value: "EXIT" })
     }
 
     function buildFeatureItems(items) {
@@ -870,6 +873,8 @@ FocusScope {
                     currentIndex: settingsList.currentIndex,
                     sectionKey: activeSection
                 })
+            } else if (row && row.type === "action" && row.action === "exit_to_steam") {
+                Qt.quit()
             } else if (row && row.type === "toggle") {
                 settingsRoot.setToggleValue(currentIndex, row, !row.enabled)
             } else if (row && row.type === "ssh_toggle") {

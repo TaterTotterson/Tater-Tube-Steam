@@ -1076,7 +1076,10 @@ void AppCore::playTaterNarrationAudio(const QString &requestId, quint64 generati
     if (generation != m_taterNarrationGeneration ||
         requestId != m_taterNarrationRequestId)
         return;
-    QString mpv = QStandardPaths::findExecutable(QStringLiteral("mpv"));
+    QString mpv = m_mpvController
+        ? m_mpvController->executablePath() : QString();
+    if (mpv.isEmpty())
+        mpv = QStandardPaths::findExecutable(QStringLiteral("mpv"));
 #ifdef Q_OS_MACOS
     if (mpv.isEmpty() && QFileInfo::exists(QStringLiteral("/opt/homebrew/bin/mpv")))
         mpv = QStringLiteral("/opt/homebrew/bin/mpv");
@@ -1101,6 +1104,8 @@ void AppCore::playTaterNarrationAudio(const QString &requestId, quint64 generati
     QProcess *process = new QProcess(this);
     m_taterNarrationProcess = process;
     process->setProcessChannelMode(QProcess::MergedChannels);
+    if (m_mpvController)
+        process->setProcessEnvironment(m_mpvController->processEnvironment());
     connect(process, &QProcess::started, this, [this, process, generation]() {
         if (generation != m_taterNarrationGeneration ||
             m_taterNarrationProcess != process)
