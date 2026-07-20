@@ -1,4 +1,4 @@
-name: Release
+name: Steam Linux release
 
 on:
   workflow_dispatch:
@@ -6,222 +6,168 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: steam-linux-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────────
-  # Linux arm64 app tarball — targets Raspberry Pi OS Trixie (Debian 13).
-  # ──────────────────────────────────────────────────────────────────────────────
-  build-linux-arm64:
-    name: Linux arm64
-    runs-on: ubuntu-24.04-arm
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4.2.2
-
-      - name: Validate generated helpers
-        run: bash scripts/check-generated-helpers.sh
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            qt6-base-dev \
-            qt6-declarative-dev \
-            libqt6svg6 \
-            qt6-svg-dev \
-            qml6-module-qtquick \
-            qml6-module-qtquick-controls \
-            qml6-module-qtquick-window \
-            libdrm-dev \
-            libssl-dev \
-            libsdl2-dev \
-            git \
-            libopus-dev \
-            libevdev-dev \
-            libavcodec-dev \
-            libavutil-dev \
-            libcurl4-openssl-dev \
-            libexpat1-dev \
-            libavahi-client-dev
-
-      - name: Configure
-        run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/install/usr/local"
-
-      - name: Build
-        run: cmake --build build --parallel
-
-      - name: Install
-        run: cmake --install build
-
-      - name: Build bundled Moonlight SDL runtime
-        run: ./scripts/build-moonlight-sdl.sh "${GITHUB_WORKSPACE}/install/usr/local/share/240mp/vendor/moonlight-sdl"
-
-      - name: Create tarball
-        run: |
-          cd "${GITHUB_WORKSPACE}/install"
-          tar -czf "${GITHUB_WORKSPACE}/Tater-Tube-${{ github.ref_name }}-linux-arm64.tar.gz" .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: tarball-linux-arm64
-          path: "Tater-Tube-*-linux-arm64.tar.gz"
-          if-no-files-found: error
-
-  # ──────────────────────────────────────────────────────────────────────────────
-  # Ready-to-flash Raspberry Pi image — built with pi-gen on the arm64 runner.
-  # ──────────────────────────────────────────────────────────────────────────────
-  build-pi-image:
-    name: Raspberry Pi image (${{ matrix.image_profile }})
-    runs-on: ubuntu-24.04-arm
+  build-release:
+    name: Linux x86_64 (Steam Runtime 3.0)
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        image_profile:
-          - crt-ntsc
-          - crt-pal
-          - pi5-hdmi-auto
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4.2.2
-
-      - name: Validate generated helpers
-        run: bash scripts/check-generated-helpers.sh
-
-      - name: Build image
-        env:
-          PI_IMAGE_NAME: tater-tube-${{ github.ref_name }}-${{ matrix.image_profile }}
-          PI_IMAGE_PROFILE: ${{ matrix.image_profile }}
-          PI_ENABLE_SSH: "1"
-          PI_FIRST_USER_NAME: tater
-          PI_FIRST_USER_PASS: pi
-        run: ./scripts/build-pi-image.sh
-
-      - name: Prepare image artifacts
-        run: |
-          set -euo pipefail
-          mkdir -p pi-image-artifacts
-          cp .cache/pi-gen-arm64/deploy/image_*.img.xz pi-image-artifacts/
-          cp .cache/pi-gen-arm64/deploy/*.info pi-image-artifacts/ || true
-          (
-            cd pi-image-artifacts
-            sha256sum image_*.img.xz > SHA256SUMS.txt
-            ls -lh
-          )
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: pi-image-${{ matrix.image_profile }}
-          path: pi-image-artifacts/*
-          if-no-files-found: error
-          compression-level: 0
-
-  # ──────────────────────────────────────────────────────────────────────────────
-  # Publish GitHub Release
-  # ──────────────────────────────────────────────────────────────────────────────
-  release:
-    name: Publish Release
-    needs: [build-linux-arm64, build-pi-image]
-    runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      STEAM_RUNTIME_ROOT: ${{ github.workspace }}/out/steam-runtime
+      STEAM_DEPOT_ROOT: ${{ github.workspace }}/out/steam/depot
 
     steps:
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v4.3.0
-        with:
-          path: artifacts
-
-      - name: Generate release notes
+      - name: Validate release version
+        id: release
+        shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
 
-          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
-          app_assets=(artifacts/tarball-linux-arm64/Tater-Tube-*-linux-arm64.tar.gz)
-          image_assets=(artifacts/pi-image-*/image_*.img.xz)
-          release_highlights="$(python3 -c 'import json, pathlib; manifest=json.loads(pathlib.Path("update-manifest.json").read_text()); print("\n".join("- " + str(note).strip() for note in manifest.get("notes", []) if str(note).strip()))')"
-
-          app_asset_name="$(basename "${app_assets[0]}")"
-          download_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
-
-          if [ "${#image_assets[@]}" -eq 0 ]; then
-            echo "No Raspberry Pi image assets found." >&2
+          app_version="$({
+            sed -nE \
+              's/^project\(TaterTube VERSION ([0-9]+\.[0-9]+\.[0-9]+) LANGUAGES CXX\)$/\1/p' \
+              CMakeLists.txt
+          })"
+          if [ -z "${app_version}" ]; then
+            echo "Could not read the Tater Tube version from CMakeLists.txt." >&2
             exit 1
           fi
 
-          : > SHA256SUMS.txt
-          for image_asset in "${image_assets[@]}"; do
-            sha256sum "$image_asset" | awk -v name="$(basename "$image_asset")" '{ print $1 "  " name }' >> SHA256SUMS.txt
-          done
-
-          {
-            if [ -n "$release_highlights" ]; then
-              echo "### Highlights"
-              echo
-              printf '%s\n' "$release_highlights"
-              echo
+          is_tag=false
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            is_tag=true
+            release_version="${GITHUB_REF_NAME}"
+            if [[ ! "${release_version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "Release tag must use vMAJOR.MINOR.PATCH with an optional prerelease suffix." >&2
+              exit 1
             fi
-            echo "### Downloads"
-            echo
-            echo "| Platform | File |"
-            echo "|---|---|"
-            for image_asset in "${image_assets[@]}"; do
-              image_asset_name="$(basename "$image_asset")"
-              image_label="Ready-to-flash Raspberry Pi OS image"
-              case "$image_asset_name" in
-                *crt-ntsc*) image_label="Ready-to-flash Raspberry Pi OS image (NTSC composite)" ;;
-                *crt-pal*) image_label="Ready-to-flash Raspberry Pi OS image (PAL composite)" ;;
-                *pi5-hdmi-auto*) image_label="Ready-to-flash Raspberry Pi OS image (Pi 5 HDMI auto)" ;;
-              esac
-              echo "| ${image_label} | [\`${image_asset_name}\`](${download_base}/${image_asset_name}) |"
-            done
-            echo "| Image checksums | [\`SHA256SUMS.txt\`](${download_base}/SHA256SUMS.txt) |"
-            echo "| Raspberry Pi OS Trixie app update (arm64) | [\`${app_asset_name}\`](${download_base}/${app_asset_name}) |"
-            echo "| Installer | [\`install.sh\`](${download_base}/install.sh) |"
-            echo
-            if [ -n "$previous_tag" ]; then
-              echo "### Changes since ${previous_tag}"
-              echo
-              git log --pretty=format:'- %s (`%h`)' "${previous_tag}..${GITHUB_REF_NAME}"
-              echo
-            else
-              echo "### Changes"
-              echo
-              git log --pretty=format:'- %s (`%h`)' "${GITHUB_REF_NAME}"
-              echo
-            fi
-            echo
-            echo "### Install Instructions"
-            echo
-            echo "- Ready-to-flash image: download the NTSC composite, PAL composite, or Pi 5 HDMI auto image asset, flash it with Raspberry Pi Imager or Balena Etcher, then boot the Pi."
-            echo "- Raspberry Pi OS Trixie app update: [Instructions](INSTALL.md#update-an-existing-tater-tube-image)"
-          } > release-notes.md
 
-      - name: Publish
+            tag_app_version="${release_version#v}"
+            tag_app_version="${tag_app_version%%-*}"
+            if [ "${tag_app_version}" != "${app_version}" ]; then
+              echo "Tag ${release_version} does not match app version ${app_version}." >&2
+              exit 1
+            fi
+          else
+            release_version="v${app_version}-manual-${GITHUB_SHA:0:7}"
+          fi
+
+          echo "app_version=${app_version}" >> "${GITHUB_OUTPUT}"
+          echo "is_tag=${is_tag}" >> "${GITHUB_OUTPUT}"
+          echo "release_version=${release_version}" >> "${GITHUB_OUTPUT}"
+          echo "source_commit=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate generated helpers
+        run: bash scripts/check-generated-helpers.sh
+
+      - name: Install host packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake curl unzip zstd
+          docker version
+
+      - name: Build bundled desktop runtimes and approved cores
+        env:
+          STEAM_RUNTIME_BUILD_JOBS: '2'
+        run: ./scripts/build-steam-runtimes.sh "${STEAM_RUNTIME_ROOT}"
+
+      - name: Fetch pinned static tools
+        run: ./scripts/prepare-steam-static-tools.sh "${STEAM_RUNTIME_ROOT}"
+
+      - name: Build complete portable Steam depot
+        env:
+          STEAM_MPV_BUNDLE: ${{ github.workspace }}/out/steam-runtime/mpv
+          STEAM_MOONLIGHT_BUNDLE: ${{ github.workspace }}/out/steam-runtime/moonlight-sdl
+          STEAM_RETROARCH_BUNDLE: ${{ github.workspace }}/out/steam-runtime/retroarch
+          STEAM_YTDLP_BUNDLE: ${{ github.workspace }}/out/steam-runtime/yt-dlp
+          STEAM_RCLONE_BUNDLE: ${{ github.workspace }}/out/steam-runtime/rclone
+          STEAM_THIRD_PARTY_NOTICES_DIR: ${{ github.workspace }}/out/steam-runtime/notices
+          STEAM_REQUIRE_COMPLETE_RUNTIME: '1'
+          STEAM_REQUIRE_PORTABLE_DEPOT: '1'
+          STEAM_RELEASE: '1'
+        run: ./scripts/build-steam-sniper.sh
+
+      - name: Verify release depot and source provenance
+        env:
+          STEAM_REQUIRE_COMPLETE_RUNTIME: '1'
+          STEAM_REQUIRE_PORTABLE_DEPOT: '1'
+        run: |
+          set -euo pipefail
+
+          test "$(tr -d '\n' < "${STEAM_DEPOT_ROOT}/BUILD-COMMIT.txt")" \
+            = "${{ steps.release.outputs.source_commit }}"
+          test "$(tr -d '\n' < "${STEAM_DEPOT_ROOT}/BUILD-STATE.txt")" = clean
+
+          ./scripts/validate-steam-depot.sh "${STEAM_DEPOT_ROOT}"
+          (
+            cd "${STEAM_DEPOT_ROOT}"
+            sha256sum -c DEPOT-SHA256SUMS.txt
+          )
+
+      - name: Package release archive
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.release_version }}
+        run: |
+          set -euo pipefail
+
+          release_dir="${GITHUB_WORKSPACE}/out/release"
+          release_root="Tater-Tube-Steam-${RELEASE_VERSION}-linux-x86_64"
+          archive="${release_root}.tar.zst"
+          source_date_epoch="$(git show -s --format=%ct HEAD)"
+          mkdir -p "${release_dir}"
+
+          tar \
+            --sort=name \
+            --mtime="@${source_date_epoch}" \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            --transform="s,^depot,${release_root}," \
+            -I 'zstd -10 -T0' \
+            -cf "${release_dir}/${archive}" \
+            -C "${GITHUB_WORKSPACE}/out/steam" depot
+
+          (
+            cd "${release_dir}"
+            sha256sum "${archive}" > SHA256SUMS.txt
+            zstd --test "${archive}"
+            tar --zstd -tf "${archive}" >/dev/null
+            ls -lh "${archive}" SHA256SUMS.txt
+          )
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Tater-Tube-Steam-${{ steps.release.outputs.release_version }}-linux-x86_64
+          path: out/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Publish GitHub release
+        if: steps.release.outputs.is_tag == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Tater Tube ${{ github.ref_name }}"
+          name: Tater Tube Steam ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
-            artifacts/tarball-linux-arm64/*.tar.gz
-            artifacts/pi-image-*/*.img.xz
-            artifacts/pi-image-*/*.info
-            SHA256SUMS.txt
-            scripts/install.sh
-          body_path: release-notes.md
+            out/release/*.tar.zst
+            out/release/SHA256SUMS.txt
