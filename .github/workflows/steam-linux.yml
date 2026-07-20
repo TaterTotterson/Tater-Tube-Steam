@@ -9,10 +9,9 @@ on:
       - "src/**"
       - "views/**"
       - "modules/**"
+      - "assets/steam/**"
       - "packaging/steam/**"
-      - "scripts/build-steam-*.sh"
-      - "scripts/prepare-steam-static-tools.sh"
-      - "scripts/validate-steam-depot.sh"
+      - "scripts/*steam*.sh"
       - "tests/**"
       - ".github/workflows/steam-linux.yml"
 
@@ -31,6 +30,7 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             cmake \
+            ffmpeg \
             ninja-build \
             qt6-base-dev \
             qt6-declarative-dev \
@@ -53,6 +53,13 @@ jobs:
           test -f out/steam/depot/LICENSE.txt
           test ! -e out/steam/depot/usr/share/240mp/scripts/install.sh
           test ! -e out/steam/depot/usr/share/240mp/scripts/pi-image
+          test ! -e out/steam/depot/usr/share/240mp/assets/steam
+
+      - name: Rebuild and validate Steam artwork
+        run: |
+          STEAM_ASSET_OUTPUT_DIR=out/steam-assets \
+            ./scripts/build-steam-assets.sh
+          ./scripts/validate-steam-assets.sh out/steam-assets
 
       - name: Upload smoke-build depot
         uses: actions/upload-artifact@v4.6.2

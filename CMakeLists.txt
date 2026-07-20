@@ -149,11 +149,16 @@ else()
     install(DIRECTORY
         "${CMAKE_SOURCE_DIR}/views"
         "${CMAKE_SOURCE_DIR}/modules"
-        "${CMAKE_SOURCE_DIR}/assets"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
         COMPONENT Runtime)
 
     if(TATER_TUBE_STEAM)
+        install(DIRECTORY
+            "${CMAKE_SOURCE_DIR}/assets"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
+            COMPONENT Runtime
+            PATTERN "steam" EXCLUDE)
+
         install(FILES
             "${CMAKE_SOURCE_DIR}/scripts/audio-vu.lua"
             "${CMAKE_SOURCE_DIR}/scripts/media-keys.lua"
@@ -163,6 +168,11 @@ else()
             DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp/scripts"
             COMPONENT Runtime)
     else()
+        install(DIRECTORY
+            "${CMAKE_SOURCE_DIR}/assets"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
+            COMPONENT Runtime)
+
         install(DIRECTORY
             "${CMAKE_SOURCE_DIR}/scripts"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"

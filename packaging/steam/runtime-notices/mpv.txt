@@ -1,0 +1,16 @@
+mpv 0.41.0
+Source revision: 41f6a645068483470267271e1d09966ca3b9f413
+Source: https://github.com/mpv-player/mpv/tree/v0.41.0
+License: GNU GPL version 2 or later
+
+The bundle also contains:
+
+- FFmpeg 6.1.6, revision f1e3a2bf7a2f2cde936d1ed97f09a26853d20125
+  Source: https://git.ffmpeg.org/ffmpeg.git
+  Configuration in this build: LGPL version 2.1 or later
+- libplacebo 6.338.2, revision 64c1954570f1cd57f8570a57e51fb0249b57bb90
+  Source: https://github.com/haasn/libplacebo/tree/v6.338.2
+  License: LGPL version 2.1 or later
+
+The complete license texts are included in the mpv runtime bundle. Tater Tube
+is distributed under GPL-3.0, which is compatible with this GPL mpv build.

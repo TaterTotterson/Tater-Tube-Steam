@@ -1,0 +1,187 @@
+ARG SNIPER_BUILDER_IMAGE=tater-tube-steam-sniper-builder
+FROM ${SNIPER_BUILDER_IMAGE}
+
+ARG BUILD_JOBS=4
+ARG MESON_VERSION=1.7.2
+ARG FFMPEG_TAG=n6.1.6
+ARG FFMPEG_REF=f1e3a2bf7a2f2cde936d1ed97f09a26853d20125
+ARG LIBPLACEBO_TAG=v6.338.2
+ARG LIBPLACEBO_REF=64c1954570f1cd57f8570a57e51fb0249b57bb90
+ARG MPV_REF=41f6a645068483470267271e1d09966ca3b9f413
+ARG RETROARCH_REF=69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576
+ARG MOONLIGHT_REF=775444287305849ebdf4736c75298ad0713e2d5d
+ARG FCEUMM_REF=afe65ef1b4328c0bf2df05fb47a6b31a45bccf47
+ARG GAMBATTE_REF=9b3b5e3cc18ec92f460d37dd551eaf90c55bfcea
+ARG MGBA_REF=6dce57eef127dc4cc292644f38196e0e7c58590c
+
+USER root
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libavahi-client-dev \
+        libass-dev \
+        libavcodec-dev \
+        libavutil-dev \
+        libevdev-dev \
+        libssl-dev \
+        libva-dev \
+        libvdpau-dev \
+        nasm \
+        yasm \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir "meson==${MESON_VERSION}"
+
+ENV RUNTIME_ROOT=/opt/tater-tube-runtimes
+ENV MPV_ROOT=/opt/tater-tube-runtimes/mpv
+ENV PKG_CONFIG_PATH=/opt/tater-tube-runtimes/mpv/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/opt/tater-tube-runtimes/mpv/lib
+
+# mpv 0.41 requires FFmpeg 6.1 or newer. Build the final maintained 6.1 release
+# as shared LGPL libraries and keep the command-line FFmpeg tools out of the
+# shipped bundle.
+RUN git clone --depth 1 --branch "${FFMPEG_TAG}" \
+        https://git.ffmpeg.org/ffmpeg.git /build/ffmpeg \
+    && test "$(git -C /build/ffmpeg rev-parse HEAD)" = "${FFMPEG_REF}" \
+    && cd /build/ffmpeg \
+    && ./configure \
+        --prefix="${MPV_ROOT}" \
+        --enable-shared \
+        --disable-static \
+        --disable-debug \
+        --disable-doc \
+        --disable-programs \
+        --enable-openssl \
+        --enable-vaapi \
+        --enable-vdpau \
+    && make -j"${BUILD_JOBS}" \
+    && make install
+
+# Current mpv uses libplacebo for its renderer. Vulkan and OpenGL are both
+# enabled so the same bundle works in Deck Gaming Mode and X11 desktops.
+RUN git clone --depth 1 --branch "${LIBPLACEBO_TAG}" --recursive \
+        https://github.com/haasn/libplacebo.git /build/libplacebo \
+    && test "$(git -C /build/libplacebo rev-parse HEAD)" = "${LIBPLACEBO_REF}" \
+    && meson setup /build/libplacebo/build /build/libplacebo \
+        --prefix="${MPV_ROOT}" \
+        --libdir=lib \
+        --buildtype=release \
+        -Dvulkan=enabled \
+        -Dopengl=enabled \
+        -Dglslang=enabled \
+        -Dshaderc=disabled \
+        -Ddemos=false \
+        -Dtests=false \
+        -Dbench=false \
+        -Dfuzz=false \
+    && meson compile -C /build/libplacebo/build -j"${BUILD_JOBS}" \
+    && meson install -C /build/libplacebo/build
+
+RUN mkdir -p /build/mpv \
+    && curl -fL --retry 3 \
+        "https://github.com/mpv-player/mpv/archive/${MPV_REF}.tar.gz" \
+        | tar -xz -C /build/mpv --strip-components=1 \
+    && meson setup /build/mpv/build /build/mpv \
+        --prefix="${MPV_ROOT}" \
+        --libdir=lib \
+        --buildtype=release \
+        -Dbuild-date=false \
+        -Dlibmpv=false \
+        -Dtests=false \
+        -Dmanpage-build=disabled \
+        -Dhtml-build=disabled \
+        -Dpdf-build=disabled \
+        -Dlua=disabled \
+        -Djavascript=disabled \
+        -Dlibavdevice=disabled \
+        -Dcdda=disabled \
+        -Ddvdnav=disabled \
+        -Dlibbluray=disabled \
+        -Dvapoursynth=disabled \
+        -Dcaca=disabled \
+        -Dsixel=disabled \
+        -Dsdl2-audio=disabled \
+        -Dsdl2-video=disabled \
+        -Dsdl2-gamepad=disabled \
+    && meson compile -C /build/mpv/build -j"${BUILD_JOBS}" \
+    && meson install -C /build/mpv/build \
+    && patchelf --set-rpath '$ORIGIN/../lib' "${MPV_ROOT}/bin/mpv" \
+    && find "${MPV_ROOT}/lib" -type f -name '*.so.*' -exec \
+        patchelf --set-rpath '$ORIGIN' {} \;
+
+# RetroArch is built without SDL because Valve's sniper SDK intentionally
+# provides the SDL2 compatibility shim. Native udev input covers controllers;
+# X11, Wayland, Vulkan, ALSA, and PulseAudio remain enabled.
+RUN mkdir -p /build/retroarch \
+    && curl -fL --retry 3 \
+        "https://github.com/libretro/RetroArch/archive/${RETROARCH_REF}.tar.gz" \
+        | tar -xz -C /build/retroarch --strip-components=1 \
+    && cd /build/retroarch \
+    && ./configure \
+        --prefix="${RUNTIME_ROOT}/retroarch" \
+        --enable-x11 \
+        --enable-wayland \
+        --enable-vulkan \
+        --disable-sdl \
+        --disable-sdl2 \
+        --enable-alsa \
+        --enable-pulse \
+        --enable-udev \
+        --enable-dbus \
+        --disable-ffmpeg \
+        --disable-qt \
+        --disable-jack \
+    && make -j"${BUILD_JOBS}" \
+    && make install \
+    && mkdir -p "${RUNTIME_ROOT}/retroarch/cores"
+
+COPY scripts/build-moonlight-sdl.sh /tmp/build-moonlight-sdl.sh
+RUN MOONLIGHT_EMBEDDED_REF="${MOONLIGHT_REF}" \
+        MOONLIGHT_BUILD_JOBS="${BUILD_JOBS}" \
+        /tmp/build-moonlight-sdl.sh "${RUNTIME_ROOT}/moonlight-sdl" \
+    && patchelf --set-rpath '$ORIGIN/../lib' \
+        "${RUNTIME_ROOT}/moonlight-sdl/bin/moonlight" \
+    && find "${RUNTIME_ROOT}/moonlight-sdl/lib" -type f -name '*.so.*' -exec \
+        patchelf --set-rpath '$ORIGIN' {} \;
+
+# These cores are compiled for technical testing only. They are deliberately
+# kept outside retroarch/cores so they cannot enter a depot until the project's
+# final rights review lists exact filenames in APPROVED-CORES.txt.
+RUN mkdir -p /build/fceumm \
+    && curl -fL --retry 3 \
+        "https://github.com/libretro/libretro-fceumm/archive/${FCEUMM_REF}.tar.gz" \
+        | tar -xz -C /build/fceumm --strip-components=1 \
+    && make -C /build/fceumm -j"${BUILD_JOBS}" \
+    && mkdir -p "${RUNTIME_ROOT}/candidate-cores/licenses" \
+    && cp /build/fceumm/fceumm_libretro.so "${RUNTIME_ROOT}/candidate-cores/" \
+    && cp /build/fceumm/Copying "${RUNTIME_ROOT}/candidate-cores/licenses/fceumm-Copying"
+
+RUN mkdir -p /build/gambatte \
+    && curl -fL --retry 3 \
+        "https://github.com/libretro/gambatte-libretro/archive/${GAMBATTE_REF}.tar.gz" \
+        | tar -xz -C /build/gambatte --strip-components=1 \
+    && make -C /build/gambatte -j"${BUILD_JOBS}" \
+    && cp /build/gambatte/gambatte_libretro.so "${RUNTIME_ROOT}/candidate-cores/" \
+    && cp /build/gambatte/COPYING "${RUNTIME_ROOT}/candidate-cores/licenses/gambatte-COPYING"
+
+RUN mkdir -p /build/mgba \
+    && curl -fL --retry 3 \
+        "https://github.com/libretro/mgba/archive/${MGBA_REF}.tar.gz" \
+        | tar -xz -C /build/mgba --strip-components=1 \
+    && make -C /build/mgba -j"${BUILD_JOBS}" \
+    && cp /build/mgba/mgba_libretro.so "${RUNTIME_ROOT}/candidate-cores/" \
+    && cp /build/mgba/LICENSE "${RUNTIME_ROOT}/candidate-cores/licenses/mgba-LICENSE"
+
+COPY packaging/steam/runtime-notices/ "${RUNTIME_ROOT}/notices/"
+
+RUN cp /build/mpv/LICENSE.GPL "${RUNTIME_ROOT}/mpv/LICENSE.GPL" \
+    && cp /build/ffmpeg/COPYING.LGPLv2.1 "${RUNTIME_ROOT}/mpv/FFMPEG-COPYING.LGPLv2.1" \
+    && cp /build/libplacebo/LICENSE "${RUNTIME_ROOT}/mpv/LIBPLACEBO-LICENSE" \
+    && cp /build/retroarch/COPYING "${RUNTIME_ROOT}/retroarch/COPYING" \
+    && file \
+        "${RUNTIME_ROOT}/mpv/bin/mpv" \
+        "${RUNTIME_ROOT}/moonlight-sdl/bin/moonlight" \
+        "${RUNTIME_ROOT}/retroarch/bin/retroarch" \
+        "${RUNTIME_ROOT}/candidate-cores/"*_libretro.so \
+    && "${RUNTIME_ROOT}/mpv/bin/mpv" --version \
+    && "${RUNTIME_ROOT}/retroarch/bin/retroarch" --version

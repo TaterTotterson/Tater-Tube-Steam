@@ -83,13 +83,26 @@ sibling runtime directory:
 ```
 
 The script verifies release-asset SHA-256 hashes and records the versions,
-source URLs, and license notices. mpv, Moonlight, RetroArch, and every selected
-core remain separate build-and-license work because their dependency and core
-licenses must be reviewed as a unit.
+source URLs, and license notices.
+
+Build mpv, Moonlight, RetroArch, and a quarantined candidate-core set in the
+same pinned sniper SDK:
+
+```bash
+./scripts/build-steam-runtimes.sh ../Tater-Tube-Steam-Runtime
+```
+
+The build pins source revisions for mpv, FFmpeg, libplacebo, Moonlight,
+RetroArch, and each candidate core. Candidate cores are written to
+`candidate-cores`, not `retroarch/cores`, so they cannot enter a depot until
+the final rights review explicitly approves their exact filenames.
 
 Use the prepared tools in a Sniper development depot with:
 
 ```bash
+STEAM_MPV_BUNDLE=../Tater-Tube-Steam-Runtime/mpv \
+STEAM_MOONLIGHT_BUNDLE=../Tater-Tube-Steam-Runtime/moonlight-sdl \
+STEAM_RETROARCH_BUNDLE=../Tater-Tube-Steam-Runtime/retroarch \
 STEAM_RCLONE_BUNDLE=../Tater-Tube-Steam-Runtime/rclone \
 STEAM_YTDLP_BUNDLE=../Tater-Tube-Steam-Runtime/yt-dlp \
 STEAM_THIRD_PARTY_NOTICES_DIR=../Tater-Tube-Steam-Runtime/notices \
@@ -163,6 +176,35 @@ depot/
 Example ContentBuilder manifests live in `packaging/steam/steamworks`. Copy
 them without the `.example` suffix and replace the app and depot placeholders.
 Keep `preview` enabled until the private test branch has passed.
+
+After Steam assigns the numeric IDs, generate preview-mode manifests without
+editing the checked-in templates:
+
+```bash
+STEAM_APP_ID=123456 \
+STEAM_LINUX_DEPOT_ID=123457 \
+./scripts/prepare-steamworks-manifests.sh
+```
+
+The private manifests are written to `out/steamworks`, which is ignored by Git.
+
+Required store and library artwork is under `assets/steam/store`. Rebuild and
+validate it with:
+
+```bash
+./scripts/build-steam-assets.sh
+```
+
+Store screenshots are separate 1920x1080 captures from the real application;
+do not substitute generated or composited UI. Re-capture them from the staged
+depot with:
+
+```bash
+./scripts/capture-steam-screenshots.sh
+```
+
+Marketing artwork and screenshots are source/release materials and are
+explicitly excluded from the customer depot.
 
 The shipped application deliberately does not link the Steamworks SDK and does
 not use Steam DRM. Valve's ContentBuilder upload tool stays outside the depot;
