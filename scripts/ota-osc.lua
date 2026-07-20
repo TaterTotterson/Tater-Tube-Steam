@@ -385,6 +385,11 @@ mp.register_script_message("240mp-ota-transition-black", function()
     show_transition_black()
 end)
 mp.register_script_message("240mp-ota-transition-black-hide", hide_transition_black)
+mp.register_script_message("240mp-transition-black", function()
+    hide()
+    show_transition_black()
+end)
+mp.register_script_message("240mp-transition-black-hide", hide_transition_black)
 mp.register_script_message("240mp-osd-menu-show", show_menu)
 mp.register_script_message("240mp-osd-menu-hide", hide_menu)
 
@@ -421,6 +426,11 @@ mp.register_event("playback-restart", function()
         hide_transition_black()
     end
     mp.commandv("script-message", "240mp-ota-file-loaded")
+end)
+
+mp.register_event("end-file", function()
+    hide()
+    show_transition_black()
 end)
 
 mp.register_event("shutdown", function()

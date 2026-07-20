@@ -457,6 +457,42 @@ void UsenetBackend::load_categories()
     });
 }
 
+void UsenetBackend::load_tater_bumper_settings()
+{
+    if (get_auth_state() != QStringLiteral("authed")) {
+        emit taterBumperSettingsLoaded();
+        return;
+    }
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/bumpers/settings")));
+    addTaterAuthHeader(request);
+    QNetworkReply *reply = m_network.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        handleTaterBumperSettingsReply(reply);
+    });
+}
+
+bool UsenetBackend::tater_bumper_enabled(const QString &key, bool fallback) const
+{
+    if (!m_taterBumperSettings.contains(key))
+        return fallback;
+
+    const QVariant value = m_taterBumperSettings.value(key);
+    if (value.metaType().id() == QMetaType::Bool)
+        return value.toBool();
+
+    const QString normalized = value.toString().trimmed().toLower();
+    if (normalized == QStringLiteral("off") || normalized == QStringLiteral("false")
+        || normalized == QStringLiteral("0")) {
+        return false;
+    }
+    if (normalized == QStringLiteral("on") || normalized == QStringLiteral("true")
+        || normalized == QStringLiteral("1")) {
+        return true;
+    }
+    return fallback;
+}
+
 void UsenetBackend::load_items(const QString &categoryId, const QString &categoryTitle)
 {
     if (get_auth_state() != QStringLiteral("authed")) {
@@ -737,6 +773,49 @@ void UsenetBackend::save_play_state(const QVariantMap &state)
     });
 }
 
+void UsenetBackend::load_next_local_episode(const QVariantMap &item)
+{
+    if (serverApiBase().isEmpty() || serverPlayerToken().isEmpty()) {
+        emit nextLocalEpisodeReady({});
+        return;
+    }
+
+    QJsonObject payload{
+        {QStringLiteral("id"), item.value(QStringLiteral("playStateId")).toString()},
+        {QStringLiteral("seriesId"), item.value(QStringLiteral("seriesStateId")).toString()},
+        {QStringLiteral("title"), item.value(QStringLiteral("title")).toString()},
+        {QStringLiteral("seriesTitle"), item.value(QStringLiteral("seriesTitle")).toString()},
+        {QStringLiteral("mediaType"), item.value(QStringLiteral("mediaType")).toString()},
+        {QStringLiteral("categoryId"), item.value(QStringLiteral("categoryId")).toString()},
+        {QStringLiteral("sourceIndex"), item.value(QStringLiteral("sourceIndex")).toInt()},
+        {QStringLiteral("path"), item.value(QStringLiteral("path")).toString()},
+    };
+
+    QNetworkRequest request(taterApiUrl(QStringLiteral("/api/tater/playstate/next")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    addTaterAuthHeader(request);
+
+    QNetworkReply *reply =
+        m_network.post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        const QByteArray body = reply->readAll();
+        const int status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const bool failed = reply->error() != QNetworkReply::NoError || status >= 400;
+        reply->deleteLater();
+        if (failed) {
+            emit nextLocalEpisodeReady({});
+            return;
+        }
+
+        const QJsonDocument document = QJsonDocument::fromJson(body);
+        const QJsonObject itemObject =
+            document.object().value(QStringLiteral("data")).toObject()
+                .value(QStringLiteral("item")).toObject();
+        emit nextLocalEpisodeReady(itemObject.toVariantMap());
+    });
+}
+
 void UsenetBackend::handlePairingReply(QNetworkReply *reply, const QString &serverUrl)
 {
     reply->deleteLater();
@@ -797,6 +876,15 @@ void UsenetBackend::handleCategoriesReply(QNetworkReply *reply)
         return;
     }
 
+    QJsonParseError jsonError;
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &jsonError);
+    if (jsonError.error == QJsonParseError::NoError && doc.isObject()) {
+        const QJsonObject data = doc.object().value(QStringLiteral("data")).toObject();
+        const QJsonObject bumperSettings = data.value(QStringLiteral("tater_bumpers")).toObject();
+        if (!bumperSettings.isEmpty())
+            m_taterBumperSettings = bumperSettings.toVariantMap();
+    }
+
     QString error;
     const QVariantList categories = parseCategories(body, &error);
     if (!error.isEmpty()) {
@@ -804,6 +892,23 @@ void UsenetBackend::handleCategoriesReply(QNetworkReply *reply)
         return;
     }
     emit categoriesLoaded(categories);
+}
+
+void UsenetBackend::handleTaterBumperSettingsReply(QNetworkReply *reply)
+{
+    reply->deleteLater();
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (reply->error() == QNetworkReply::NoError && status < 400) {
+        QJsonParseError error;
+        const QJsonDocument doc = QJsonDocument::fromJson(body, &error);
+        if (error.error == QJsonParseError::NoError && doc.isObject()) {
+            const QJsonObject data = doc.object().value(QStringLiteral("data")).toObject();
+            if (!data.isEmpty())
+                m_taterBumperSettings = data.toVariantMap();
+        }
+    }
+    emit taterBumperSettingsLoaded();
 }
 
 void UsenetBackend::handleItemsReply(QNetworkReply *reply, const QString &categoryTitle)

@@ -853,10 +853,14 @@ QJsonObject ControlApiServer::setupData() const {
     QJsonArray appSchema{
         QJsonObject{
             {"key", "color_scheme"},
-            {"label", "Color Scheme"},
+            {"label", "Theme"},
             {"type", "list_single"},
-            {"options", QJsonArray{"Off Air", "Video 1", "Late Night", "Synthwave",
-                                    "Terminal", "T-120", "Amber", "Kinescope", "Custom"}},
+            {"options", QJsonArray{"Off Air", "TaterVision '87", "Broadcast Test",
+                                    "Cable After Midnight", "Public Access",
+                                    "Woodgrain Console", "Tater Satellite",
+                                    "Haunted Tape", "Saturday Morning", "Video 1",
+                                    "Late Night", "Synthwave", "Terminal", "T-120",
+                                    "Amber", "Kinescope", "Custom"}},
             {"default", "Off Air"}
         },
         QJsonObject{

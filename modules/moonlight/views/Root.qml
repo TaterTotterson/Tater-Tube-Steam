@@ -21,6 +21,7 @@ FocusScope {
     property bool pairing: false
     property bool loadingApps: false
     property int pairWaitStage: 0
+    property string messageReturnMode: ""
 
     focus: true
 
@@ -98,6 +99,8 @@ FocusScope {
     }
 
     function loadApps() {
+        if (mode === "apps")
+            messageReturnMode = "apps"
         loadingApps = true
         mode = "loading"
         statusText = "LOADING PC APPS..."
@@ -105,6 +108,7 @@ FocusScope {
     }
 
     function refreshApps() {
+        messageReturnMode = "apps"
         loadingApps = true
         mode = "loading"
         statusText = "SCANNING SUNSHINE..."
@@ -147,6 +151,7 @@ FocusScope {
         }
         var name = item.name || item.title || ""
         if (name === "") return
+        messageReturnMode = "apps"
         mode = "loading"
         statusText = "TUNING " + (item.title || name)
         moonlightBackend.launch_app(name)
@@ -160,6 +165,24 @@ FocusScope {
         appList.currentIndex = next
         currentAppIndex = next
         appList.positionViewAtIndex(next, ListView.Contain)
+    }
+
+    function returnFromMessage() {
+        var targetMode = messageReturnMode
+        messageReturnMode = ""
+        if (targetMode === "apps" && apps.length > 0) {
+            mode = "apps"
+            currentAppIndex = Math.max(0, Math.min(currentAppIndex, apps.length - 1))
+            appList.currentIndex = currentAppIndex
+            return
+        }
+        if (apps.length > 0) {
+            mode = "apps"
+            currentAppIndex = Math.max(0, Math.min(currentAppIndex, apps.length - 1))
+            appList.currentIndex = currentAppIndex
+            return
+        }
+        goBack()
     }
 
     Keys.onPressed: function(event) {
@@ -219,7 +242,7 @@ FocusScope {
                 refresh()
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                goBack()
+                returnFromMessage()
                 event.accepted = true
             }
         }
@@ -340,6 +363,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: root.staticBackgroundEnabled && mode !== "playing"
         running: visible
     }

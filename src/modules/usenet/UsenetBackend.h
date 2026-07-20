@@ -19,6 +19,8 @@ public:
     Q_INVOKABLE QVariantMap get_setup_status();
     Q_INVOKABLE void pair_server(const QString &serverUrl, const QString &pin);
     Q_INVOKABLE void load_categories();
+    Q_INVOKABLE void load_tater_bumper_settings();
+    Q_INVOKABLE bool tater_bumper_enabled(const QString &key, bool fallback = true) const;
     Q_INVOKABLE void load_items(const QString &categoryId, const QString &categoryTitle);
     Q_INVOKABLE void load_local_items(const QString &categoryId, const QString &path,
                                       int sourceIndex, const QString &categoryTitle);
@@ -34,6 +36,7 @@ public:
     Q_INVOKABLE void load_tube_tv_lineup();
     Q_INVOKABLE void request_streams(const QString &requestId, const QVariantMap &item);
     Q_INVOKABLE void save_play_state(const QVariantMap &state);
+    Q_INVOKABLE void load_next_local_episode(const QVariantMap &item);
     Q_INVOKABLE QString playback_url(const QString &url, int screenWidth, int screenHeight) const;
     Q_INVOKABLE bool uses_server_seek() const;
     Q_INVOKABLE QVariantList get_commercial_videos_for_setting(const QString &settingKey) const;
@@ -43,6 +46,7 @@ public:
 signals:
     void authStateChanged();
     void categoriesLoaded(const QVariantList &categories);
+    void taterBumperSettingsLoaded();
     void itemsLoaded(const QString &categoryTitle, const QVariantList &items);
     void musicLibrariesLoaded(const QVariant &libraries);
     void musicAlbumsLoaded(const QVariant &albums);
@@ -50,6 +54,7 @@ signals:
     void activeStreamsLoaded(const QVariantList &streams);
     void tubeTvLineupLoaded(const QVariantList &channels, const QVariantMap &metadata);
     void streamsReady(const QString &requestId, const QString &title, const QVariantList &streams);
+    void nextLocalEpisodeReady(const QVariantMap &item);
     void pairingSucceeded(const QString &serverUrl, const QString &token, const QString &playerName);
     void errorOccurred(const QString &message);
     void dynamicOptionsReady(const QString &key, const QVariant &options);
@@ -79,6 +84,7 @@ private:
     bool isRaspberryPi5() const;
 
     void handleCategoriesReply(QNetworkReply *reply);
+    void handleTaterBumperSettingsReply(QNetworkReply *reply);
     void handleItemsReply(QNetworkReply *reply, const QString &categoryTitle);
     void handleMusicRowsReply(QNetworkReply *reply, const QString &arrayKey,
                               const QString &failureMessage);
@@ -96,4 +102,5 @@ private:
     QString m_appRoot;
     QString m_dataRoot;
     QNetworkAccessManager m_network;
+    QVariantMap m_taterBumperSettings;
 };

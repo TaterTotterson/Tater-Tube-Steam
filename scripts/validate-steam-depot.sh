@@ -35,9 +35,21 @@ fi
 require_executable "launch-tater-tube.sh"
 require_executable "usr/bin/tater-tube"
 require_file "usr/share/240mp/Main.qml"
+require_file "usr/share/240mp/views/TaterPicks.qml"
+require_file "usr/share/240mp/modules/shared/TaterBumpers.js"
+require_file "usr/share/240mp/scripts/playback-transition.lua"
+require_file "usr/share/240mp/assets/images/mascots/tater-picks.png"
 require_file "SOURCE.txt"
 require_file "LICENSE.txt"
 require_file "BUILD-COMMIT.txt"
+
+bumper_count="$(
+    find "${DEPOT_ROOT}/usr/share/240mp/assets/videos/tater-bumpers" \
+        -maxdepth 1 -type f -name '*.mp4' 2>/dev/null | wc -l | tr -d ' '
+)"
+if [ "${bumper_count:-0}" -ne 16 ]; then
+    fail "Expected 16 Tater bumper videos, found ${bumper_count:-0}"
+fi
 
 runtime_paths=(
     "usr/share/240mp/vendor/mpv/bin/mpv"

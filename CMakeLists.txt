@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(TaterTube VERSION 1.5.9 LANGUAGES CXX)
+project(TaterTube VERSION 1.6.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -164,6 +164,7 @@ else()
             "${CMAKE_SOURCE_DIR}/scripts/media-keys.lua"
             "${CMAKE_SOURCE_DIR}/scripts/mpv-osc.lua"
             "${CMAKE_SOURCE_DIR}/scripts/ota-osc.lua"
+            "${CMAKE_SOURCE_DIR}/scripts/playback-transition.lua"
             "${CMAKE_SOURCE_DIR}/scripts/vcr-osd.lua"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp/scripts"
             COMPONENT Runtime)

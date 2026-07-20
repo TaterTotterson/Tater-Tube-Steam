@@ -12,6 +12,7 @@ FocusScope {
     property string moduleIcon: _moduleInfo.icon || ""
     property var navStack: []
     property var currentParams: ({})
+    property double lastBackNavigationAtMs: 0
 
     function navigateTo(viewPath, params, fromState) {
         var resolved = Qt.resolvedUrl(viewPath)
@@ -27,6 +28,10 @@ FocusScope {
     }
 
     function navigateBack() {
+        var now = Date.now()
+        if (now - lastBackNavigationAtMs < 220)
+            return
+        lastBackNavigationAtMs = now
         if (navStack.length === 0) {
             moduleRoot.goBack()
             return
@@ -66,5 +71,27 @@ FocusScope {
         }
     }
 
-    Component.onCompleted: navigateTo("Browse.qml", {})
+    Component.onCompleted: {
+        var recommendation = navParams.recommendation || ({})
+        var launch = recommendation.launch || ({})
+        if (launch.type === "localFile") {
+            navigateTo("LocalPlayer.qml", {
+                item: launch,
+                title: recommendation.title || launch.title || "TATER'S PICK"
+            })
+        } else if (launch.type === "localFolder" && (launch.mediaType || "") === "show") {
+            navigateTo("LocalShow.qml", {
+                item: launch,
+                libraryName: appCore.taterPicksTitle
+            })
+        } else if (launch.type === "localFolder" && (launch.mediaType || "") === "season") {
+            navigateTo("LocalSeason.qml", {
+                item: launch,
+                showTitle: launch.title || "TATER'S PICK",
+                libraryName: appCore.taterPicksTitle
+            })
+        } else {
+            navigateTo("Browse.qml", {})
+        }
+    }
 }

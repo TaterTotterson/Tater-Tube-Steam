@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Components
+import "../../shared/TaterBumpers.js" as TaterBumpers
 
 FocusScope {
     id: playerRoot
@@ -19,6 +20,12 @@ FocusScope {
     property bool noSignalVisible: false
     property int playbackBaseOffsetMs: 0
     property string streamInfoText: ""
+    property bool playingTaterBumper: false
+    property bool movieBumperPlayed: false
+    property bool nextEpisodePending: false
+    property bool initialPlaybackStarted: false
+    property string bumperContinuation: ""
+    property var pendingNextEpisodeItem: ({})
 
     focus: true
 
@@ -164,7 +171,7 @@ FocusScope {
     }
 
     function saveCurrentPlayState(completed) {
-        if (!hasPlaybackStateItem() || playbackCompleted)
+        if (playingTaterBumper || !hasPlaybackStateItem() || playbackCompleted)
             return
         var positionMs = currentPlaybackPositionMs()
         var durationMs = currentPlaybackDurationMs()
@@ -185,6 +192,18 @@ FocusScope {
     }
 
     function startPlayback() {
+        if (String(item.mediaType || "").toLowerCase() === "movie" && !movieBumperPlayed &&
+                TaterBumpers.enabledByDefault(
+                    appCore.get_setting("", "tater_bumpers_local_movies")) &&
+                usenetBackend.tater_bumper_enabled("local_movies", true)) {
+            movieBumperPlayed = true
+            playTaterBumper("movie")
+            return
+        }
+        startProgramPlayback()
+    }
+
+    function startProgramPlayback() {
         var rawUrl = item.streamUrl || ""
         if (rawUrl === "") {
             noSignalVisible = true
@@ -206,14 +225,75 @@ FocusScope {
 
         var playbackUrl = usenetBackend.playback_url(rawUrl, Math.round(root.sw), Math.round(root.sh))
         updateStreamOverlayInfo(plannedStreamInfo(playbackUrl))
+        mpvController.setViewingContext({
+            module_id: moduleId,
+            source: "local_media",
+            media_id: item.playStateId || ((item.categoryId || "") + ":" + (item.path || "")),
+            media_type: item.mediaType || "video",
+            title: item.title || title,
+            series_title: item.seriesTitle || "",
+            season: item.season || 0,
+            episode: item.episode || 0
+        })
         mpvController.loadAndPlay(playbackUrl, startOffset, 0, -1, [], false, -1, 0.0,
                                   "", false, "tube", false, title)
     }
 
+    function playTaterBumper(continuation) {
+        var bumper = TaterBumpers.next(
+                    appCore, continuation === "movie" ? "local-movie" : "local-series")
+        if (!bumper || !bumper.url) {
+            bumperContinuation = continuation
+            finishTaterBumper()
+            return
+        }
+        bumperContinuation = continuation
+        playingTaterBumper = true
+        playbackStarted = true
+        noSignalVisible = false
+        statusText = "TATER TUBE"
+        streamInfoText = "TATER BUMPER | DIRECT PLAY"
+        mpvController.setViewingContext({ suppress_viewing_event: true })
+        mpvController.loadAndPlay(bumper.url, 0.0, 0, -1, [], false, -1, 0.0,
+                                  "", false, "tube", false, "TATER TUBE")
+    }
+
+    function finishTaterBumper() {
+        var continuation = bumperContinuation
+        bumperContinuation = ""
+        playingTaterBumper = false
+        playbackStarted = false
+        if (continuation === "movie") {
+            startProgramPlayback()
+            return
+        }
+        if (continuation === "episode") {
+            var nextItem = pendingNextEpisodeItem || ({})
+            pendingNextEpisodeItem = ({})
+            if (nextItem.streamUrl)
+                advanceToEpisode(nextItem)
+            else
+                goBack()
+        }
+    }
+
+    function advanceToEpisode(nextItem) {
+        item = nextItem
+        title = nextItem.title || "EPISODE"
+        playbackCompleted = false
+        playbackBaseOffsetMs = 0
+        noSignalVisible = false
+        startProgramPlayback()
+    }
+
     function stopAndReturn() {
         if (playbackStarted) {
-            saveCurrentPlayState(false)
+            if (!playingTaterBumper)
+                saveCurrentPlayState(false)
             playbackStarted = false
+            playingTaterBumper = false
+            bumperContinuation = ""
+            pendingNextEpisodeItem = ({})
             mpvController.stop()
         }
         goBack()
@@ -256,39 +336,83 @@ FocusScope {
         }
     }
 
-    Component.onCompleted: startPlayback()
+    function startInitialPlayback() {
+        if (initialPlaybackStarted)
+            return
+        initialPlaybackStarted = true
+        bumperSettingsFallback.stop()
+        startPlayback()
+    }
+
+    Component.onCompleted: {
+        bumperSettingsFallback.start()
+        usenetBackend.load_tater_bumper_settings()
+    }
 
     Component.onDestruction: {
-        if (playbackStarted) {
+        if (playbackStarted && !playingTaterBumper)
             saveCurrentPlayState(false)
+        if (mpvController.running)
             mpvController.stop()
-        }
+    }
+
+    Timer {
+        id: bumperSettingsFallback
+        interval: 1500
+        repeat: false
+        onTriggered: startInitialPlayback()
     }
 
     Timer {
         interval: 3000
         repeat: true
-        running: playbackStarted && mpvController.running
+        running: playbackStarted && !playingTaterBumper && mpvController.running
         onTriggered: usenetBackend.load_active_streams()
     }
 
     Timer {
         interval: 15000
         repeat: true
-        running: playbackStarted && hasPlaybackStateItem()
+        running: playbackStarted && !playingTaterBumper && hasPlaybackStateItem()
         onTriggered: saveCurrentPlayState(false)
     }
 
     Connections {
         target: usenetBackend
 
+        function onTaterBumperSettingsLoaded() {
+            playerRoot.startInitialPlayback()
+        }
+
         function onActiveStreamsLoaded(streams) {
-            if (!playerRoot.playbackStarted)
+            if (!playerRoot.playbackStarted || playerRoot.playingTaterBumper)
                 return
             var rows = streams || []
             if (rows.length === 0)
                 return
             playerRoot.updateStreamOverlayInfo(playerRoot.streamInfoFromActiveStream(rows[0]))
+        }
+
+        function onNextLocalEpisodeReady(nextItem) {
+            if (!playerRoot.nextEpisodePending)
+                return
+            playerRoot.nextEpisodePending = false
+            if (!nextItem || !nextItem.streamUrl) {
+                playerRoot.goBack()
+                return
+            }
+            var seriesKey = nextItem.seriesStateId || nextItem.seriesTitle
+                    || playerRoot.item.seriesStateId || playerRoot.item.seriesTitle
+                    || playerRoot.item.path
+            if (TaterBumpers.enabledByDefault(
+                        appCore.get_setting("", "tater_bumpers_local_series")) &&
+                    usenetBackend.tater_bumper_enabled("local_series", true) &&
+                    TaterBumpers.shouldPlayBetweenEpisodes("local", seriesKey)) {
+                playerRoot.pendingNextEpisodeItem = nextItem
+                playerRoot.playTaterBumper("episode")
+                return
+            }
+            playerRoot.advanceToEpisode(nextItem)
         }
     }
 
@@ -298,6 +422,14 @@ FocusScope {
         function onPlaybackFinished(finalPositionMs, finalDurationMs) {
             if (!playbackStarted)
                 return
+            if (playingTaterBumper) {
+                playingTaterBumper = false
+                playbackStarted = false
+                bumperContinuation = ""
+                pendingNextEpisodeItem = ({})
+                goBack()
+                return
+            }
             saveCurrentPlayState(false)
             playbackStarted = false
             goBack()
@@ -306,21 +438,37 @@ FocusScope {
         function onPlaybackFinishedNaturally(finalPositionMs, finalDurationMs) {
             if (!playbackStarted)
                 return
+            if (playingTaterBumper) {
+                finishTaterBumper()
+                return
+            }
             saveCurrentPlayState(true)
             playbackStarted = false
+            if (String(item.mediaType || "").toLowerCase() === "episode") {
+                nextEpisodePending = true
+                statusText = "LOADING NEXT EPISODE"
+                usenetBackend.load_next_local_episode(item)
+                return
+            }
             goBack()
         }
 
         function onPlaybackFailed() {
             if (!playbackStarted)
                 return
+            if (playingTaterBumper) {
+                finishTaterBumper()
+                return
+            }
             saveCurrentPlayState(false)
             playbackStarted = false
             noSignalVisible = true
+            if (mpvController.running)
+                mpvController.stop()
         }
 
         function onScriptMessageReceived(message, arg) {
-            if (!playbackStarted)
+            if (!playbackStarted || playingTaterBumper)
                 return
             if (message === "240mp-ota-file-loaded") {
                 updateStreamOverlayInfo(streamInfoText)
@@ -335,7 +483,7 @@ FocusScope {
     }
 
     Text {
-        visible: playbackStarted && !mpvController.running && !noSignalVisible
+        visible: (playbackStarted || nextEpisodePending) && !mpvController.running && !noSignalVisible
         text: "LOADING..."
         color: root.tertiaryColor
         font.family: root.globalFont

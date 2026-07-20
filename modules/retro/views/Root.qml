@@ -22,6 +22,7 @@ FocusScope {
     property int setupRow: 0
     property bool mounting: false
     property bool automaticMountAttempted: false
+    property string messageReturnMode: ""
     property string selectedSystemId: ""
     property string selectedSystemTitle: ""
     property string currentGameFolder: ""
@@ -316,6 +317,7 @@ FocusScope {
 
     function selectSystem(index) {
         if (index < 0 || index >= systems.length) return
+        messageReturnMode = "systems"
         currentSystemIndex = index
         systemList.currentIndex = index
         var system = systems[index] || ({})
@@ -340,6 +342,7 @@ FocusScope {
         if (row.rowType !== "game") return
 
         currentGameIndex = index
+        messageReturnMode = "games"
         var title = row.title || "GAME"
         statusText = "LOADING " + title
         mode = "loading"
@@ -353,6 +356,34 @@ FocusScope {
         var next = Math.max(0, Math.min(gameList.count - 1, gameList.currentIndex + direction * rows))
         setGameRowIndex(next)
         gameList.positionViewAtIndex(next, ListView.Contain)
+    }
+
+    function returnFromMessage() {
+        var targetMode = messageReturnMode
+        messageReturnMode = ""
+        if (targetMode === "games" && gameRows.length > 0) {
+            mode = "games"
+            setGameRowIndex(currentGameIndex)
+            return
+        }
+        if (targetMode === "systems" && systems.length > 0) {
+            mode = "systems"
+            systemList.currentIndex = Math.max(
+                        0, Math.min(currentSystemIndex, systems.length - 1))
+            return
+        }
+        if (gameRows.length > 0) {
+            mode = "games"
+            setGameRowIndex(currentGameIndex)
+            return
+        }
+        if (systems.length > 0) {
+            mode = "systems"
+            systemList.currentIndex = Math.max(
+                        0, Math.min(currentSystemIndex, systems.length - 1))
+            return
+        }
+        goBack()
     }
 
     Keys.onPressed: function(event) {
@@ -418,7 +449,7 @@ FocusScope {
                 refresh()
                 event.accepted = true
             } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-                goBack()
+                returnFromMessage()
                 event.accepted = true
             }
         }
@@ -510,6 +541,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: root.staticBackgroundEnabled && mode !== "playing"
         running: visible
     }

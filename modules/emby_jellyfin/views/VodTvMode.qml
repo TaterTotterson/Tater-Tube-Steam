@@ -1,5 +1,6 @@
 import QtQuick
 import Components
+import "../../shared/TaterBumpers.js" as TaterBumpers
 
 FocusScope {
     id: tvRoot
@@ -13,6 +14,9 @@ FocusScope {
     property var sourceChannels: []
     property var channels: []
     property var commercialPool: []
+    property var taterBumperPool: TaterBumpers.all()
+    property var taterBumperDeck: []
+    property string lastTaterBumperKey: ""
     property int currentIndex: -1
     property int previousIndex: -1
     property int currentScheduleIndex: -1
@@ -90,10 +94,16 @@ FocusScope {
                       item.url || item.path || item.title || "").trim()
     }
 
+    function isInterstitialKind(kind) {
+        var normalized = String(kind || "").toLowerCase()
+        return normalized === "commercial" || normalized === "bumper" ||
+               normalized === "tater_bumper"
+    }
+
     function lastProgramKey(schedule) {
         for (var i = (schedule || []).length - 1; i >= 0; i--) {
             var item = schedule[i] || ({})
-            if (item.kind !== "commercial") {
+            if (!isInterstitialKind(item.kind)) {
                 var key = mediaItemKey(item)
                 if (key !== "")
                     return key
@@ -190,6 +200,24 @@ FocusScope {
         return fallback
     }
 
+    function nextTaterBumper() {
+        var pool = taterBumperPool || []
+        if (pool.length === 0)
+            return null
+        var deck = taterBumperDeck || []
+        if (deck.length === 0)
+            deck = shuffleList(pool)
+        if (deck.length > 1 && mediaItemKey(deck[0]) === lastTaterBumperKey) {
+            var swap = deck[0]
+            deck[0] = deck[1]
+            deck[1] = swap
+        }
+        var bumper = deck.shift()
+        taterBumperDeck = deck
+        lastTaterBumperKey = mediaItemKey(bumper)
+        return bumper
+    }
+
     function commercialStateForChannel(channelSource, states) {
         var category = ""
         if (channelSource && channelSource.channelType === "custom")
@@ -209,14 +237,16 @@ FocusScope {
     function appendScheduleItem(schedule, source, kind, startAt, segmentDuration, mediaOffset, forceAdvance) {
         if (!source)
             return startAt
-        if (kind === "commercial") {
+        if (isInterstitialKind(kind)) {
             if (!source.url)
                 return startAt
         } else if (!source.ratingKey) {
             return startAt
         }
 
-        var fallback = kind === "commercial" ? 30 : (kind === "movie" ? 5400 : 1500)
+        var fallback = kind === "commercial"
+            ? 30
+            : (kind === "tater_bumper" ? 10.005 : (kind === "movie" ? 5400 : 1500))
         var fullDuration = durationSeconds(source, fallback)
         var duration = segmentDuration === undefined || segmentDuration === null
                        ? fullDuration
@@ -233,13 +263,9 @@ FocusScope {
         return item.end
     }
 
-    function appendCommercialBreak(schedule, startAt, commercialState) {
+    function appendCommercialItems(schedule, startAt, commercialState, targetCount) {
         var pool = commercialStatePool(commercialState)
-        if (!commercialsEnabled() || pool.length === 0)
-            return startAt
-
         var total = startAt
-        var targetCount = 2 + Math.floor(Math.random() * 3)
         var added = 0
         var attempts = 0
         var maxAttempts = Math.max(targetCount * 3, pool.length * 2)
@@ -253,7 +279,36 @@ FocusScope {
                     added++
             }
         }
-        return total
+        return { total: total, added: added }
+    }
+
+    function appendTaterBumper(schedule, startAt) {
+        if (!TaterBumpers.enabledByDefault(
+                    appCore.get_setting("", "tater_bumpers_live_tv")))
+            return startAt
+        var bumper = nextTaterBumper()
+        return bumper
+            ? appendScheduleItem(schedule, bumper, "tater_bumper", startAt)
+            : startAt
+    }
+
+    function appendCommercialBreak(schedule, startAt, commercialState, includeTaterBumper) {
+        var pool = commercialStatePool(commercialState)
+        if (!commercialsEnabled() || pool.length === 0)
+            return includeTaterBumper ? appendTaterBumper(schedule, startAt) : startAt
+
+        var total = startAt
+        var targetCount = 2 + Math.floor(Math.random() * 3)
+        if (includeTaterBumper) {
+            var beforeBumper = appendCommercialItems(schedule, total, commercialState, 1)
+            total = beforeBumper.total
+            total = appendTaterBumper(schedule, total)
+            var afterBumper = appendCommercialItems(
+                        schedule, total, commercialState,
+                        Math.max(0, targetCount - beforeBumper.added))
+            return afterBumper.total
+        }
+        return appendCommercialItems(schedule, total, commercialState, targetCount).total
     }
 
     function midrollOffsetsFor(source, kind, duration, commercialState) {
@@ -301,7 +356,7 @@ FocusScope {
             var offset = Math.max(cursor + 5, Math.min(fullDuration - 5, offsets[i]))
             total = appendScheduleItem(schedule, source, kind, total,
                                        offset - cursor, cursor, true)
-            total = appendCommercialBreak(schedule, total, commercialState)
+            total = appendCommercialBreak(schedule, total, commercialState, false)
             cursor = offset
         }
         if (fullDuration - cursor >= 5)
@@ -316,7 +371,7 @@ FocusScope {
         var movies = shuffleList(programs || [])
         for (var i = 0; i < movies.length; i++) {
             total = appendProgramWithMidroll(schedule, movies[i], "movie", total, commercialState)
-            total = appendCommercialBreak(schedule, total, commercialState)
+            total = appendCommercialBreak(schedule, total, commercialState, true)
         }
         return { schedule: schedule, totalDuration: total }
     }
@@ -353,7 +408,7 @@ FocusScope {
             if (!episode)
                 continue
             total = appendProgramWithMidroll(schedule, episode, "episode", total, commercialState)
-            total = appendCommercialBreak(schedule, total, commercialState)
+            total = appendCommercialBreak(schedule, total, commercialState, true)
             previousState = stateIndex
         }
 
@@ -399,12 +454,12 @@ FocusScope {
                 if (!episode)
                     continue
                 total = appendProgramWithMidroll(schedule, episode, "episode", total, commercialState)
-                total = appendCommercialBreak(schedule, total, commercialState)
+                total = appendCommercialBreak(schedule, total, commercialState, true)
                 previousState = stateIndex
             } else if (movieIndex < shuffledMovies.length) {
                 var movie = takeNextMovie(shuffledMovies, movieIndex, lastProgramKey(schedule))
                 total = appendProgramWithMidroll(schedule, movie, "movie", total, commercialState)
-                total = appendCommercialBreak(schedule, total, commercialState)
+                total = appendCommercialBreak(schedule, total, commercialState, true)
                 movieIndex++
                 previousState = -1
             }
@@ -514,8 +569,8 @@ FocusScope {
 
     function showStaticForChannel(channel) {
         scheduleAdvanceTimer.stop()
-        transitionBlankVisible = false
-        tuningStaticVisible = true
+        transitionBlankVisible = mpvController.running
+        tuningStaticVisible = !mpvController.running
         noSignalVisible = false
         streamStarted = false
         streamRequestActive = false
@@ -526,24 +581,37 @@ FocusScope {
         statusText = channelLabel(channel)
 
         if (mpvController.running) {
-            stoppingForTune = true
-            mpvController.stop()
+            stoppingForTune = false
+            mpvController.sendScriptMessage("240mp-ota-tune-transition", statusText)
         }
     }
 
     function requestScheduleItem(channel, item, index, offset, segmentRemaining) {
         if (!channel || !item ||
-                (item.kind === "commercial"
+                (isInterstitialKind(item.kind)
                  ? !item.url
                  : !item.ratingKey)) {
             transitionBlankVisible = false
             tuningStaticVisible = false
             noSignalVisible = true
             statusText = "VOD TV CHANNEL EMPTY"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
         currentScheduleIndex = index
+        if (String(item.kind || "").toLowerCase() === "tater_bumper") {
+            var replacement = TaterBumpers.claimScheduled(
+                        appCore, item, "vod-live-tv")
+            if (replacement) {
+                item = Object.assign({}, item, replacement, {
+                    kind: "tater_bumper"
+                })
+            }
+        }
         streamRequestActive = true
         var label = channelLabel(channel)
         statusText = label
@@ -556,7 +624,7 @@ FocusScope {
             segmentRemaining: segmentRemaining || 0.0,
             label: label
         }
-        if (item.kind === "commercial") {
+        if (isInterstitialKind(item.kind)) {
             pendingRequestId = ""
             pendingPlayback = ({})
             launchPlayback(item.url || "", "", offset || 0.0,
@@ -589,6 +657,10 @@ FocusScope {
             tuningStaticVisible = false
             streamRequestActive = false
             statusText = "VOD TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                stoppingForTune = true
+                mpvController.stop()
+            }
             return
         }
 
@@ -598,6 +670,10 @@ FocusScope {
         streamRequestActive = false
         noSignalVisible = false
         var oscMode = transitionBlankVisible ? "ota-quiet" : "ota"
+        mpvController.setViewingContext(
+            isInterstitialKind(item ? item.kind : "")
+                ? ({ suppress_viewing_event: true })
+                : ({}))
         mpvController.loadAndPlay(url, offset || 0.0, 0, -1, [], false, -1, 0.0,
                                   httpHeaderFields || "", false, oscMode, false, label || statusText,
                                   false, !!allowYtdl, format || "")
@@ -764,6 +840,10 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
 
         function onErrorOccurred(message) {
@@ -774,6 +854,10 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = message || "VOD TV FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
     }
 
@@ -817,6 +901,10 @@ FocusScope {
             tvRoot.tuningStaticVisible = false
             tvRoot.noSignalVisible = true
             tvRoot.statusText = "VOD TV PLAYBACK FAILED"
+            if (mpvController.running) {
+                tvRoot.stoppingForTune = true
+                mpvController.stop()
+            }
         }
 
         function onScriptMessageReceived(message, arg) {
@@ -858,6 +946,7 @@ FocusScope {
 
     StaticBackground {
         anchors.fill: parent
+        themeName: root.currentTheme
         visible: tvRoot.tuningStaticVisible
         running: visible
     }

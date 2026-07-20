@@ -18,6 +18,7 @@ FocusScope {
     // Internal navigation state
     property var navStack: []
     property var currentParams: ({})
+    property double lastBackNavigationAtMs: 0
 
     function navigateTo(viewPath, params, fromState) {
         var resolved = Qt.resolvedUrl(viewPath)
@@ -33,6 +34,10 @@ FocusScope {
     }
 
     function navigateBack() {
+        var now = Date.now()
+        if (now - lastBackNavigationAtMs < 220)
+            return
+        lastBackNavigationAtMs = now
         if (navStack.length === 0) {
             moduleRoot.goBack()
             return
