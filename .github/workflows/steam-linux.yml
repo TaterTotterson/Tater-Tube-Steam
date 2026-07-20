@@ -2,6 +2,9 @@ name: Steam Linux smoke build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   pull_request:
     paths:
       - "CMakeLists.txt"
