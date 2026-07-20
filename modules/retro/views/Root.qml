@@ -43,6 +43,20 @@ FocusScope {
 
     focus: true
 
+    function restoreNavigationFocus() {
+        if (keyboardVisible) {
+            screenKeyboard.forceActiveFocus()
+        } else if (mode === "setup") {
+            focusSetupRow()
+        } else if (mode === "systems") {
+            systemList.forceActiveFocus()
+        } else if (mode === "games") {
+            gameList.forceActiveFocus()
+        } else {
+            retroRoot.forceActiveFocus()
+        }
+    }
+
     function settingValue(key, fallback) {
         var value = appCore.get_setting(moduleId, key)
         if (value === undefined || value === null || value === "") return fallback
@@ -455,6 +469,8 @@ FocusScope {
         }
     }
 
+    onModeChanged: navigationFocusTimer.restart()
+
     Component.onCompleted: refresh()
 
     Component.onDestruction: {
@@ -467,6 +483,13 @@ FocusScope {
         interval: 1
         repeat: false
         onTriggered: focusSetupRow()
+    }
+
+    Timer {
+        id: navigationFocusTimer
+        interval: 1
+        repeat: false
+        onTriggered: restoreNavigationFocus()
     }
 
     Connections {

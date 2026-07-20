@@ -1653,7 +1653,13 @@ void InputManager::onRepeatTick() {
 }
 
 bool InputManager::windowActive() const {
-#if defined(Q_OS_LINUX) && !defined(TATER_TUBE_STEAM_BUILD)
+#if defined(TATER_TUBE_STEAM_BUILD)
+    // Gamescope can briefly report the Qt window inactive after asynchronous
+    // work (for example a RetroNAS mount) even though Tater Tube is still the
+    // visible game. Fullscreen mpv is routed explicitly before this helper is
+    // consulted, so keep visible app menus responsive to controller events.
+    return m_window && m_window->isVisible();
+#elif defined(Q_OS_LINUX)
     // EGLFS can report the kiosk window as inactive even while it owns the only
     // screen. Keep routing remote/gamepad actions through QML on Pi; Player
     // views forward those same keys to mpv during playback.
