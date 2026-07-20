@@ -47,6 +47,7 @@ public:
     int duration()    const { return m_duration;    }
     int playlistPos() const { return m_playlistPos; }
     bool isRunning() const;
+    bool isAudioOnly() const { return m_currentAudioOnly; }
     bool paused() const { return m_paused; }
     double audioLevel() const { return m_audioLevel; }
     double volume() const { return m_volume; }
