@@ -131,6 +131,30 @@ if [ -n "${LINUXDEPLOY:-}" ]; then
         --icon-file "${REPO_ROOT}/assets/images/logo.svg"
         --plugin qt
     )
+
+    # Valve's current sniper SDK provides SDL2 through sdl2-compat. That shim
+    # loads SDL3 with dlopen(), so linuxdeploy cannot discover the dependency
+    # from ELF metadata. Include SDL3 explicitly or the app aborts immediately
+    # on SteamOS with "Failed loading SDL3 library."
+    sdl3_library="${STEAM_SDL3_LIBRARY:-}"
+    if [ -z "${sdl3_library}" ] && command -v ldconfig >/dev/null 2>&1; then
+        sdl3_library="$(
+            ldconfig -p \
+                | awk '$1 == "libSDL3.so.0" && /x86-64/ { print $NF; exit }'
+        )"
+    fi
+    if [ -n "${sdl3_library}" ]; then
+        if [ ! -f "${sdl3_library}" ]; then
+            echo "SDL3 library does not exist: ${sdl3_library}" >&2
+            exit 1
+        fi
+        linuxdeploy_args+=(--library "${sdl3_library}")
+    elif strings "${DEPOT_ROOT}/usr/bin/tater-tube" 2>/dev/null \
+            | grep -Fq 'libSDL3.so.0'; then
+        echo "The SDL2 compatibility runtime requires libSDL3.so.0, but SDL3 was not found." >&2
+        exit 1
+    fi
+
     for runtime in \
         "${VENDOR_ROOT}/mpv/bin/mpv" \
         "${VENDOR_ROOT}/moonlight-sdl/bin/moonlight" \

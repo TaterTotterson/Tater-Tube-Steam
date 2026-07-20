@@ -82,6 +82,7 @@ if [ "${STRICT_PORTABLE}" = "1" ]; then
     if [ ! -d "${DEPOT_ROOT}/usr/qml/QtQuick" ]; then
         fail "Qt Quick modules are not bundled under usr/qml/QtQuick"
     fi
+    require_file "usr/lib/libSDL3.so.0"
     if [ -n "${STEAM_QT_VERSION:-}" ]; then
         for component in qtbase qtdeclarative qtsvg; do
             require_file "THIRD_PARTY_NOTICES/qt-sbom/${component}-${STEAM_QT_VERSION}.spdx"
