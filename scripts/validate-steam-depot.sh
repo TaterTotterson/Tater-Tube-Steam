@@ -47,6 +47,20 @@ runtime_paths=(
     "usr/share/240mp/vendor/rclone/bin/rclone"
 )
 
+mpv_runtime="${DEPOT_ROOT}/usr/share/240mp/vendor/mpv/bin/mpv"
+if [ -x "${mpv_runtime}" ]; then
+    mpv_options="$(
+        LD_LIBRARY_PATH="${DEPOT_ROOT}/usr/lib:${DEPOT_ROOT}/usr/lib/tater-tube:${DEPOT_ROOT}/usr/share/240mp/vendor/mpv/lib" \
+            "${mpv_runtime}" --list-options 2>&1
+    )" || fail "Bundled mpv could not report its available options"
+    if ! grep -Eq '^ --osc[[:space:]]' <<<"${mpv_options}"; then
+        fail "Bundled mpv lacks Lua OSC support"
+    fi
+    if ! grep -Eq '^ --ytdl[[:space:]]' <<<"${mpv_options}"; then
+        fail "Bundled mpv lacks the yt-dlp hook"
+    fi
+fi
+
 if [ "${STRICT_RUNTIME}" = "1" ]; then
     for runtime in "${runtime_paths[@]}"; do
         require_executable "${runtime}"

@@ -77,6 +77,11 @@ RUN git clone --depth 1 --branch "${LIBPLACEBO_TAG}" --recursive \
     && meson compile -C /build/libplacebo/build -j"${BUILD_JOBS}" \
     && meson install -C /build/libplacebo/build
 
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        liblua5.2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN mkdir -p /build/mpv \
     && curl -fL --retry 3 \
         "https://github.com/mpv-player/mpv/archive/${MPV_REF}.tar.gz" \
@@ -91,7 +96,7 @@ RUN mkdir -p /build/mpv \
         -Dmanpage-build=disabled \
         -Dhtml-build=disabled \
         -Dpdf-build=disabled \
-        -Dlua=disabled \
+        -Dlua=lua5.2 \
         -Djavascript=disabled \
         -Dlibavdevice=disabled \
         -Dcdda=disabled \
@@ -107,7 +112,9 @@ RUN mkdir -p /build/mpv \
     && meson install -C /build/mpv/build \
     && patchelf --set-rpath '$ORIGIN/../lib' "${MPV_ROOT}/bin/mpv" \
     && find "${MPV_ROOT}/lib" -type f -name '*.so.*' -exec \
-        patchelf --set-rpath '$ORIGIN' {} \;
+        patchelf --set-rpath '$ORIGIN' {} \; \
+    && "${MPV_ROOT}/bin/mpv" --list-options | grep -Eq '^ --osc[[:space:]]' \
+    && "${MPV_ROOT}/bin/mpv" --list-options | grep -Eq '^ --ytdl[[:space:]]'
 
 # RetroArch is built without SDL because Valve's sniper SDK intentionally
 # provides the SDL2 compatibility shim. Native udev input covers controllers;
@@ -177,6 +184,7 @@ COPY packaging/steam/runtime-notices/ "${RUNTIME_ROOT}/notices/"
 RUN cp /build/mpv/LICENSE.GPL "${RUNTIME_ROOT}/mpv/LICENSE.GPL" \
     && cp /build/ffmpeg/COPYING.LGPLv2.1 "${RUNTIME_ROOT}/mpv/FFMPEG-COPYING.LGPLv2.1" \
     && cp /build/libplacebo/LICENSE "${RUNTIME_ROOT}/mpv/LIBPLACEBO-LICENSE" \
+    && cp /usr/share/doc/liblua5.2-0/copyright "${RUNTIME_ROOT}/mpv/LUA-COPYRIGHT" \
     && cp /build/retroarch/COPYING "${RUNTIME_ROOT}/retroarch/COPYING" \
     && file \
         "${RUNTIME_ROOT}/mpv/bin/mpv" \

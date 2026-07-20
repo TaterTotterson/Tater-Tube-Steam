@@ -38,6 +38,7 @@ RUN apt-get update \
         libavcodec-dev \
         libavutil-dev \
         libevdev-dev \
+        liblua5.2-0 \
         libssl-dev \
         libva-dev \
         libvdpau-dev \

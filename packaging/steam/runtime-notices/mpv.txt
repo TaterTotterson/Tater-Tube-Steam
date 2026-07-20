@@ -11,6 +11,9 @@ The bundle also contains:
 - libplacebo 6.338.2, revision 64c1954570f1cd57f8570a57e51fb0249b57bb90
   Source: https://github.com/haasn/libplacebo/tree/v6.338.2
   License: LGPL version 2.1 or later
+- Lua 5.2.4
+  Source: https://www.lua.org/ftp/lua-5.2.4.tar.gz
+  License: MIT
 
 The complete license texts are included in the mpv runtime bundle. Tater Tube
 is distributed under GPL-3.0, which is compatible with this GPL mpv build.
