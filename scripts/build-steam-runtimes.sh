@@ -41,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for generated_dir in mpv moonlight-sdl retroarch candidate-cores; do
+for generated_dir in mpv moonlight-sdl retroarch; do
     docker cp \
         "${container_id}:/opt/tater-tube-runtimes/${generated_dir}" \
         "${OUTPUT_DIR}/"
@@ -50,20 +50,5 @@ docker cp \
     "${container_id}:/opt/tater-tube-runtimes/notices/." \
     "${OUTPUT_DIR}/notices/"
 
-cp \
-    "${REPO_ROOT}/packaging/steam/runtime-notices/CANDIDATE-CORES.txt" \
-    "${OUTPUT_DIR}/candidate-cores/CANDIDATE-CORES.txt"
-(
-    cd "${OUTPUT_DIR}/candidate-cores"
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum ./*_libretro.so
-    elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 ./*_libretro.so
-    else
-        echo "A SHA-256 utility is required to inventory candidate cores." >&2
-        exit 1
-    fi
-) > "${OUTPUT_DIR}/candidate-cores/SHA256SUMS.txt"
-
 echo "Steam runtime bundles written to ${OUTPUT_DIR}"
-echo "Candidate cores are quarantined under ${OUTPUT_DIR}/candidate-cores."
+echo "Approved RetroArch cores are under ${OUTPUT_DIR}/retroarch/cores."

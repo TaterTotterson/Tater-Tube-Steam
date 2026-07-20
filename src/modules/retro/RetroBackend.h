@@ -103,7 +103,8 @@ private:
     void launchLocalGame(const QString &systemId, const QString &path);
     bool unmountDesktopRetroNas() const;
     QString systemDirectory(const SystemDef &def) const;
-    QString corePath(const SystemDef &def) const;
+    QString corePath(const SystemDef &def,
+                     const QString &contentPath = QString()) const;
     QVariantList coreInstallStatusOptions() const;
     void emitCoreInstallStatus();
     QVariantList availableSystems() const;
@@ -121,6 +122,7 @@ private:
     const SystemDef *systemById(const QString &systemId) const;
     QList<SystemDef> systemDefinitions() const;
     int gameCount(const SystemDef &def, const QString &dirPath, int limit = 9999) const;
+    void seedBundledRetroarchSystemFiles(const QString &destinationRoot) const;
     QString writeRetroarchConfig();
     QString credentialsFilePath() const;
     bool writeCredentialsFile(const QString &username, const QString &password,

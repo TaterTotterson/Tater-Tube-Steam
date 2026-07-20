@@ -85,7 +85,7 @@ sibling runtime directory:
 The script verifies release-asset SHA-256 hashes and records the versions,
 source URLs, and license notices.
 
-Build mpv, Moonlight, RetroArch, and a quarantined candidate-core set in the
+Build mpv, Moonlight, RetroArch, and the approved x86-64 core bundle in the
 same pinned sniper SDK:
 
 ```bash
@@ -93,9 +93,13 @@ same pinned sniper SDK:
 ```
 
 The build pins source revisions for mpv, FFmpeg, libplacebo, Moonlight,
-RetroArch, and each candidate core. Candidate cores are written to
-`candidate-cores`, not `retroarch/cores`, so they cannot enter a depot until
-the final rights review explicitly approves their exact filenames.
+RetroArch, and every core. Approved cores are written to `retroarch/cores`.
+Their corresponding-source archives, upstream license files, manifest, and
+SHA-256 inventories are written beneath `notices/retroarch-cores` and enter
+the depot with the binaries. The source packager excludes common ROM, disc,
+game-data, and firmware extensions so unrelated upstream test assets cannot
+silently enter the customer depot. Each core is compiled from that repacked
+archive rather than from the unfiltered download.
 
 Use the prepared tools in a Sniper development depot with:
 
@@ -131,6 +135,17 @@ depot validator rejects any bundled core not present in that list.
 Sniper builds also copy Qt's official SPDX documents for Qt Base, Declarative,
 and SVG into `THIRD_PARTY_NOTICES/qt-sbom`. Every depot includes Tater Tube's
 `LICENSE.txt`, exact source revision, and corresponding-source location.
+
+The Steam replacements intentionally omit the Pi edition's personal or
+non-commercial cores. bsnes replaces Snes9x, BlastEm replaces Genesis Plus GX
+for supported Mega Drive/Genesis cartridge formats, Geolith handles `.neo` and
+Neo Geo CD content, and current MAME handles arcade and zipped Neo Geo sets.
+There is currently no bundled Sega CD or Sega 32X replacement. BlastEm does
+not accept SMD images in this build, and current MAME may require ROM sets
+matching its newer database rather than old MAME 2000/2003 sets.
+The distributable blueMSX databases and C-BIOS machine are bundled and seeded
+to the user's writable RetroArch system directory; proprietary BIOS files are
+never included.
 
 Run the validator directly against an existing depot with:
 
@@ -227,8 +242,8 @@ Before uploading a public build:
 2. Bundle every required shared library and QML/Qt plugin; validate the depot
    on a clean machine.
 3. Record license notices and exact source revisions for every bundled runtime.
-4. Include only RetroArch cores whose copyright holders have explicitly allowed
-   this distribution. Free price and open source do not override core licenses.
+4. Confirm the pinned core manifest and bundled license/source inventory still
+   match the release. Free price and open source do not override core licenses.
 5. Complete the GPL/Steam Distribution Agreement rights review without assuming
    that the app being free or open source resolves Steamworks compatibility.
 6. Test controller-only navigation, suspend/resume, display scaling, video

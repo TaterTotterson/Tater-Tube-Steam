@@ -88,6 +88,14 @@ if [ "${STRICT_RUNTIME}" = "1" ]; then
         require_file "THIRD_PARTY_NOTICES/${notice}.txt"
     done
     require_file "THIRD_PARTY_NOTICES/APPROVED-CORES.txt"
+    require_file "THIRD_PARTY_NOTICES/retroarch-cores/CORE-MANIFEST.tsv"
+    require_file "THIRD_PARTY_NOTICES/retroarch-cores/CORE-SHA256SUMS.txt"
+    require_file "THIRD_PARTY_NOTICES/retroarch-cores/SOURCE-SHA256SUMS.txt"
+    require_file "THIRD_PARTY_NOTICES/retroarch-cores/SUPPORT-SHA256SUMS.txt"
+    require_file "usr/share/240mp/vendor/retroarch/system/bluemsx/Databases/msxromdb.xml"
+    require_file "usr/share/240mp/vendor/retroarch/system/bluemsx/Machines/MSX - C-BIOS/cbios.txt"
+    require_file "usr/share/240mp/vendor/retroarch/system/bluemsx/Machines/MSX - C-BIOS/cbios_logo_msx1.rom"
+    require_file "usr/share/240mp/vendor/retroarch/system/bluemsx/Machines/MSX - C-BIOS/cbios_main_msx1.rom"
 
     approved_file="${DEPOT_ROOT}/THIRD_PARTY_NOTICES/APPROVED-CORES.txt"
     if [ -f "${approved_file}" ]; then
@@ -98,6 +106,129 @@ if [ "${STRICT_RUNTIME}" = "1" ]; then
             fi
         done < <(find "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/cores" \
             -maxdepth 1 -type f -name '*_libretro.so' -print 2>/dev/null)
+
+        while IFS= read -r core_name; do
+            [ -n "${core_name}" ] || continue
+            require_file "usr/share/240mp/vendor/retroarch/cores/${core_name}"
+        done < "${approved_file}"
+
+        approved_count="$(grep -Ec '^[A-Za-z0-9_.+-]+_libretro\.so$' \
+            "${approved_file}")"
+        source_count="$(
+            find "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/sources" \
+                -maxdepth 1 -type f -name '*.tar.gz' 2>/dev/null \
+                | wc -l | tr -d ' '
+        )"
+        if [ "${source_count:-0}" -ne "${approved_count:-0}" ]; then
+            fail "Expected ${approved_count:-0} corresponding core source archives, found ${source_count:-0}"
+        fi
+
+        manifest_file="${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/CORE-MANIFEST.tsv"
+        if [ -f "${manifest_file}" ]; then
+            invalid_manifest_rows="$(
+                awk -F'|' '
+                    !/^#/ && NF {
+                        invalid = 0
+                        if (NF != 9) invalid = 1
+                        if ($1 !~ /^(standard|replacement|arcade)$/) invalid = 1
+                        if ($3 !~ /^[A-Za-z0-9_.+-]+_libretro[.]so$/) invalid = 1
+                        if (length($5) != 40) invalid = 1
+                        if ($5 !~ /^[0-9a-f]+$/) invalid = 1
+                        if (invalid) {
+                            print NR
+                        }
+                    }
+                ' "${manifest_file}"
+            )"
+            if [ -n "${invalid_manifest_rows}" ]; then
+                fail "Invalid core manifest row(s): $(tr '\n' ' ' <<<"${invalid_manifest_rows}")"
+            fi
+
+            manifest_core_names="$(
+                awk -F'|' '!/^#/ && NF { print $3 }' "${manifest_file}" \
+                    | sort -u
+            )"
+            approved_core_names="$(sort -u "${approved_file}")"
+            if [ "${manifest_core_names}" != "${approved_core_names}" ]; then
+                fail "CORE-MANIFEST.tsv filenames do not match APPROVED-CORES.txt"
+            fi
+
+            while IFS='|' read -r group core_id _core_file _repository revision \
+                    _license _build_subdir _makefile _make_arguments; do
+                case "${group}" in
+                    ''|\#*) continue ;;
+                esac
+                require_file "THIRD_PARTY_NOTICES/retroarch-cores/sources/${core_id}-${revision}.tar.gz"
+                license_dir="${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/licenses/${core_id}"
+                if ! find "${license_dir}" -type f -print -quit 2>/dev/null \
+                        | grep -q .; then
+                    fail "Missing upstream license files for core: ${core_id}"
+                fi
+            done < "${manifest_file}"
+        fi
+
+        if command -v tar >/dev/null 2>&1; then
+            while IFS= read -r source_archive; do
+                prohibited_source_entries="$(
+                    tar -tzf "${source_archive}" 2>/dev/null \
+                        | grep -Ei '\.(7z|32x|a|a26|a52|a78|atr|atx|bin|car|cas|cbn|ccd|cdf|chd|col|com|cue|dcm|dmg|dsk|dylib|exe|fds|fig|gb|gba|gbc|gen|gg|img|int|ipk3|iso|iwad|lmp|lnx|m3u|md|mdf|min|mvc|mx1|mx2|neo|nes|ngc|ngp|ngpc|npc|o|o2|pak|pbp|pc2|pce|pk3|pwad|ri|rom|sc|sf|sfc|sg|sgb|sgx|smc|smd|sms|so|toc|unf|unif|vb|vec|wad|ws|wsc|xfd|xex|zip)$' \
+                        | sed -n '1,20p' || true
+                )"
+                if [ -n "${prohibited_source_entries}" ]; then
+                    fail "Possible ROM, firmware, game data, or build output in corresponding-source archive $(basename "${source_archive}"): $(tr '\n' ' ' <<<"${prohibited_source_entries}")"
+                fi
+            done < <(
+                find "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/sources" \
+                    -maxdepth 1 -type f -name '*.tar.gz' -print
+            )
+        else
+            echo "WARNING: tar is unavailable; core-source content checks were skipped." >&2
+        fi
+
+        if command -v python3 >/dev/null 2>&1; then
+            python3 "${REPO_ROOT}/scripts/validate-steam-libretro-cores.py" \
+                "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/cores" \
+                "${approved_file}" \
+                || fail "Bundled libretro core ABI validation failed"
+        else
+            echo "WARNING: python3 is unavailable; libretro ABI checks were skipped." >&2
+        fi
+    fi
+
+    for excluded_core in \
+        genesis_plus_gx_libretro.so \
+        picodrive_libretro.so \
+        snes9x_libretro.so \
+        fbneo_libretro.so \
+        mame2000_libretro.so \
+        mame2003_libretro.so \
+        mame2003_plus_libretro.so; do
+        if [ -e "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/cores/${excluded_core}" ]; then
+            fail "Restricted core must not be bundled: ${excluded_core}"
+        fi
+    done
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        if [ -f "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/CORE-SHA256SUMS.txt" ]; then
+            (
+                cd "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/cores"
+                sha256sum -c \
+                    "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/CORE-SHA256SUMS.txt"
+            ) || fail "Bundled core SHA-256 inventory does not match"
+        fi
+        if [ -f "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/SOURCE-SHA256SUMS.txt" ]; then
+            (
+                cd "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/sources"
+                sha256sum -c ../SOURCE-SHA256SUMS.txt
+            ) || fail "Bundled core-source SHA-256 inventory does not match"
+        fi
+        if [ -f "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/SUPPORT-SHA256SUMS.txt" ]; then
+            (
+                cd "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/system"
+                sha256sum -c \
+                    "${DEPOT_ROOT}/THIRD_PARTY_NOTICES/retroarch-cores/SUPPORT-SHA256SUMS.txt"
+            ) || fail "Bundled core-support SHA-256 inventory does not match"
+        fi
     fi
 fi
 
@@ -157,6 +288,12 @@ done < <(find "${DEPOT_ROOT}" -type f \
 
 if [ "${STEAM_ALLOW_CONTENT_FILES:-0}" != "1" ]; then
     while IFS= read -r content_file; do
+        case "${content_file#${DEPOT_ROOT}/}" in
+            "usr/share/240mp/vendor/retroarch/system/bluemsx/Machines/MSX - C-BIOS/cbios_logo_msx1.rom" \
+            |"usr/share/240mp/vendor/retroarch/system/bluemsx/Machines/MSX - C-BIOS/cbios_main_msx1.rom")
+                continue
+                ;;
+        esac
         fail "Possible ROM, BIOS, or disc image in depot: ${content_file#${DEPOT_ROOT}/}"
     done < <(find "${DEPOT_ROOT}" -type f \
         \( -iname '*.nes' -o -iname '*.sfc' -o -iname '*.smc' \

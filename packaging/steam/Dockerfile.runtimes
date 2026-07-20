@@ -10,9 +10,6 @@ ARG LIBPLACEBO_REF=64c1954570f1cd57f8570a57e51fb0249b57bb90
 ARG MPV_REF=41f6a645068483470267271e1d09966ca3b9f413
 ARG RETROARCH_REF=69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576
 ARG MOONLIGHT_REF=775444287305849ebdf4736c75298ad0713e2d5d
-ARG FCEUMM_REF=afe65ef1b4328c0bf2df05fb47a6b31a45bccf47
-ARG GAMBATTE_REF=9b3b5e3cc18ec92f460d37dd551eaf90c55bfcea
-ARG MGBA_REF=6dce57eef127dc4cc292644f38196e0e7c58590c
 
 USER root
 
@@ -24,6 +21,7 @@ RUN apt-get update \
         libavutil-dev \
         libevdev-dev \
         libssl-dev \
+        libsqlite3-dev \
         libva-dev \
         libvdpau-dev \
         nasm \
@@ -151,35 +149,26 @@ RUN MOONLIGHT_EMBEDDED_REF="${MOONLIGHT_REF}" \
     && find "${RUNTIME_ROOT}/moonlight-sdl/lib" -type f -name '*.so.*' -exec \
         patchelf --set-rpath '$ORIGIN' {} \;
 
-# These cores are compiled for technical testing only. They are deliberately
-# kept outside retroarch/cores so they cannot enter a depot until the project's
-# final rights review lists exact filenames in APPROVED-CORES.txt.
-RUN mkdir -p /build/fceumm \
-    && curl -fL --retry 3 \
-        "https://github.com/libretro/libretro-fceumm/archive/${FCEUMM_REF}.tar.gz" \
-        | tar -xz -C /build/fceumm --strip-components=1 \
-    && make -C /build/fceumm -j"${BUILD_JOBS}" \
-    && mkdir -p "${RUNTIME_ROOT}/candidate-cores/licenses" \
-    && cp /build/fceumm/fceumm_libretro.so "${RUNTIME_ROOT}/candidate-cores/" \
-    && cp /build/fceumm/Copying "${RUNTIME_ROOT}/candidate-cores/licenses/fceumm-Copying"
-
-RUN mkdir -p /build/gambatte \
-    && curl -fL --retry 3 \
-        "https://github.com/libretro/gambatte-libretro/archive/${GAMBATTE_REF}.tar.gz" \
-        | tar -xz -C /build/gambatte --strip-components=1 \
-    && make -C /build/gambatte -j"${BUILD_JOBS}" \
-    && cp /build/gambatte/gambatte_libretro.so "${RUNTIME_ROOT}/candidate-cores/" \
-    && cp /build/gambatte/COPYING "${RUNTIME_ROOT}/candidate-cores/licenses/gambatte-COPYING"
-
-RUN mkdir -p /build/mgba \
-    && curl -fL --retry 3 \
-        "https://github.com/libretro/mgba/archive/${MGBA_REF}.tar.gz" \
-        | tar -xz -C /build/mgba --strip-components=1 \
-    && make -C /build/mgba -j"${BUILD_JOBS}" \
-    && cp /build/mgba/mgba_libretro.so "${RUNTIME_ROOT}/candidate-cores/" \
-    && cp /build/mgba/LICENSE "${RUNTIME_ROOT}/candidate-cores/licenses/mgba-LICENSE"
-
 COPY packaging/steam/runtime-notices/ "${RUNTIME_ROOT}/notices/"
+COPY packaging/steam/core-manifest.tsv /tmp/core-manifest.tsv
+COPY scripts/build-steam-libretro-cores.sh /tmp/build-steam-libretro-cores.sh
+COPY scripts/validate-steam-libretro-cores.py /tmp/validate-steam-libretro-cores.py
+
+# Keep the three groups in separate layers so a large arcade-core rebuild does
+# not discard already completed console-core work.
+RUN STEAM_CORE_MANIFEST=/tmp/core-manifest.tsv \
+        /tmp/build-steam-libretro-cores.sh standard "${RUNTIME_ROOT}" \
+    && cmake -E remove_directory /build/libretro-cores
+RUN STEAM_CORE_MANIFEST=/tmp/core-manifest.tsv \
+        /tmp/build-steam-libretro-cores.sh replacement "${RUNTIME_ROOT}" \
+    && cmake -E remove_directory /build/libretro-cores
+RUN STEAM_CORE_MANIFEST=/tmp/core-manifest.tsv \
+        /tmp/build-steam-libretro-cores.sh arcade "${RUNTIME_ROOT}" \
+    && cmake -E remove_directory /build/libretro-cores
+
+RUN python3 /tmp/validate-steam-libretro-cores.py \
+        "${RUNTIME_ROOT}/retroarch/cores" \
+        "${RUNTIME_ROOT}/notices/APPROVED-CORES.txt"
 
 RUN cp /build/mpv/LICENSE.GPL "${RUNTIME_ROOT}/mpv/LICENSE.GPL" \
     && cp /build/ffmpeg/COPYING.LGPLv2.1 "${RUNTIME_ROOT}/mpv/FFMPEG-COPYING.LGPLv2.1" \
@@ -190,6 +179,6 @@ RUN cp /build/mpv/LICENSE.GPL "${RUNTIME_ROOT}/mpv/LICENSE.GPL" \
         "${RUNTIME_ROOT}/mpv/bin/mpv" \
         "${RUNTIME_ROOT}/moonlight-sdl/bin/moonlight" \
         "${RUNTIME_ROOT}/retroarch/bin/retroarch" \
-        "${RUNTIME_ROOT}/candidate-cores/"*_libretro.so \
+        "${RUNTIME_ROOT}/retroarch/cores/"*_libretro.so \
     && "${RUNTIME_ROOT}/mpv/bin/mpv" --version \
     && "${RUNTIME_ROOT}/retroarch/bin/retroarch" --version

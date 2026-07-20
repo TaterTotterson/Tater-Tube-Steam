@@ -25,6 +25,17 @@ private:
         QVERIFY(QFile::setPermissions(path, permissions));
     }
 
+    static QVariantMap systemById(const QVariantList &systems,
+                                  const QString &systemId)
+    {
+        for (const QVariant &system : systems) {
+            const QVariantMap values = system.toMap();
+            if (values.value("id").toString() == systemId)
+                return values;
+        }
+        return {};
+    }
+
 private slots:
     void catalogsRemoteGamesWithoutFuse()
     {
@@ -87,6 +98,138 @@ private slots:
                  QString("Test Game"));
         QVERIFY(games.first().toMap().value("path").toString().startsWith(
             "retronas-cache:/"));
+    }
+
+    void prefersSteamReplacementCores()
+    {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const QString appRoot = QDir(temporary.path()).absoluteFilePath("app");
+        const QString dataRoot = QDir(temporary.path()).absoluteFilePath("data");
+        const QString gamesRoot = QDir(temporary.path()).absoluteFilePath("games");
+
+        const QJsonObject config{
+            {"modules",
+             QJsonObject{{"com.240mp.retro",
+                          QJsonObject{{"local_path", gamesRoot}}}}}
+        };
+        writeFile(QDir(dataRoot).absoluteFilePath("config.json"),
+                  QJsonDocument(config).toJson());
+
+        writeFile(QDir(gamesRoot).absoluteFilePath("Genesis/Test.md"), "game");
+        writeFile(QDir(gamesRoot).absoluteFilePath("SNES/Test.sfc"), "game");
+        writeFile(QDir(gamesRoot).absoluteFilePath("SegaCD/Test.cue"), "game");
+
+        const QString coreRoot = QDir(appRoot).absoluteFilePath(
+            "vendor/retroarch/cores");
+        writeFile(QDir(coreRoot).absoluteFilePath("blastem_libretro.so"), "core");
+        writeFile(QDir(coreRoot).absoluteFilePath("genesis_plus_gx_libretro.so"),
+                  "core");
+        writeFile(QDir(coreRoot).absoluteFilePath("bsnes_libretro.so"), "core");
+        writeFile(QDir(coreRoot).absoluteFilePath("snes9x_libretro.so"), "core");
+
+        RetroBackend backend(appRoot, dataRoot);
+        QSignalSpy systemsSpy(&backend, &RetroBackend::systemsLoaded);
+        backend.load_systems();
+        QCOMPARE(systemsSpy.size(), 1);
+        const QVariantList systems = systemsSpy.takeFirst().at(0).toList();
+
+        const QVariantMap genesis = systemById(systems, "genesis");
+        QVERIFY(!genesis.isEmpty());
+        QVERIFY(genesis.value("core").toString().endsWith(
+            "/blastem_libretro.so"));
+        QCOMPARE(genesis.value("corePackage").toString(), QString("blastem"));
+
+        const QVariantMap snes = systemById(systems, "snes");
+        QVERIFY(!snes.isEmpty());
+        QVERIFY(snes.value("core").toString().endsWith("/bsnes_libretro.so"));
+        QCOMPARE(snes.value("corePackage").toString(), QString("bsnes"));
+
+        // A locally installed legacy core can still service Sega CD. The
+        // bundled BlastEm replacement must not claim that unsupported system.
+        const QVariantMap segaCd = systemById(systems, "segacd");
+        QVERIFY(!segaCd.isEmpty());
+        QVERIFY(segaCd.value("core").toString().endsWith(
+            "/genesis_plus_gx_libretro.so"));
+
+        QVERIFY(QFile::remove(
+            QDir(coreRoot).absoluteFilePath("genesis_plus_gx_libretro.so")));
+        const QString cleanDataRoot = QDir(temporary.path()).absoluteFilePath(
+            "clean-data");
+        writeFile(QDir(cleanDataRoot).absoluteFilePath("config.json"),
+                  QJsonDocument(config).toJson());
+        RetroBackend cleanBackend(appRoot, cleanDataRoot);
+        QSignalSpy cleanSystemsSpy(&cleanBackend,
+                                   &RetroBackend::systemsLoaded);
+        cleanBackend.load_systems();
+        QCOMPARE(cleanSystemsSpy.size(), 1);
+        const QVariantList cleanSystems =
+            cleanSystemsSpy.takeFirst().at(0).toList();
+        QVERIFY(systemById(cleanSystems, "segacd").isEmpty());
+    }
+
+    void selectsNeoGeoCoreByContentFormat()
+    {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const QString appRoot = QDir(temporary.path()).absoluteFilePath("app");
+        const QString dataRoot = QDir(temporary.path()).absoluteFilePath("data");
+        const QString gamesRoot = QDir(temporary.path()).absoluteFilePath("games");
+        const QString neoRoot = QDir(gamesRoot).absoluteFilePath("NeoGeo");
+
+        const QJsonObject config{
+            {"modules",
+             QJsonObject{{"com.240mp.retro",
+                          QJsonObject{{"local_path", gamesRoot}}}}}
+        };
+        writeFile(QDir(dataRoot).absoluteFilePath("config.json"),
+                  QJsonDocument(config).toJson());
+        writeFile(QDir(neoRoot).absoluteFilePath("Cartridge.neo"), "game");
+        writeFile(QDir(neoRoot).absoluteFilePath("Arcade.zip"), "game");
+
+        const QString vendorRoot = QDir(appRoot).absoluteFilePath(
+            "vendor/retroarch");
+        writeFile(QDir(vendorRoot).absoluteFilePath("cores/geolith_libretro.so"),
+                  "core");
+        writeFile(QDir(vendorRoot).absoluteFilePath("cores/mame_libretro.so"),
+                  "core");
+        writeFile(QDir(vendorRoot).absoluteFilePath(
+                      "system/open-support/license.txt"),
+                  "redistributable support file");
+        writeFile(
+            QDir(vendorRoot).absoluteFilePath("bin/retroarch"),
+            QByteArrayLiteral(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$@\" > \"$(dirname \"$0\")/args.txt\"\n"),
+            QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+
+        const QString argsPath = QDir(vendorRoot).absoluteFilePath("bin/args.txt");
+        const auto launchAndCheckCore = [&](const QString &gamePath,
+                                             const QString &coreName) {
+            QFile::remove(argsPath);
+            RetroBackend backend(appRoot, dataRoot);
+            QSignalSpy finishedSpy(&backend, &RetroBackend::gameFinished);
+            QSignalSpy errorSpy(&backend, &RetroBackend::errorOccurred);
+            backend.launch_game("neogeo", gamePath);
+            QTRY_COMPARE(finishedSpy.size(), 1);
+            QCOMPARE(errorSpy.size(), 0);
+
+            QFile argsFile(argsPath);
+            QVERIFY(argsFile.open(QIODevice::ReadOnly));
+            const QStringList args = QString::fromUtf8(argsFile.readAll())
+                                         .split('\n', Qt::SkipEmptyParts);
+            const int coreOption = args.indexOf("-L");
+            QVERIFY(coreOption >= 0);
+            QVERIFY(coreOption + 1 < args.size());
+            QVERIFY(args.at(coreOption + 1).endsWith("/" + coreName));
+        };
+
+        launchAndCheckCore(QDir(neoRoot).absoluteFilePath("Cartridge.neo"),
+                           "geolith_libretro.so");
+        QVERIFY(QFileInfo::exists(QDir(dataRoot).absoluteFilePath(
+            "retroarch/system/open-support/license.txt")));
+        launchAndCheckCore(QDir(neoRoot).absoluteFilePath("Arcade.zip"),
+                           "mame_libretro.so");
     }
 };
 

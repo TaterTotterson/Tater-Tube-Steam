@@ -700,23 +700,23 @@ QList<RetroBackend::SystemDef> RetroBackend::systemDefinitions() const
         {"sg1000", "SG-1000",
          {"SG1000", "SG-1000", "Sega SG-1000"},
          {"sg", "zip", "7z"},
-         {"genesis_plus_gx_libretro.so", "gearsystem_libretro.so"},
-         "genesis-plus-gx"},
+         {"gearsystem_libretro.so", "genesis_plus_gx_libretro.so"},
+         "gearsystem"},
         {"sms", "Master System",
          {"SMS", "Master System", "Sega Master System"},
          {"sms", "zip", "7z"},
-         {"genesis_plus_gx_libretro.so", "gearsystem_libretro.so"},
-         "genesis-plus-gx"},
+         {"gearsystem_libretro.so", "genesis_plus_gx_libretro.so"},
+         "gearsystem"},
         {"gamegear", "Game Gear",
          {"GameGear", "Game Gear", "GG"},
          {"gg", "zip", "7z"},
-         {"genesis_plus_gx_libretro.so", "gearsystem_libretro.so"},
-         "genesis-plus-gx"},
+         {"gearsystem_libretro.so", "genesis_plus_gx_libretro.so"},
+         "gearsystem"},
         {"genesis", "Genesis",
          {"Genesis", "MegaDrive", "Mega Drive", "MD"},
-         {"md", "gen", "smd", "bin", "zip", "7z"},
-         {"genesis_plus_gx_libretro.so", "picodrive_libretro.so"},
-         "genesis-plus-gx"},
+         {"md", "gen", "bin", "rom", "zip", "7z"},
+         {"blastem_libretro.so", "genesis_plus_gx_libretro.so", "picodrive_libretro.so"},
+         "blastem"},
         {"segacd", "Sega CD",
          {"SegaCD", "Sega CD", "MegaCD", "Mega-CD"},
          {"cue", "chd", "iso", "bin", "zip", "7z"},
@@ -750,13 +750,13 @@ QList<RetroBackend::SystemDef> RetroBackend::systemDefinitions() const
         {"snes", "SNES",
          {"SNES", "Super Nintendo", "SFC"},
          {"sfc", "smc", "bs", "fig", "zip", "7z"},
-         {"snes9x_libretro.so", "bsnes_libretro.so", "bsnes_mercury_balanced_libretro.so"},
-         "snes9x"},
+         {"bsnes_libretro.so", "snes9x_libretro.so", "bsnes_mercury_balanced_libretro.so"},
+         "bsnes"},
         {"satellaview", "Satellaview",
          {"Satellaview", "BS-X", "BSX"},
          {"bs", "sfc", "smc", "zip", "7z"},
-         {"snes9x_libretro.so", "bsnes_libretro.so", "bsnes_mercury_balanced_libretro.so"},
-         "snes9x"},
+         {"bsnes_libretro.so", "snes9x_libretro.so", "bsnes_mercury_balanced_libretro.so"},
+         "bsnes"},
         {"pce", "TurboGrafx-16",
          {"TGFX16", "TurboGrafx16", "TurboGrafx-16", "PC Engine", "PCEngine", "PCE"},
          {"pce", "sgx", "cue", "chd", "zip", "7z"},
@@ -784,19 +784,21 @@ QList<RetroBackend::SystemDef> RetroBackend::systemDefinitions() const
          "race"},
         {"neogeo", "Neo Geo",
          {"NeoGeo", "Neo Geo", "NEOGEO"},
-         {"zip", "7z"},
-         {"fbneo_libretro.so", "fbalpha2012_neogeo_libretro.so"},
-         "fbneo"},
+         {"zip", "7z", "neo", "cue", "chd"},
+         {"mame_libretro.so", "geolith_libretro.so", "fbneo_libretro.so",
+          "fbalpha2012_neogeo_libretro.so"},
+         "mame"},
         {"fbneo", "Arcade FBNeo",
          {"FBNeo", "FBN", "FinalBurnNeo", "Final Burn Neo", "Arcade"},
          {"zip", "7z"},
-         {"fbneo_libretro.so"},
-         "fbneo"},
+         {"mame_libretro.so", "fbneo_libretro.so"},
+         "mame"},
         {"mame2003", "Arcade MAME 2003",
          {"MAME2003", "MAME 2003", "MAME", "Arcade MAME"},
          {"zip", "7z"},
-         {"mame2003_plus_libretro.so", "mame2003_libretro.so", "mame2000_libretro.so"},
-         "mame2003-plus"},
+         {"mame_libretro.so", "mame2003_plus_libretro.so",
+          "mame2003_libretro.so", "mame2000_libretro.so"},
+         "mame"},
         {"psx", "PlayStation",
          {"PSX", "PS1", "PlayStation", "Playstation"},
          {"cue", "chd", "pbp", "m3u"},
@@ -827,7 +829,8 @@ const RetroBackend::SystemDef *RetroBackend::systemById(const QString &systemId)
     return nullptr;
 }
 
-QString RetroBackend::corePath(const SystemDef &def) const
+QString RetroBackend::corePath(const SystemDef &def,
+                               const QString &contentPath) const
 {
     const QStringList roots{
         QDir(m_appRoot).absoluteFilePath(QStringLiteral("vendor/retroarch/cores")),
@@ -839,8 +842,19 @@ QString RetroBackend::corePath(const SystemDef &def) const
         "/opt/homebrew/lib/libretro"
     };
 
+    QStringList coreNames = def.coreNames;
+    if (def.id == QLatin1String("neogeo") && !contentPath.isEmpty()) {
+        const QString suffix = QFileInfo(contentPath).suffix().toLower();
+        if (suffix == QLatin1String("neo")
+            || suffix == QLatin1String("cue")
+            || suffix == QLatin1String("chd")) {
+            coreNames.removeAll(QStringLiteral("geolith_libretro.so"));
+            coreNames.prepend(QStringLiteral("geolith_libretro.so"));
+        }
+    }
+
     for (const QString &root : roots) {
-        for (const QString &name : def.coreNames) {
+        for (const QString &name : coreNames) {
             const QString candidate = QDir(root).absoluteFilePath(name);
             if (QFileInfo::exists(candidate))
                 return candidate;
@@ -1460,10 +1474,12 @@ QVariantList RetroBackend::api_search_games(const QString &query, int limit)
 QString RetroBackend::writeRetroarchConfig()
 {
     const QString retroRoot = QDir(m_dataRoot).absoluteFilePath("retroarch");
+    const QString systemRoot = QDir(retroRoot).absoluteFilePath("system");
     QDir().mkpath(retroRoot);
     QDir().mkpath(QDir(retroRoot).absoluteFilePath("saves"));
     QDir().mkpath(QDir(retroRoot).absoluteFilePath("states"));
-    QDir().mkpath(QDir(retroRoot).absoluteFilePath("system"));
+    QDir().mkpath(systemRoot);
+    seedBundledRetroarchSystemFiles(systemRoot);
 
     const QString cfgPath = QDir(retroRoot).absoluteFilePath("retroarch-240mp.cfg");
     QSaveFile file(cfgPath);
@@ -1489,7 +1505,7 @@ QString RetroBackend::writeRetroarchConfig()
     out << "menu_show_start_screen = \"false\"\n";
     out << "savestate_directory = \"" << escapeRetroValue(QDir(retroRoot).absoluteFilePath("states")) << "\"\n";
     out << "savefile_directory = \"" << escapeRetroValue(QDir(retroRoot).absoluteFilePath("saves")) << "\"\n";
-    out << "system_directory = \"" << escapeRetroValue(QDir(retroRoot).absoluteFilePath("system")) << "\"\n";
+    out << "system_directory = \"" << escapeRetroValue(systemRoot) << "\"\n";
     out << "assets_directory = \"" << escapeRetroValue(QDir(retroRoot).absoluteFilePath("assets")) << "\"\n";
 
     const QVariantMap controllerMapping = loadControllerMapping(m_dataRoot);
@@ -1539,6 +1555,33 @@ QString RetroBackend::writeRetroarchConfig()
         return QString();
     }
     return cfgPath;
+}
+
+void RetroBackend::seedBundledRetroarchSystemFiles(
+    const QString &destinationRoot) const
+{
+    const QString sourceRoot = QDir(m_appRoot).absoluteFilePath(
+        QStringLiteral("vendor/retroarch/system"));
+    if (!QDir(sourceRoot).exists())
+        return;
+
+    const QDir sourceDirectory(sourceRoot);
+    QDirIterator it(sourceRoot, QDir::Files | QDir::NoSymLinks,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString sourcePath = it.next();
+        const QString relativePath = sourceDirectory.relativeFilePath(sourcePath);
+        const QString destinationPath =
+            QDir(destinationRoot).absoluteFilePath(relativePath);
+        if (QFileInfo::exists(destinationPath))
+            continue;
+
+        QDir().mkpath(QFileInfo(destinationPath).absolutePath());
+        if (!QFile::copy(sourcePath, destinationPath)) {
+            qWarning("[RetroBackend] could not seed RetroArch system file: %s",
+                     qPrintable(relativePath));
+        }
+    }
 }
 
 void RetroBackend::pruneDesktopRetroNasDownloadCache() const
@@ -1793,7 +1836,7 @@ void RetroBackend::launchLocalGame(const QString &systemId, const QString &path)
         return;
     }
 
-    const QString core = corePath(*def);
+    const QString core = corePath(*def, path);
     if (core.isEmpty()) {
         emit errorOccurred(QStringLiteral("MISSING RETRO CORE: %1").arg(def->corePackage));
         return;

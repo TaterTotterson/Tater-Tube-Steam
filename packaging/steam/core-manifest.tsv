@@ -1,0 +1,28 @@
+# group|id|core filename|upstream repository|revision|license|build subdirectory|makefile|make arguments
+standard|stella|stella_libretro.so|https://github.com/stella-emu/stella.git|bbef85b3da5ea0f0b6a8d06df5eea7b603bbec94|GPL-2.0|src/libretro|Makefile|
+standard|stella2014|stella2014_libretro.so|https://github.com/libretro/stella2014-libretro.git|4a7da82595d27b8df7af1ecb467a64b642a41bc9|GPL-2.0|.|Makefile|
+standard|atari800|atari800_libretro.so|https://github.com/libretro/libretro-atari800.git|9d3bcf283502512052e21c6f1453fbdf7aa3122b|GPL-2.0|.|Makefile|
+standard|prosystem|prosystem_libretro.so|https://github.com/libretro/prosystem-libretro.git|363b6dfbd3e240762e022c2b4897b4fe55722be3|GPL-2.0|.|Makefile|
+standard|handy|handy_libretro.so|https://github.com/libretro/libretro-handy.git|bc55d462f0b2d6b073ea93dc552ebd73cec60fd1|zlib|.|Makefile|
+standard|bluemsx|bluemsx_libretro.so|https://github.com/libretro/blueMSX-libretro.git|2f31e9ca38785ad4c2bd9e1d91829eda14a92954|GPL-2.0|.|Makefile.libretro|
+standard|freeintv|freeintv_libretro.so|https://github.com/libretro/FreeIntv.git|428915baf2bfc032fc03e645f4f8f9c6c3144979|GPL-2.0-or-later|.|Makefile|
+standard|o2em|o2em_libretro.so|https://github.com/libretro/libretro-o2em.git|e03d3be88f79fe940b933e53f1515d97313f6c59|Artistic-1.0|.|Makefile|
+standard|vecx|vecx_libretro.so|https://github.com/libretro/libretro-vecx.git|8f671cc9d737f2890c3ce19e177e2984dcae121f|GPL-3.0|.|Makefile.libretro|
+standard|fceumm|fceumm_libretro.so|https://github.com/libretro/libretro-fceumm.git|afe65ef1b4328c0bf2df05fb47a6b31a45bccf47|GPL-2.0|.|Makefile.libretro|
+standard|nestopia|nestopia_libretro.so|https://github.com/libretro/nestopia.git|b0fd87dd07e3c52903435d302b04e5e97796f127|GPL-2.0|libretro|Makefile|
+standard|gearsystem|gearsystem_libretro.so|https://github.com/drhelius/Gearsystem.git|9509f2f832c8d996687ec525366657c8a1a86b13|GPL-3.0|platforms/libretro|Makefile|
+standard|gambatte|gambatte_libretro.so|https://github.com/libretro/gambatte-libretro.git|9b3b5e3cc18ec92f460d37dd551eaf90c55bfcea|GPL-2.0|.|Makefile|
+standard|mgba|mgba_libretro.so|https://github.com/libretro/mgba.git|6dce57eef127dc4cc292644f38196e0e7c58590c|MPL-2.0|.|Makefile.libretro|
+standard|pokemini|pokemini_libretro.so|https://github.com/libretro/PokeMini.git|bb009b1379ad15f1514f20ca7cbf710b4af42b3e|GPL-3.0|.|Makefile|
+standard|beetle-pce-fast|mednafen_pce_fast_libretro.so|https://github.com/libretro/beetle-pce-fast-libretro.git|9e6510023545007e235117753329946cbc5f311a|GPL-2.0|.|Makefile|
+standard|beetle-supergrafx|mednafen_supergrafx_libretro.so|https://github.com/libretro/beetle-supergrafx-libretro.git|3c6fcd3deded54ebecd69408f108407ac03d11b5|GPL-2.0|.|Makefile|
+standard|beetle-vb|mednafen_vb_libretro.so|https://github.com/libretro/beetle-vb-libretro.git|38e7a0ec9ac7079ca1c1e3dd9aaf5b56f527efca|GPL-2.0|.|Makefile|
+standard|beetle-wswan|mednafen_wswan_libretro.so|https://github.com/libretro/beetle-wswan-libretro.git|da6d0d9acb8d4e9bd6725ab44225a275325d8352|GPL-2.0|.|Makefile|
+standard|race|race_libretro.so|https://github.com/libretro/RACE.git|c7810dd7f172827bfa2004813bc000b13786636b|GPL-2.0|.|Makefile|
+standard|pcsx-rearmed|pcsx_rearmed_libretro.so|https://github.com/libretro/pcsx_rearmed.git|050981b6eeb715f142854f57c68086f62921f027|GPL-2.0|.|Makefile.libretro|DYNAREC=lightrec
+standard|prboom|prboom_libretro.so|https://github.com/libretro/libretro-prboom.git|94adc0554cafbe6628e86408ced27fd8f92bd57d|GPL-2.0|.|Makefile|
+standard|tyrquake|tyrquake_libretro.so|https://github.com/libretro/tyrquake.git|e57bb11597e8a00380f30f2627d219da960cf69a|GPL-2.0|.|Makefile|
+replacement|bsnes|bsnes_libretro.so|https://github.com/libretro/bsnes-libretro.git|9c1285dda7dd6bb9a9951d37bcee8794ada640e6|GPL-3.0|bsnes|GNUmakefile|target=libretro binary=library local=false platform=linux
+replacement|blastem|blastem_libretro.so|https://github.com/libretro/blastem.git|277e4a62668597d4f59cadda1cbafb844f981d45|GPL-3.0|.|Makefile.libretro|-j1
+replacement|geolith|geolith_libretro.so|https://github.com/libretro/geolith-libretro.git|c5b57a6b31b7abef4a8a9b521cae58d653e28154|BSD-3-Clause AND MIT|libretro|Makefile|-j1
+arcade|mame|mame_libretro.so|https://github.com/libretro/mame.git|e2f8a31819e9e510dd06ab11f0d387ca7789776e|GPL-2.0-or-later AND BSD-3-Clause|.|Makefile.libretro|-j2 PTR64=1 SUBTARGET=arcade
