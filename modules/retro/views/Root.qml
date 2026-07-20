@@ -26,27 +26,11 @@ FocusScope {
     property string selectedSystemId: ""
     property string selectedSystemTitle: ""
     property string currentGameFolder: ""
-    property bool keyboardVisible: false
-    property var keyboardTarget: null
-    property string keyboardPrompt: ""
-    property int keyboardRow: 0
-    property int keyboardColumn: 0
-    property bool keyboardUppercase: false
-    property var keyboardRows: [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
-        ["z", "x", "c", "v", "b", "n", "m"],
-        [".", "-", "_", "@", ":", "/", "\\", "!", "#", "$"],
-        ["SHIFT", "SPACE", "BACK", "CLEAR", "DONE"]
-    ]
 
     focus: true
 
     function restoreNavigationFocus() {
-        if (keyboardVisible) {
-            screenKeyboard.forceActiveFocus()
-        } else if (mode === "setup") {
+        if (mode === "setup") {
             focusSetupRow()
         } else if (mode === "systems") {
             systemList.forceActiveFocus()
@@ -185,66 +169,6 @@ FocusScope {
             setupRow++
             focusSetupRow()
         }
-    }
-
-    function openKeyboard(target, prompt) {
-        keyboardTarget = target
-        keyboardPrompt = prompt || "ENTER TEXT"
-        keyboardRow = 0
-        keyboardColumn = 0
-        keyboardUppercase = false
-        keyboardVisible = true
-        screenKeyboard.forceActiveFocus()
-    }
-
-    function closeKeyboard(advance) {
-        keyboardVisible = false
-        keyboardTarget = null
-        retroRoot.forceActiveFocus()
-        if (advance)
-            setupNext()
-        else
-            focusSetupRow()
-    }
-
-    function keyboardKey() {
-        var row = keyboardRows[keyboardRow] || []
-        return row[keyboardColumn] || ""
-    }
-
-    function activateKeyboardKey() {
-        if (!keyboardTarget) {
-            closeKeyboard(false)
-            return
-        }
-        var key = keyboardKey()
-        if (key === "DONE") {
-            closeKeyboard(true)
-        } else if (key === "SHIFT") {
-            keyboardUppercase = !keyboardUppercase
-        } else if (key === "SPACE") {
-            keyboardTarget.text += " "
-        } else if (key === "BACK") {
-            keyboardTarget.text = keyboardTarget.text.substring(
-                        0, Math.max(0, keyboardTarget.text.length - 1))
-        } else if (key === "CLEAR") {
-            keyboardTarget.text = ""
-        } else {
-            keyboardTarget.text += keyboardUppercase ? key.toUpperCase() : key
-        }
-    }
-
-    function moveKeyboardRow(direction) {
-        keyboardRow = Math.max(0, Math.min(keyboardRows.length - 1,
-                                           keyboardRow + direction))
-        keyboardColumn = Math.min(keyboardColumn,
-                                  (keyboardRows[keyboardRow] || []).length - 1)
-    }
-
-    function moveKeyboardColumn(direction) {
-        var row = keyboardRows[keyboardRow] || []
-        keyboardColumn = Math.max(0, Math.min(row.length - 1,
-                                              keyboardColumn + direction))
     }
 
     function showSetup(message) {
@@ -750,149 +674,6 @@ FocusScope {
         }
     }
 
-    FocusScope {
-        id: screenKeyboard
-        anchors.fill: parent
-        visible: keyboardVisible
-        focus: visible
-        z: 1000
-
-        Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Left) {
-                moveKeyboardColumn(-1)
-            } else if (event.key === Qt.Key_Right) {
-                moveKeyboardColumn(1)
-            } else if (event.key === Qt.Key_Up) {
-                moveKeyboardRow(-1)
-            } else if (event.key === Qt.Key_Down) {
-                moveKeyboardRow(1)
-            } else if (event.key === Qt.Key_Return
-                       || event.key === Qt.Key_Enter
-                       || event.key === Qt.Key_Space) {
-                activateKeyboardKey()
-            } else if (event.key === Qt.Key_Backspace) {
-                if (keyboardTarget)
-                    keyboardTarget.text = keyboardTarget.text.substring(
-                                0, Math.max(0, keyboardTarget.text.length - 1))
-            } else if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back) {
-                closeKeyboard(false)
-            } else {
-                return
-            }
-            event.accepted = true
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            color: root.surfaceColor
-            opacity: 0.98
-        }
-
-        Column {
-            id: keyboardPanel
-            anchors.centerIn: parent
-            width: root.sw * 0.82
-            spacing: root.sh * 0.012
-
-            Text {
-                text: keyboardPrompt
-                width: keyboardPanel.width
-                horizontalAlignment: Text.AlignHCenter
-                color: root.secondaryColor
-                font.family: root.globalFont
-                font.capitalization: Font.AllUppercase
-                font.pixelSize: root.sh * 0.034
-            }
-
-            Rectangle {
-                width: keyboardPanel.width
-                height: root.sh * 0.065
-                color: "transparent"
-                border.color: root.secondaryColor
-                border.width: Math.max(1, root.sh * 0.002)
-
-                Text {
-                    anchors.fill: parent
-                    anchors.leftMargin: root.sw * 0.012
-                    anchors.rightMargin: root.sw * 0.012
-                    verticalAlignment: Text.AlignVCenter
-                    text: keyboardTarget
-                          ? (keyboardTarget.password
-                             ? "\u2022".repeat(keyboardTarget.text.length)
-                             : keyboardTarget.text)
-                          : ""
-                    color: root.primaryColor
-                    font.family: root.globalFont
-                    font.pixelSize: root.sh * 0.038
-                    elide: Text.ElideLeft
-                }
-            }
-
-            Repeater {
-                model: keyboardRows
-
-                delegate: Row {
-                    id: keyboardRowDelegate
-                    required property int index
-                    required property var modelData
-                    property int rowIndex: index
-                    property var rowKeys: modelData
-                    width: keyboardPanel.width
-                    height: root.sh * 0.064
-                    spacing: root.sw * 0.005
-
-                    Repeater {
-                        model: rowKeys
-
-                        delegate: Rectangle {
-                            id: keyboardKeyDelegate
-                            required property int index
-                            required property string modelData
-                            property bool selectedKey:
-                                keyboardRow === keyboardRowDelegate.rowIndex
-                                && keyboardColumn === index
-                            width: (keyboardPanel.width
-                                    - keyboardRowDelegate.spacing
-                                      * (keyboardRowDelegate.rowKeys.length - 1))
-                                   / keyboardRowDelegate.rowKeys.length
-                            height: keyboardRowDelegate.height
-                            color: selectedKey ? root.accentColor : "transparent"
-                            border.color: root.secondaryColor
-                            border.width: selectedKey ? 0 : Math.max(1, root.sh * 0.001)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: {
-                                    if (keyboardKeyDelegate.modelData === "SHIFT")
-                                        return keyboardUppercase ? "LOWER" : "SHIFT"
-                                    if (keyboardKeyDelegate.modelData.length === 1
-                                            && keyboardUppercase)
-                                        return keyboardKeyDelegate.modelData.toUpperCase()
-                                    return keyboardKeyDelegate.modelData
-                                }
-                                color: parent.selectedKey
-                                       ? root.surfaceColor : root.primaryColor
-                                font.family: root.globalFont
-                                font.pixelSize: keyboardKeyDelegate.modelData.length > 1
-                                                ? root.sh * 0.024
-                                                : root.sh * 0.036
-                            }
-                        }
-                    }
-                }
-            }
-
-            Text {
-                text: "D-PAD: MOVE   A: SELECT   B: CANCEL"
-                width: keyboardPanel.width
-                horizontalAlignment: Text.AlignHCenter
-                color: root.secondaryColor
-                font.family: root.globalFont
-                font.pixelSize: root.sh * 0.022
-            }
-        }
-    }
-
     component SetupField: Item {
         id: setupFieldControl
         property alias text: fieldInput.text
@@ -902,6 +683,13 @@ FocusScope {
 
         function forceInputFocus() {
             fieldInput.forceActiveFocus()
+        }
+
+        function openInputKeyboard() {
+            root.openTaterKeyboard(
+                        fieldInput, label, password,
+                        function() { setupNext() },
+                        function() { setupFieldControl.forceInputFocus() })
         }
 
         width: setupForm.width
@@ -943,30 +731,14 @@ FocusScope {
 
             Keys.onUpPressed: setupPrevious()
             Keys.onDownPressed: setupNext()
-            Keys.onReturnPressed: {
-                if (root.platformCapabilities.retroNetworkCacheFallback)
-                    openKeyboard(setupFieldControl, label)
-                else
-                    setupNext()
-            }
-            Keys.onEnterPressed: {
-                if (root.platformCapabilities.retroNetworkCacheFallback)
-                    openKeyboard(setupFieldControl, label)
-                else
-                    setupNext()
-            }
-            Keys.onSpacePressed: function(event) {
-                if (root.platformCapabilities.retroNetworkCacheFallback)
-                    openKeyboard(setupFieldControl, label)
-                else
-                    event.accepted = false
-            }
+            Keys.onReturnPressed: setupFieldControl.openInputKeyboard()
+            Keys.onEnterPressed: setupFieldControl.openInputKeyboard()
+            Keys.onSpacePressed: setupFieldControl.openInputKeyboard()
         }
 
         MouseArea {
             anchors.fill: parent
-            enabled: root.platformCapabilities.retroNetworkCacheFallback
-            onClicked: openKeyboard(setupFieldControl, label)
+            onClicked: setupFieldControl.openInputKeyboard()
         }
     }
 }
