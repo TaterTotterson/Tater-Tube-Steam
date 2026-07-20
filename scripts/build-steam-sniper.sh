@@ -60,10 +60,15 @@ for variable in \
         exit 1
     fi
     absolute_value="$(cd "$(dirname "${value}")" && pwd)/$(basename "${value}")"
-    docker_args+=(-e "${variable}=${absolute_value}")
-    if [[ "${absolute_value}" != "${REPO_ROOT}"/* ]]; then
+    container_value="${absolute_value}"
+    if [[ "${absolute_value}" == "${REPO_ROOT}"/* ]]; then
+        # The repository is mounted at /src, so translate bundle paths that
+        # live under it instead of leaking the host runner path into Docker.
+        container_value="/src/${absolute_value#"${REPO_ROOT}/"}"
+    else
         docker_args+=(-v "${absolute_value}:${absolute_value}:ro")
     fi
+    docker_args+=(-e "${variable}=${container_value}")
 done
 
 docker_args+=(

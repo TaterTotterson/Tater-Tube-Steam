@@ -73,6 +73,9 @@ jobs:
       - name: Validate generated helpers
         run: bash scripts/check-generated-helpers.sh
 
+      - name: Validate Steam container path mapping
+        run: bash scripts/test-build-steam-sniper-paths.sh
+
       - name: Install host packaging tools
         run: |
           set -euo pipefail

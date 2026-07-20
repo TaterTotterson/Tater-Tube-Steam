@@ -30,6 +30,9 @@ jobs:
       - name: Validate approved core inventory
         run: ./scripts/validate-steam-core-manifest.sh
 
+      - name: Validate Steam container path mapping
+        run: bash scripts/test-build-steam-sniper-paths.sh
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
