@@ -1,15 +1,15 @@
 {
-  "version": "v1.6.3",
-  "app_version": "1.6.3",
+  "version": "v1.7.0",
+  "app_version": "1.7.0",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube-Steam/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.6.3/Tater-Tube-Steam-v1.6.3-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.6.3.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.7.0/Tater-Tube-Steam-v1.7.0-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.7.0.tar.gz",
   "notes": [
-    "Adds Exit to Steam at the bottom of Settings > System for a clean return to the Steam menu.",
-    "Makes the universal on-screen keyboard highlight follow the active Tater Tube theme.",
-    "Standardizes module list navigation with Left and Right page jumps plus L2 and R2 fast Page Up and Page Down controls.",
-    "Fixes Tater Picks narration by playing server-generated speech through the bundled Steam mpv runtime."
+    "Adds three selectable VCR-themed menu sound packs with distinct move, page, back, and select cues plus a master disable option.",
+    "Fixes PC Link pairing by showing the Sunshine PIN and reliably resetting failed or stale pairing state for another attempt.",
+    "Shows the TV channel overlay only when tuning or changing channels instead of before every video or commercial.",
+    "Places Exit to Steam directly below System in the main Settings list for quicker access."
   ]
 }
