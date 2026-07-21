@@ -26,8 +26,14 @@ FocusScope {
     property string selectedSystemId: ""
     property string selectedSystemTitle: ""
     property string currentGameFolder: ""
+    property bool gameSessionActive: false
 
     focus: true
+
+    onGameSessionActiveChanged: {
+        if (menuSoundPlayer)
+            menuSoundPlayer.setContextActive("qml:retro-game", gameSessionActive)
+    }
 
     function restoreNavigationFocus() {
         if (mode === "setup") {
@@ -284,6 +290,7 @@ FocusScope {
         var title = row.title || "GAME"
         statusText = "LOADING " + title
         mode = "loading"
+        gameSessionActive = true
         retroBackend.launch_game(selectedSystemId, row.path || "")
     }
 
@@ -398,6 +405,8 @@ FocusScope {
     Component.onCompleted: refresh()
 
     Component.onDestruction: {
+        if (menuSoundPlayer)
+            menuSoundPlayer.setContextActive("qml:retro-game", false)
         if (retroBackend.running)
             retroBackend.stop_game()
     }
@@ -462,11 +471,13 @@ FocusScope {
         }
 
         function onGameFinished() {
+            gameSessionActive = false
             if (mode === "playing" || mode === "loading")
                 mode = gameRows.length > 0 ? "games" : "systems"
         }
 
         function onErrorOccurred(message) {
+            gameSessionActive = false
             mode = "message"
             statusText = message || "RETRO PLAYBACK FAILED"
         }
