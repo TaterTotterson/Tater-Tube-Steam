@@ -1,13 +1,14 @@
 {
-  "version": "v1.7.2",
-  "app_version": "1.7.2",
+  "version": "v1.7.3",
+  "app_version": "1.7.3",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube-Steam/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.7.2/Tater-Tube-Steam-v1.7.2-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.7.2.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.7.3/Tater-Tube-Steam-v1.7.3-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.7.3.tar.gz",
   "notes": [
-    "Keeps the Steam release version aligned with Tater Tube v1.7.2.",
-    "Contains no Steam-specific runtime changes from v1.7.1."
+    "Streams server-scheduled Tater bumpers through the server playback endpoint without invalid local-file transcode parameters.",
+    "Shows the TV channel overlay only when tuning a channel, not between videos, commercials, or bumpers.",
+    "Validates Steam release depots inside the pinned Steam Runtime 3.0 environment so runtime-provided graphics and audio libraries are resolved correctly."
   ]
 }

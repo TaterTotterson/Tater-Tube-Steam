@@ -21,6 +21,7 @@ jobs:
     permissions:
       contents: write
     env:
+      STEAM_SNIPER_BUILDER_IMAGE: tater-tube-steam-sniper-builder
       STEAM_RUNTIME_ROOT: ${{ github.workspace }}/out/steam-runtime
       STEAM_DEPOT_ROOT: ${{ github.workspace }}/out/steam/depot
 
@@ -115,7 +116,22 @@ jobs:
             = "${{ steps.release.outputs.source_commit }}"
           test "$(tr -d '\n' < "${STEAM_DEPOT_ROOT}/BUILD-STATE.txt")" = clean
 
-          ./scripts/validate-steam-depot.sh "${STEAM_DEPOT_ROOT}"
+          # Validate against the same pinned Steam Runtime 3.0 environment used
+          # to build the depot. The generic Ubuntu runner does not provide the
+          # Steam runtime's graphics and audio libraries (EGL, PipeWire, JACK),
+          # so host-side ldd checks incorrectly report those dependencies as
+          # missing even though the in-runtime validation succeeds.
+          docker run \
+            --rm \
+            --platform linux/amd64 \
+            --entrypoint /bin/bash \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp/tater-tube-home \
+            -e STEAM_REQUIRE_COMPLETE_RUNTIME=1 \
+            -e STEAM_REQUIRE_PORTABLE_DEPOT=1 \
+            -v "${GITHUB_WORKSPACE}:/src" \
+            "${STEAM_SNIPER_BUILDER_IMAGE}" \
+            -lc 'mkdir -p "$HOME" && cd /src && ./scripts/validate-steam-depot.sh /src/out/steam/depot'
           (
             cd "${STEAM_DEPOT_ROOT}"
             sha256sum -c DEPOT-SHA256SUMS.txt
