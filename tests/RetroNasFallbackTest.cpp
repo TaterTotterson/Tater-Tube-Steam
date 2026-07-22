@@ -83,7 +83,7 @@ private slots:
 
         QSignalSpy systemsSpy(&backend, &RetroBackend::systemsLoaded);
         backend.load_systems();
-        QCOMPARE(systemsSpy.size(), 1);
+        QTRY_COMPARE(systemsSpy.size(), 1);
         const QVariantList systems = systemsSpy.takeFirst().at(0).toList();
         QCOMPARE(systems.size(), 1);
         QCOMPARE(systems.first().toMap().value("id").toString(), QString("nes"));
@@ -131,7 +131,7 @@ private slots:
         RetroBackend backend(appRoot, dataRoot);
         QSignalSpy systemsSpy(&backend, &RetroBackend::systemsLoaded);
         backend.load_systems();
-        QCOMPARE(systemsSpy.size(), 1);
+        QTRY_COMPARE(systemsSpy.size(), 1);
         const QVariantList systems = systemsSpy.takeFirst().at(0).toList();
 
         const QVariantMap genesis = systemById(systems, "genesis");
@@ -162,7 +162,7 @@ private slots:
         QSignalSpy cleanSystemsSpy(&cleanBackend,
                                    &RetroBackend::systemsLoaded);
         cleanBackend.load_systems();
-        QCOMPARE(cleanSystemsSpy.size(), 1);
+        QTRY_COMPARE(cleanSystemsSpy.size(), 1);
         const QVariantList cleanSystems =
             cleanSystemsSpy.takeFirst().at(0).toList();
         QVERIFY(systemById(cleanSystems, "segacd").isEmpty());

@@ -57,6 +57,17 @@ runtime_paths=(
     "usr/share/240mp/vendor/retroarch/bin/retroarch"
     "usr/share/240mp/vendor/yt-dlp/bin/yt-dlp"
     "usr/share/240mp/vendor/rclone/bin/rclone"
+    "usr/share/240mp/vendor/ports/sm64coopdx/sm64coopdx"
+    "usr/share/240mp/vendor/ports/2ship2harkinian/2ship2harkinian"
+    "usr/share/240mp/vendor/ports/2ship2harkinian/2s2h.elf"
+    "usr/share/240mp/vendor/ports/shipwright/shipwright"
+    "usr/share/240mp/vendor/ports/shipwright/soh.elf"
+    "usr/share/240mp/vendor/ports/spaghettikart/spaghettikart"
+    "usr/share/240mp/vendor/ports/spaghettikart/Spaghettify"
+    "usr/share/240mp/vendor/ports/starship/starship"
+    "usr/share/240mp/vendor/ports/starship/Starship"
+    "usr/share/240mp/vendor/ports/dusklight/dusklight"
+    "usr/share/240mp/vendor/ports/dusklight/dusklight-bin"
 )
 
 mpv_runtime="${DEPOT_ROOT}/usr/share/240mp/vendor/mpv/bin/mpv"
@@ -77,6 +88,39 @@ if [ "${STRICT_RUNTIME}" = "1" ]; then
     for runtime in "${runtime_paths[@]}"; do
         require_executable "${runtime}"
     done
+    require_file "usr/share/240mp/vendor/ports/sm64coopdx/SOURCE.txt"
+    require_file "usr/share/240mp/vendor/ports/2ship2harkinian/SOURCE.txt"
+    require_file "usr/share/240mp/vendor/ports/2ship2harkinian/LICENSE.txt"
+    require_file "usr/share/240mp/vendor/ports/2ship2harkinian/2ship.o2r"
+    require_file "usr/share/240mp/vendor/ports/2ship2harkinian/assets/Config_N64_US.xml"
+    require_file "usr/share/240mp/vendor/ports/2ship2harkinian/assets/Config_GC_US.xml"
+    require_file "usr/share/240mp/vendor/ports/shipwright/SOURCE.txt"
+    require_file "usr/share/240mp/vendor/ports/shipwright/soh.o2r"
+    require_file "usr/share/240mp/vendor/ports/shipwright/LICENSES/libultraship.txt"
+    require_file "usr/share/240mp/vendor/ports/shipwright/LICENSES/OTRExporter.txt"
+    require_file "usr/share/240mp/vendor/ports/shipwright/LICENSES/ZAPDTR.txt"
+    require_file "usr/share/240mp/vendor/ports/shipwright/assets/Config_N64_NTSC_10.xml"
+    require_file "usr/share/240mp/vendor/ports/shipwright/assets/Config_GC_MQ_NTSC_U.xml"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/SOURCE.txt"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/spaghetti.o2r"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/config.yml"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/meta/mods.toml"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/LICENSES/libultraship.txt"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/LICENSES/torch.txt"
+    require_file "usr/share/240mp/vendor/ports/spaghettikart/LICENSES/StormLib.txt"
+    require_file "usr/share/240mp/vendor/ports/starship/SOURCE.txt"
+    require_file "usr/share/240mp/vendor/ports/starship/starship.o2r"
+    require_file "usr/share/240mp/vendor/ports/starship/config.yml"
+    require_file "usr/share/240mp/vendor/ports/starship/assets/yaml/us/rev0/ast_audio.yaml"
+    require_file "usr/share/240mp/vendor/ports/starship/assets/yaml/us/rev1/ast_audio.yaml"
+    require_file "usr/share/240mp/vendor/ports/starship/LICENSES/Starship.txt"
+    require_file "usr/share/240mp/vendor/ports/starship/LICENSES/libultraship.txt"
+    require_file "usr/share/240mp/vendor/ports/starship/LICENSES/Torch.txt"
+    require_file "usr/share/240mp/vendor/ports/dusklight/SOURCE.txt"
+    require_file "usr/share/240mp/vendor/ports/dusklight/res/logo.png"
+    require_file "usr/share/240mp/vendor/ports/dusklight/res/rml/prelaunch.rcss"
+    require_file "usr/share/240mp/vendor/ports/dusklight/LICENSES/Dusklight-CC0-1.0.txt"
+    require_file "usr/share/240mp/vendor/ports/dusklight/LICENSES/Aurora-MIT.txt"
 
     if ! find "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/cores" \
             -maxdepth 1 -type f -name '*_libretro.so' -print -quit \
@@ -270,7 +314,9 @@ if command -v ldd >/dev/null 2>&1; then
         if ! file -b "${candidate}" 2>/dev/null | grep -q 'ELF.*dynamically linked'; then
             continue
         fi
-        ldd_output="$(LD_LIBRARY_PATH="${library_path}" ldd "${candidate}" 2>&1 || true)"
+        candidate_dir="$(dirname "${candidate}")"
+        candidate_library_path="${candidate_dir}/lib:${candidate_dir}:${library_path}"
+        ldd_output="$(LD_LIBRARY_PATH="${candidate_library_path}" ldd "${candidate}" 2>&1 || true)"
         if grep -q 'not found' <<<"${ldd_output}"; then
             fail "Unresolved shared library for ${candidate#${DEPOT_ROOT}/}: $(grep 'not found' <<<"${ldd_output}" | tr '\n' ' ')"
         fi
@@ -286,6 +332,12 @@ done < <(find "${DEPOT_ROOT}" -type f \
     \( -name 'config.json' -o -name '*.credentials' \
        -o -name 'retronas-rclone.conf' \) -print)
 
+while IFS= read -r generated_game_archive; do
+    fail "Generated game archive must not be shipped: ${generated_game_archive#${DEPOT_ROOT}/}"
+done < <(find "${DEPOT_ROOT}" -type f \
+    \( -iname 'mm.o2r' -o -iname 'mm.otr' -o -iname 'mm.zip' \
+       -o -iname 'oot.o2r' -o -iname 'oot-mq.o2r' -o -iname 'oot.otr' \) -print)
+
 if [ "${STEAM_ALLOW_CONTENT_FILES:-0}" != "1" ]; then
     while IFS= read -r content_file; do
         case "${content_file#${DEPOT_ROOT}/}" in
@@ -300,7 +352,8 @@ if [ "${STEAM_ALLOW_CONTENT_FILES:-0}" != "1" ]; then
            -o -iname '*.gba' -o -iname '*.gb' -o -iname '*.gbc' \
            -o -iname '*.a26' -o -iname '*.a52' -o -iname '*.a78' \
            -o -iname '*.cue' -o -iname '*.chd' -o -iname '*.iso' \
-           -o -iname '*.rom' -o -iname '*.wad' -o -iname '*.m3u' \) -print)
+           -o -iname '*.rom' -o -iname '*.z64' -o -iname '*.n64' \
+           -o -iname '*.v64' -o -iname '*.wad' -o -iname '*.m3u' \) -print)
 fi
 
 if [ "${failures}" -ne 0 ]; then

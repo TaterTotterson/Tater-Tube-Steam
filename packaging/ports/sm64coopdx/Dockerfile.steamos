@@ -1,0 +1,31 @@
+FROM ubuntu:22.04 AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        bsdextrautils \
+        ca-certificates \
+        git \
+        libcurl4-openssl-dev \
+        libglew-dev \
+        libsdl2-dev \
+        python3 \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/build-sm64coopdx-port.sh /tmp/build-sm64coopdx-port.sh
+COPY packaging/ports/sm64coopdx/exit-to-tater-tube.patch /tmp/exit-to-tater-tube.patch
+
+RUN SM64COOPDX_PATCH=/tmp/exit-to-tater-tube.patch \
+    SM64COOPDX_BUILD_ROOT=/build/sm64coopdx \
+    /tmp/build-sm64coopdx-port.sh \
+        /opt/tater-tube-runtimes/ports/sm64coopdx
+
+FROM scratch
+
+COPY --from=builder /opt/tater-tube-runtimes/ports \
+    /opt/tater-tube-runtimes/ports
+
+CMD ["/opt/tater-tube-runtimes/ports/sm64coopdx/sm64coopdx"]

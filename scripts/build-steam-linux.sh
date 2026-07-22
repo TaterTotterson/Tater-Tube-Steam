@@ -113,6 +113,7 @@ stage_bundle "${STEAM_MOONLIGHT_BUNDLE:-}" "${VENDOR_ROOT}/moonlight-sdl" "Moonl
 stage_bundle "${STEAM_RETROARCH_BUNDLE:-}" "${VENDOR_ROOT}/retroarch" "RetroArch"
 stage_bundle "${STEAM_YTDLP_BUNDLE:-}" "${VENDOR_ROOT}/yt-dlp" "yt-dlp"
 stage_bundle "${STEAM_RCLONE_BUNDLE:-}" "${VENDOR_ROOT}/rclone" "rclone"
+stage_bundle "${STEAM_PORTS_BUNDLE:-}" "${VENDOR_ROOT}/ports" "game ports"
 
 if [ -n "${STEAM_THIRD_PARTY_NOTICES_DIR:-}" ]; then
     stage_bundle "${STEAM_THIRD_PARTY_NOTICES_DIR}" \
@@ -213,6 +214,31 @@ for runtime in \
         missing=1
     fi
 done
+
+if [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/sm64coopdx/sm64coopdx" ]; then
+    echo "Runtime not bundled yet: usr/share/240mp/vendor/ports/sm64coopdx/sm64coopdx"
+    missing=1
+fi
+if [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/2ship2harkinian/2ship2harkinian" ] \
+        || [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/2ship2harkinian/2s2h.elf" ]; then
+    echo "Runtime not bundled yet: usr/share/240mp/vendor/ports/2ship2harkinian"
+    missing=1
+fi
+if [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/shipwright/shipwright" ] \
+        || [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/shipwright/soh.elf" ]; then
+    echo "Runtime not bundled yet: usr/share/240mp/vendor/ports/shipwright"
+    missing=1
+fi
+if [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/spaghettikart/spaghettikart" ] \
+        || [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/spaghettikart/Spaghettify" ]; then
+    echo "Runtime not bundled yet: usr/share/240mp/vendor/ports/spaghettikart"
+    missing=1
+fi
+if [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/dusklight/dusklight" ] \
+        || [ ! -x "${DEPOT_ROOT}/usr/share/240mp/vendor/ports/dusklight/dusklight-bin" ]; then
+    echo "Runtime not bundled yet: usr/share/240mp/vendor/ports/dusklight"
+    missing=1
+fi
 
 if ! find "${VENDOR_ROOT}/retroarch/cores" -maxdepth 1 -type f \
         -name '*_libretro.so' -print -quit 2>/dev/null | grep -q .; then

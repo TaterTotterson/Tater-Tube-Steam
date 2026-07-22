@@ -57,8 +57,9 @@ LINUXDEPLOY=/path/to/linuxdeploy ./scripts/build-steam-linux.sh
 ```
 
 Set `STEAM_REQUIRE_COMPLETE_RUNTIME=1` in release automation so a build fails
-until mpv, Moonlight, RetroArch, approved cores, yt-dlp, rclone, and all
-third-party notices are present in their expected paths.
+until mpv, Moonlight, RetroArch, approved cores, yt-dlp, rclone, the pinned
+sm64coopdx, 2 Ship 2 Harkinian, Ship of Harkinian, and SpaghettiKart port
+engines, and all third-party notices are present in their expected paths.
 
 Vetted runtime bundles can be injected without checking binaries into the
 source tree:
@@ -69,6 +70,7 @@ STEAM_MOONLIGHT_BUNDLE=/runtime/moonlight-sdl \
 STEAM_RETROARCH_BUNDLE=/runtime/retroarch \
 STEAM_YTDLP_BUNDLE=/runtime/yt-dlp \
 STEAM_RCLONE_BUNDLE=/runtime/rclone \
+STEAM_PORTS_BUNDLE=/runtime/ports \
 STEAM_THIRD_PARTY_NOTICES_DIR=/runtime/notices \
 STEAM_REQUIRE_COMPLETE_RUNTIME=1 \
 LINUXDEPLOY=/tools/linuxdeploy \
@@ -85,8 +87,8 @@ sibling runtime directory:
 The script verifies release-asset SHA-256 hashes and records the versions,
 source URLs, and license notices.
 
-Build mpv, Moonlight, RetroArch, and the approved x86-64 core bundle in the
-same pinned sniper SDK:
+Build mpv, Moonlight, RetroArch, the approved x86-64 core bundle, and the
+patched native port engines:
 
 ```bash
 ./scripts/build-steam-runtimes.sh ../Tater-Tube-Steam-Runtime
@@ -94,8 +96,42 @@ same pinned sniper SDK:
 
 The build pins source revisions for mpv, FFmpeg, libplacebo, Moonlight,
 RetroArch, and every core. Approved cores are written to `retroarch/cores`.
-Their corresponding-source archives, upstream license files, manifest, and
-SHA-256 inventories are written beneath `notices/retroarch-cores` and enter
+sm64coopdx is built from its pinned v1.5.1 commit in an Ubuntu 22.04 container,
+with the Tater Tube exit-menu patch, and is written to `ports/sm64coopdx`.
+2 Ship 2 Harkinian is built from pinned 4.0.2 source in the Steam Runtime
+builder and is written to `ports/2ship2harkinian`. Its patch automatically uses
+the ROM Game Center has validated, keeps the generated `mm.o2r` under the
+user's writable data directory, and provides **Exit to Tater Tube**.
+Ship of Harkinian is built from pinned 9.2.3 source and is written to
+`ports/shipwright`. Its patch processes Game Center's validated ROM without a
+file picker, keeps `oot.o2r` or `oot-mq.o2r` in writable user data, and labels
+its power action **Exit to Tater Tube**. The engine bundle includes its pinned
+source information and available submodule licenses. Shipwright does not publish
+a project-level license in its repository, so retain the confirmed upstream
+redistribution permission with the Steam release records.
+SpaghettiKart is built from pinned 1.0.0 source and is written to
+`ports/spaghettikart`. Its patch imports Game Center's validated Mario Kart 64
+(USA) ROM without a file picker, keeps the generated `mk64.o2r` in writable user
+data, enables controller navigation, and provides **Exit to Tater Tube**. Only
+the port-owned `spaghetti.o2r` is bundled. SpaghettiKart does not publish a
+project-level license in its repository, so retain the confirmed redistribution
+permission with the Steam release records.
+Starship is built from pinned 2.0.0 source and is written to `ports/starship`.
+Its patch imports Game Center's validated Star Fox 64 USA 1.0 or 1.1 ROM
+without a file picker, keeps the generated `sf64.o2r` in writable user data,
+enables controller navigation, and provides **Exit to Tater Tube**. The release
+includes only the CC0 engine, extraction metadata, and port-owned
+`starship.o2r`.
+Dusklight is built from pinned 1.4.1 CC0 source and is written to
+`ports/dusklight`. Its patch labels the controller-accessible quit menu
+**Exit to Tater Tube**. Game Center streams a supported user-owned GameCube USA
+or EUR Twilight Princess disc image directly from the configured library; the
+engine performs its own game/supported-region check and no disc content enters the
+depot. Dusklight supports ISO/GCM, CISO, GCZ, NFS, RVZ, WBFS, WIA, and TGC
+containers and uses Vulkan on SteamOS.
+
+The RetroArch cores' corresponding-source archives, upstream license files,
+manifest, and SHA-256 inventories are written beneath `notices/retroarch-cores` and enter
 the depot with the binaries. The source packager excludes common ROM, disc,
 game-data, and firmware extensions so unrelated upstream test assets cannot
 silently enter the customer depot. Each core is compiled from that repacked
@@ -109,6 +145,7 @@ STEAM_MOONLIGHT_BUNDLE=../Tater-Tube-Steam-Runtime/moonlight-sdl \
 STEAM_RETROARCH_BUNDLE=../Tater-Tube-Steam-Runtime/retroarch \
 STEAM_RCLONE_BUNDLE=../Tater-Tube-Steam-Runtime/rclone \
 STEAM_YTDLP_BUNDLE=../Tater-Tube-Steam-Runtime/yt-dlp \
+STEAM_PORTS_BUNDLE=../Tater-Tube-Steam-Runtime/ports \
 STEAM_THIRD_PARTY_NOTICES_DIR=../Tater-Tube-Steam-Runtime/notices \
 ./scripts/build-steam-sniper.sh
 ```
@@ -182,6 +219,12 @@ depot/
             ├── moonlight-sdl/bin/moonlight
             ├── retroarch/bin/retroarch
             ├── retroarch/cores/
+            ├── ports/sm64coopdx/
+            ├── ports/2ship2harkinian/
+            ├── ports/shipwright/
+            ├── ports/spaghettikart/
+            ├── ports/starship/
+            ├── ports/dusklight/
             ├── yt-dlp/bin/yt-dlp
             └── rclone/bin/rclone
 ```

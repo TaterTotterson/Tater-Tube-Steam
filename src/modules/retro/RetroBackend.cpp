@@ -1,6 +1,8 @@
 #include "RetroBackend.h"
+#include "GamePortCatalog.h"
 
 #include <QCoreApplication>
+#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
@@ -19,6 +21,8 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
+#include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 
 #ifdef Q_OS_LINUX
@@ -42,8 +46,31 @@ constexpr const char *kModuleId = "com.240mp.retro";
 constexpr const char *kRetroMountHelper = "/usr/local/sbin/240mp-retro-mount";
 constexpr const char *kRetroCoreHelper = "/usr/local/sbin/240mp-retro-core-control";
 constexpr const char *kGameCacheFile = "game-cache.json";
+constexpr const char *kPortRomHashCacheFile = "port-rom-hashes.json";
 constexpr const char *kRetroNasVirtualPrefix = "retronas-cache:/";
-constexpr int kGameCacheVersion = 3;
+constexpr const char *kPortsSystemId = "ports";
+constexpr const char *kRemotePortSystemPrefix = "port:";
+constexpr int kGameCacheVersion = 5;
+
+QSize activeCompositeDisplayMode()
+{
+#ifdef Q_OS_LINUX
+    const QString override = qEnvironmentVariable("TATER_TUBE_COMPOSITE_MODE").trimmed();
+    if (!override.isEmpty()) {
+        const QString commandLine = override.contains(QStringLiteral("video="))
+            ? override
+            : QStringLiteral("video=Composite-1:") + override;
+        return GamePortCatalog::compositeDisplayMode(commandLine);
+    }
+
+    QFile commandLineFile(QStringLiteral("/proc/cmdline"));
+    if (commandLineFile.open(QIODevice::ReadOnly)) {
+        return GamePortCatalog::compositeDisplayMode(
+            QString::fromLatin1(commandLineFile.readAll()));
+    }
+#endif
+    return {};
+}
 
 QString normalizedRemotePath(QString path)
 {
@@ -88,6 +115,29 @@ QString cleanGameTitle(const QString &fileName)
     title.replace('_', ' ');
     title.replace(QRegularExpression("\\s+"), " ");
     return title.trimmed();
+}
+
+QString gamePortVirtualPath(const QString &portId, const QString &romPath)
+{
+    QUrl url;
+    url.setScheme(QStringLiteral("tater-port"));
+    url.setHost(portId);
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("rom"), romPath);
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
+}
+
+bool parseGamePortVirtualPath(const QString &path, QString *portId, QString *romPath)
+{
+    const QUrl url(path);
+    if (url.scheme() != QLatin1String("tater-port") || url.host().isEmpty())
+        return false;
+    if (portId)
+        *portId = url.host();
+    if (romPath)
+        *romPath = QUrlQuery(url).queryItemValue(QStringLiteral("rom"), QUrl::FullyDecoded);
+    return true;
 }
 
 QString escapeRetroValue(QString value)
@@ -206,6 +256,12 @@ RetroBackend::RetroBackend(const QString &appRoot, const QString &dataRoot, QObj
 RetroBackend::~RetroBackend()
 {
     stop_game();
+    if (m_gameCacheWatcher) {
+        m_gameCacheWatcher->cancel();
+        m_gameCacheWatcher->waitForFinished();
+        delete m_gameCacheWatcher;
+        m_gameCacheWatcher = nullptr;
+    }
     if (m_retroNasTransferProcess) {
         m_retroNasTransferProcess->disconnect(this);
         if (m_retroNasTransferProcess->state() != QProcess::NotRunning) {
@@ -266,6 +322,11 @@ QString RetroBackend::gamesRoot() const
     if (remotePath.isEmpty())
         return mountPoint();
     return QDir(mountPoint()).absoluteFilePath(remotePath);
+}
+
+QString RetroBackend::configuredPortsPath() const
+{
+    return setting(QStringLiteral("ports_path"));
 }
 
 QString RetroBackend::retroarchPath() const
@@ -435,12 +496,18 @@ bool RetroBackend::buildDesktopRetroNasCatalog(QString *errorOut) const
 
     QMap<QString, QList<QVariantMap>> gamesBySystem;
     QMap<QString, QString> systemFolders;
+    QVariantList remoteFiles;
     const QList<SystemDef> definitions = systemDefinitions();
     for (const QJsonValue &value : document.array()) {
         const QString relativePath = safeRemoteRelativePath(
             value.toObject().value(QStringLiteral("Path")).toString());
         if (relativePath.isEmpty())
             continue;
+        remoteFiles.append(QVariantMap{
+            {QStringLiteral("path"), relativePath},
+            {QStringLiteral("size"), qint64(value.toObject().value(
+                 QStringLiteral("Size")).toDouble(-1))}
+        });
 
         const int slash = relativePath.indexOf(QLatin1Char('/'));
         if (slash <= 0)
@@ -509,11 +576,14 @@ bool RetroBackend::buildDesktopRetroNasCatalog(QString *errorOut) const
         cachedGames.insert(def.id, gameValues);
     }
 
+    appendPortsToCache(&systems, &cachedGames, remotePortGames(remoteFiles));
+
     QVariantMap cache;
     cache[QStringLiteral("version")] = kGameCacheVersion;
     cache[QStringLiteral("createdAt")] =
         QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     cache[QStringLiteral("gamesRoot")] = gameCacheRootKey();
+    cache[QStringLiteral("portManifestKey")] = gamePortManifestKey();
     cache[QStringLiteral("sourceMode")] = QStringLiteral("rclone-copy-cache");
     cache[QStringLiteral("systems")] = systems;
     cache[QStringLiteral("games")] = cachedGames;
@@ -966,9 +1036,214 @@ QVariantList RetroBackend::gamesForSystem(const SystemDef &def) const
     return result;
 }
 
+QVariantList RetroBackend::localPortGames() const
+{
+    QVariantList result;
+    QHash<QString, QByteArray> hashCache = loadPortRomHashCache();
+    QHash<QString, QStringList> candidatesBySearch;
+    if (hashCache.size() > 8192)
+        hashCache.clear();
+    QStringList manifestErrors;
+    const QList<GamePortDefinition> ports = GamePortCatalog::load(m_appRoot, &manifestErrors);
+    for (const QString &error : manifestErrors)
+        qWarning("[game-port] %s", qPrintable(error));
+
+    for (const GamePortDefinition &port : ports) {
+        if (GamePortCatalog::executableNames(port).isEmpty())
+            continue;
+
+        const QString engine = GamePortCatalog::findEngine(
+            port, m_appRoot, m_dataRoot, configuredPortsPath());
+
+        QString romPath;
+        for (const GamePortRomRequirement &requirement : port.romRequirements) {
+            const QString staged = GamePortCatalog::stagedRomPath(
+                m_dataRoot, port, requirement.fileName);
+            if (GamePortCatalog::romMatches(port, staged, nullptr, &hashCache)) {
+                romPath = staged;
+                break;
+            }
+        }
+
+        QStringList folders = port.romFolders;
+        QStringList extensions = port.romExtensions;
+        for (QString &folder : folders)
+            folder = folder.toLower();
+        for (QString &extension : extensions)
+            extension = extension.toLower();
+        folders.removeDuplicates();
+        extensions.removeDuplicates();
+        folders.sort(Qt::CaseInsensitive);
+        extensions.sort(Qt::CaseInsensitive);
+        const QString searchKey = folders.join(QLatin1Char('\n'))
+            + QLatin1Char('\0') + extensions.join(QLatin1Char('\n'));
+        auto candidateIt = candidatesBySearch.constFind(searchKey);
+        if (candidateIt == candidatesBySearch.constEnd()) {
+            candidateIt = candidatesBySearch.insert(
+                searchKey, GamePortCatalog::findRomCandidates(port, gamesRoot()));
+        }
+        const QStringList candidates = candidateIt.value();
+        if (romPath.isEmpty())
+            romPath = GamePortCatalog::findMatchingRom(
+                port, candidates, nullptr, &hashCache, engine);
+
+        QString status;
+        if (!engine.isEmpty() && !romPath.isEmpty())
+            status = QStringLiteral("READY");
+        else if (engine.isEmpty() && romPath.isEmpty())
+            status = candidates.isEmpty()
+                ? QStringLiteral("ENGINE + ROM NEEDED")
+                : QStringLiteral("ENGINE + SUPPORTED ROM NEEDED");
+        else if (engine.isEmpty())
+            status = QStringLiteral("ENGINE NEEDED");
+        else
+            status = candidates.isEmpty()
+                ? QStringLiteral("ROM NEEDED")
+                : QStringLiteral("SUPPORTED ROM NEEDED");
+
+        QVariantMap item;
+        item[QStringLiteral("systemId")] = QString::fromUtf8(kPortsSystemId);
+        item[QStringLiteral("title")] = port.title;
+        item[QStringLiteral("path")] = gamePortVirtualPath(port.id, romPath);
+        item[QStringLiteral("folder")] = QString();
+        item[QStringLiteral("portId")] = port.id;
+        item[QStringLiteral("romPath")] = romPath;
+        item[QStringLiteral("enginePath")] = engine;
+        item[QStringLiteral("status")] = status;
+        item[QStringLiteral("ready")] = !engine.isEmpty() && !romPath.isEmpty();
+        item[QStringLiteral("sourceUrl")] = port.sourceUrl;
+        item[QStringLiteral("distribution")] = port.distribution;
+        result.append(item);
+    }
+    savePortRomHashCache(hashCache);
+    return result;
+}
+
+QVariantList RetroBackend::remotePortGames(const QVariantList &remoteFiles) const
+{
+    QVariantList result;
+    const QList<GamePortDefinition> ports = GamePortCatalog::load(m_appRoot);
+    for (const GamePortDefinition &port : ports) {
+        if (GamePortCatalog::executableNames(port).isEmpty())
+            continue;
+
+        const QString engine = GamePortCatalog::findEngine(
+            port, m_appRoot, m_dataRoot, configuredPortsPath());
+        QString stagedRom;
+        for (const GamePortRomRequirement &requirement : port.romRequirements) {
+            const QString staged = GamePortCatalog::stagedRomPath(
+                m_dataRoot, port, requirement.fileName);
+            if (GamePortCatalog::romMatches(port, staged)) {
+                stagedRom = staged;
+                break;
+            }
+        }
+
+        QStringList candidates;
+        for (const QVariant &value : remoteFiles) {
+            const QVariantMap remoteFile = value.toMap();
+            const QString relativePath = remoteFile.value(QStringLiteral("path")).toString();
+            const qint64 size = remoteFile.value(QStringLiteral("size"), -1).toLongLong();
+            bool supportedSize = false;
+            for (const GamePortRomRequirement &requirement : port.romRequirements) {
+                if (requirement.size < 0 || size < 0 || requirement.size == size) {
+                    supportedSize = true;
+                    break;
+                }
+            }
+            if (supportedSize
+                && GamePortCatalog::remotePathCanProvideRom(port, relativePath)) {
+                candidates.append(relativePath);
+            }
+        }
+        candidates.removeDuplicates();
+        candidates.sort(Qt::CaseInsensitive);
+
+        const auto appendItem = [&](const QString &title,
+                                    const QString &romPath,
+                                    const QString &status,
+                                    bool ready) {
+            QVariantMap item;
+            item[QStringLiteral("systemId")] = QString::fromUtf8(kPortsSystemId);
+            item[QStringLiteral("title")] = title;
+            item[QStringLiteral("path")] = gamePortVirtualPath(port.id, romPath);
+            item[QStringLiteral("folder")] = QString();
+            item[QStringLiteral("portId")] = port.id;
+            item[QStringLiteral("romPath")] = romPath;
+            item[QStringLiteral("enginePath")] = engine;
+            item[QStringLiteral("status")] = status;
+            item[QStringLiteral("ready")] = ready;
+            item[QStringLiteral("sourceUrl")] = port.sourceUrl;
+            item[QStringLiteral("distribution")] = port.distribution;
+            result.append(item);
+        };
+
+        if (!stagedRom.isEmpty()) {
+            appendItem(port.title, stagedRom,
+                       engine.isEmpty() ? QStringLiteral("ENGINE NEEDED")
+                                        : QStringLiteral("READY"),
+                       !engine.isEmpty());
+            continue;
+        }
+
+        if (candidates.isEmpty()) {
+            appendItem(port.title, QString(),
+                       engine.isEmpty() ? QStringLiteral("ENGINE + ROM NEEDED")
+                                        : QStringLiteral("ROM NEEDED"),
+                       false);
+            continue;
+        }
+
+        for (const QString &relativePath : candidates) {
+            const QString virtualPath = desktopRetroNasVirtualPath(relativePath);
+            const QString cachedPath = QDir(desktopRetroNasDownloadRoot()).absoluteFilePath(
+                relativePath);
+            QString status;
+            if (engine.isEmpty()) {
+                status = QStringLiteral("ENGINE NEEDED");
+            } else if (QFileInfo(cachedPath).isFile()) {
+                status = GamePortCatalog::romMatches(port, cachedPath)
+                    ? QStringLiteral("READY")
+                    : QStringLiteral("UNSUPPORTED ROM");
+            } else {
+                status = QStringLiteral("READY TO VALIDATE");
+            }
+            const QString title = candidates.size() > 1
+                ? QStringLiteral("%1 — %2").arg(port.title, QFileInfo(relativePath).fileName())
+                : port.title;
+            appendItem(title, virtualPath, status, !engine.isEmpty());
+        }
+    }
+    return result;
+}
+
+void RetroBackend::appendPortsToCache(QVariantList *systems,
+                                      QVariantMap *gamesBySystem,
+                                      const QVariantList &portGames) const
+{
+    if (!systems || !gamesBySystem || portGames.isEmpty())
+        return;
+
+    QVariantMap system;
+    system[QStringLiteral("id")] = QString::fromUtf8(kPortsSystemId);
+    system[QStringLiteral("label")] = QStringLiteral("Ports");
+    system[QStringLiteral("path")] = QString();
+    system[QStringLiteral("core")] = QString();
+    system[QStringLiteral("corePackage")] = QString();
+    system[QStringLiteral("gameCount")] = portGames.size();
+    systems->append(system);
+    gamesBySystem->insert(QString::fromUtf8(kPortsSystemId), portGames);
+}
+
 QString RetroBackend::gameCachePath() const
 {
     return QDir(m_dataRoot).absoluteFilePath(QString::fromUtf8(kGameCacheFile));
+}
+
+QString RetroBackend::portRomHashCachePath() const
+{
+    return QDir(m_dataRoot).absoluteFilePath(
+        QString::fromUtf8(kPortRomHashCacheFile));
 }
 
 QString RetroBackend::gameCacheRootKey() const
@@ -987,10 +1262,72 @@ QString RetroBackend::gameCacheRootKey() const
     return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
 }
 
+QString RetroBackend::gamePortManifestKey() const
+{
+    static constexpr char separator[] = "\0";
+    const QString root = QDir(m_appRoot).absoluteFilePath(
+        QStringLiteral("modules/retro/ports"));
+    const QDir directory(root);
+    const QStringList files = directory.entryList(
+        {QStringLiteral("*.json")}, QDir::Files | QDir::Readable, QDir::Name);
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    for (const QString &name : files) {
+        QFile file(directory.absoluteFilePath(name));
+        if (!file.open(QIODevice::ReadOnly))
+            continue;
+        hash.addData(name.toUtf8());
+        hash.addData(QByteArrayView(separator, 1));
+        hash.addData(file.readAll());
+        hash.addData(QByteArrayView(separator, 1));
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+QHash<QString, QByteArray> RetroBackend::loadPortRomHashCache() const
+{
+    QHash<QString, QByteArray> result;
+    QFile file(portRomHashCachePath());
+    if (!file.open(QIODevice::ReadOnly))
+        return result;
+
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject())
+        return result;
+    const QJsonObject object = document.object();
+    if (object.size() > 8192)
+        return result;
+    for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
+        const QByteArray value = it.value().toString().toLatin1().toLower();
+        if (!value.isEmpty())
+            result.insert(it.key(), value);
+    }
+    return result;
+}
+
+bool RetroBackend::savePortRomHashCache(
+    const QHash<QString, QByteArray> &cache) const
+{
+    if (cache.size() > 8192)
+        return false;
+    QJsonObject object;
+    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+        object.insert(it.key(), QString::fromLatin1(it.value()));
+
+    QDir().mkpath(m_dataRoot);
+    QSaveFile file(portRomHashCachePath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    return file.commit();
+}
+
 bool RetroBackend::gameCacheIsCurrent(const QVariantMap &cache) const
 {
     return cache.value(QStringLiteral("version")).toInt() == kGameCacheVersion
-        && cache.value(QStringLiteral("gamesRoot")).toString() == gameCacheRootKey();
+        && cache.value(QStringLiteral("gamesRoot")).toString() == gameCacheRootKey()
+        && cache.value(QStringLiteral("portManifestKey")).toString()
+            == gamePortManifestKey();
 }
 
 QVariantMap RetroBackend::loadGameCache() const
@@ -1033,6 +1370,7 @@ QVariantMap RetroBackend::buildGameCache() const
     cache[QStringLiteral("version")] = kGameCacheVersion;
     cache[QStringLiteral("createdAt")] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     cache[QStringLiteral("gamesRoot")] = gameCacheRootKey();
+    cache[QStringLiteral("portManifestKey")] = gamePortManifestKey();
 
     QVariantList systems;
     QVariantMap gamesBySystem;
@@ -1062,6 +1400,8 @@ QVariantMap RetroBackend::buildGameCache() const
             gamesBySystem.insert(def.id, games);
         }
     }
+
+    appendPortsToCache(&systems, &gamesBySystem, localPortGames());
 
     cache[QStringLiteral("systems")] = systems;
     cache[QStringLiteral("games")] = gamesBySystem;
@@ -1094,6 +1434,27 @@ void RetroBackend::clearGameCache() const
     QFile::remove(gameCachePath());
 }
 
+void RetroBackend::startGameCacheBuild()
+{
+    if (m_gameCacheWatcher)
+        return;
+
+    auto *watcher = new QFutureWatcher<QVariantMap>(this);
+    m_gameCacheWatcher = watcher;
+    connect(watcher, &QFutureWatcher<QVariantMap>::finished, this,
+            [this, watcher]() {
+        const QVariantMap cache = watcher->result();
+        if (m_gameCacheWatcher == watcher)
+            m_gameCacheWatcher = nullptr;
+        watcher->deleteLater();
+        emit authStateChanged();
+        emit systemsLoaded(cache.value(QStringLiteral("systems")).toList());
+    });
+    watcher->setFuture(QtConcurrent::run([this]() {
+        return buildGameCache();
+    }));
+}
+
 QString RetroBackend::get_auth_state()
 {
     if (QDir(gamesRoot()).exists())
@@ -1120,6 +1481,37 @@ QVariantMap RetroBackend::get_setup_status()
     status["gamesRootExists"] = QDir(gamesRoot()).exists()
         || (desktopRetroNasCacheMode() && !loadGameCache().isEmpty());
     status["retroarchAvailable"] = !retroarchPath().isEmpty();
+    const QVariantMap existingCache = loadGameCache();
+    const QVariantList portGames = existingCache.value(QStringLiteral("games"))
+        .toMap().value(QString::fromUtf8(kPortsSystemId)).toList();
+    bool portsAvailable = !portGames.isEmpty();
+    bool portsReady = std::any_of(
+        portGames.cbegin(), portGames.cend(), [](const QVariant &value) {
+            return value.toMap().value(QStringLiteral("ready")).toBool();
+        });
+    if (!portsAvailable || !portsReady) {
+        for (const GamePortDefinition &port : GamePortCatalog::load(m_appRoot)) {
+            if (GamePortCatalog::executableNames(port).isEmpty())
+                continue;
+            const QString engine = GamePortCatalog::findEngine(
+                port, m_appRoot, m_dataRoot, configuredPortsPath());
+            if (engine.isEmpty())
+                continue;
+            portsAvailable = true;
+            for (const GamePortRomRequirement &requirement : port.romRequirements) {
+                if (QFileInfo::exists(GamePortCatalog::stagedRomPath(
+                        m_dataRoot, port, requirement.fileName))) {
+                    portsReady = true;
+                    break;
+                }
+            }
+            if (portsReady)
+                break;
+        }
+    }
+    status["portsAvailable"] = portsAvailable;
+    status["portsReady"] = portsReady;
+    status["portsPath"] = configuredPortsPath();
     status["running"] = isRunning();
     return status;
 }
@@ -1284,7 +1676,7 @@ void RetroBackend::mount_retronas(const QString &host,
 
     if (ready) {
         setDesktopRetroNasCacheMode(false);
-        buildGameCache();
+        clearGameCache();
         emit authStateChanged();
         emit mountFinished(true, QStringLiteral("RETRONAS READY"));
         return;
@@ -1316,7 +1708,7 @@ void RetroBackend::mount_retronas(const QString &host,
     Q_UNUSED(password)
     const bool ready = QDir(gamesRoot()).exists();
     if (ready)
-        buildGameCache();
+        clearGameCache();
     emit mountFinished(ready,
                        ready
                            ? QStringLiteral("LOCAL ROM PATH READY")
@@ -1342,7 +1734,7 @@ void RetroBackend::mount_retronas(const QString &host,
 #ifndef Q_OS_LINUX
     const bool ready = QDir(gamesRoot()).exists();
     if (ready)
-        buildGameCache();
+        clearGameCache();
     emit mountFinished(ready,
                        ready
                            ? QStringLiteral("LOCAL ROM PATH READY")
@@ -1389,7 +1781,7 @@ void RetroBackend::mount_retronas(const QString &host,
     const QString output = QString::fromUtf8(process.readAll()).trimmed();
     const bool ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
     if (ok)
-        buildGameCache();
+        clearGameCache();
     emit authStateChanged();
     emit mountFinished(ok, ok
         ? QStringLiteral("RETRONAS READY")
@@ -1400,7 +1792,12 @@ void RetroBackend::mount_retronas(const QString &host,
 
 void RetroBackend::load_systems()
 {
-    emit systemsLoaded(cachedSystems());
+    const QVariantMap cache = loadGameCache();
+    if (!cache.isEmpty()) {
+        emit systemsLoaded(cache.value(QStringLiteral("systems")).toList());
+        return;
+    }
+    startGameCacheBuild();
 }
 
 void RetroBackend::load_games(const QString &systemId)
@@ -1425,9 +1822,8 @@ void RetroBackend::refresh_game_cache()
         return;
     }
 #endif
-    const QVariantMap cache = buildGameCache();
-    emit authStateChanged();
-    emit systemsLoaded(cache.value(QStringLiteral("systems")).toList());
+    clearGameCache();
+    startGameCacheBuild();
 }
 
 QVariantList RetroBackend::api_search_games(const QString &query, int limit)
@@ -1805,7 +2201,11 @@ void RetroBackend::finishDesktopRetroNasDownload(bool ok, const QString &error)
 
     const QString localPath = QDir(desktopRetroNasDownloadRoot()).absoluteFilePath(
         primaryPath);
-    launchLocalGame(systemId, localPath);
+    const QString portPrefix = QString::fromUtf8(kRemotePortSystemPrefix);
+    if (systemId.startsWith(portPrefix))
+        launchLocalPort(systemId.mid(portPrefix.size()), localPath);
+    else
+        launchLocalGame(systemId, localPath);
 #else
     Q_UNUSED(ok)
     Q_UNUSED(error)
@@ -1814,6 +2214,17 @@ void RetroBackend::finishDesktopRetroNasDownload(bool ok, const QString &error)
 
 void RetroBackend::launch_game(const QString &systemId, const QString &path)
 {
+    if (systemId == QLatin1String(kPortsSystemId)) {
+        QString portId;
+        QString romPath;
+        if (!parseGamePortVirtualPath(path, &portId, &romPath)) {
+            emit errorOccurred(QStringLiteral("INVALID GAME PORT ENTRY"));
+            return;
+        }
+        launch_port(portId, romPath);
+        return;
+    }
+
     const QString remoteRelativePath = desktopRetroNasRelativePath(path);
     if (!remoteRelativePath.isEmpty()) {
         startDesktopRetroNasDownload(systemId, remoteRelativePath);
@@ -1865,6 +2276,8 @@ void RetroBackend::launchLocalGame(const QString &systemId, const QString &path)
     }
 
     m_currentTitle = cleanGameTitle(gameInfo.fileName());
+    m_processLogName = QStringLiteral("retroarch");
+    m_processFailureMessage = QStringLiteral("RETROARCH PLAYBACK FAILED");
     qInfo("[RetroBackend] selected game: system=%s title=%s path=%s",
           qPrintable(systemId),
           qPrintable(m_currentTitle),
@@ -1874,7 +2287,7 @@ void RetroBackend::launchLocalGame(const QString &systemId, const QString &path)
     connect(m_process, &QProcess::readyRead, this, [this]() {
         const QByteArray out = m_process ? m_process->readAll() : QByteArray();
         if (!out.isEmpty())
-            qWarning("[retroarch] %s", out.trimmed().constData());
+            qWarning("[%s] %s", qPrintable(m_processLogName), out.trimmed().constData());
     });
     connect(m_process, &QProcess::started, this, [this]() {
         emit runningChanged(true);
@@ -1910,6 +2323,132 @@ void RetroBackend::launchLocalGame(const QString &systemId, const QString &path)
     qInfo("[RetroBackend] launching RetroArch: %s %s",
           qPrintable(bin), qPrintable(args.join(' ')));
     m_process->start(bin, args);
+}
+
+void RetroBackend::launch_port(const QString &portId, const QString &romPath)
+{
+    const QString remoteRelativePath = desktopRetroNasRelativePath(romPath);
+    if (!remoteRelativePath.isEmpty()) {
+        startDesktopRetroNasDownload(
+            QString::fromUtf8(kRemotePortSystemPrefix) + portId,
+            remoteRelativePath);
+        return;
+    }
+    launchLocalPort(portId, romPath);
+}
+
+void RetroBackend::launchLocalPort(const QString &portId, const QString &romPath)
+{
+    GamePortDefinition port;
+    bool found = false;
+    for (const GamePortDefinition &candidate : GamePortCatalog::load(m_appRoot)) {
+        if (candidate.id == portId) {
+            port = candidate;
+            found = true;
+            break;
+        }
+    }
+    if (!found || GamePortCatalog::executableNames(port).isEmpty()) {
+        emit errorOccurred(QStringLiteral("THIS GAME PORT IS NOT AVAILABLE ON THIS SYSTEM"));
+        return;
+    }
+
+    const QString engine = GamePortCatalog::findEngine(
+        port, m_appRoot, m_dataRoot, configuredPortsPath());
+    if (engine.isEmpty()) {
+        emit errorOccurred(QStringLiteral("PORT ENGINE NOT INSTALLED. SET PORT ENGINES PATH IN GAME CENTER SETTINGS"));
+        return;
+    }
+    if (romPath.trimmed().isEmpty()) {
+        emit errorOccurred(QStringLiteral("SUPPORTED ORIGINAL ROM NOT FOUND. REFRESH THE GAME LIST AFTER ADDING IT"));
+        return;
+    }
+
+    const QString userRoot = GamePortCatalog::portUserRoot(m_dataRoot, port);
+    const bool allowedRom = pathIsInside(romPath, gamesRoot())
+        || pathIsInside(romPath, userRoot)
+        || (desktopRetroNasCacheMode()
+            && lexicalPathIsInside(romPath, desktopRetroNasDownloadRoot()));
+    if (!allowedRom) {
+        emit errorOccurred(QStringLiteral("PORT ROM PATH IS OUTSIDE THE GAME LIBRARY"));
+        return;
+    }
+
+    QString stagedRom;
+    QString stageError;
+    if (!GamePortCatalog::stageRom(
+            port, romPath, m_dataRoot, &stagedRom, &stageError, engine)) {
+        emit errorOccurred(stageError.isEmpty()
+                               ? QStringLiteral("PORT ROM VALIDATION FAILED")
+                               : stageError);
+        return;
+    }
+
+    stop_game();
+
+    QDir().mkpath(userRoot);
+    m_currentTitle = port.title;
+    m_processLogName = QStringLiteral("game-port");
+    m_processFailureMessage = QStringLiteral("GAME PORT CLOSED WITH AN ERROR");
+    m_process = new QProcess(this);
+    m_process->setWorkingDirectory(QFileInfo(engine).absolutePath());
+    m_process->setProcessChannelMode(QProcess::MergedChannels);
+    connect(m_process, &QProcess::readyRead, this, [this]() {
+        const QByteArray out = m_process ? m_process->readAll() : QByteArray();
+        if (!out.isEmpty())
+            qWarning("[%s] %s", qPrintable(m_processLogName), out.trimmed().constData());
+    });
+    connect(m_process, &QProcess::started, this, [this]() {
+        emit runningChanged(true);
+        emit gameStarted(m_currentTitle);
+    });
+    connect(m_process,
+            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RetroBackend::onProcessFinished);
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("APP_ROOT"), m_appRoot);
+    env.insert(QStringLiteral("XDG_CONFIG_HOME"), QDir(userRoot).absoluteFilePath("config"));
+    env.insert(QStringLiteral("XDG_DATA_HOME"), QDir(userRoot).absoluteFilePath("data"));
+    env.insert(QStringLiteral("XDG_CACHE_HOME"), QDir(userRoot).absoluteFilePath("cache"));
+    env.insert(QStringLiteral("TATER_TUBE_PORT_ID"), port.id);
+    env.insert(QStringLiteral("TATER_TUBE_PORT_ENGINE_DIR"), QFileInfo(engine).absolutePath());
+    env.insert(QStringLiteral("TATER_TUBE_PORT_USER_ROOT"), userRoot);
+    env.insert(QStringLiteral("TATER_TUBE_PORT_ROM"), stagedRom);
+    env.remove(QStringLiteral("TATER_TUBE_CRT_WIDTH"));
+    env.remove(QStringLiteral("TATER_TUBE_CRT_HEIGHT"));
+#ifdef Q_OS_LINUX
+    // Native ports must not inherit the portable app's private library stack.
+    // Mixing those libraries with SteamOS system libraries can break otherwise
+    // compatible engines (for example, libcurl paired with the wrong libssh2).
+    env.insert(QStringLiteral("LD_LIBRARY_PATH"), QFileInfo(engine).absolutePath());
+#endif
+
+    const QSize compositeMode = activeCompositeDisplayMode();
+    if (compositeMode.isValid()) {
+        env.insert(QStringLiteral("TATER_TUBE_CRT_WIDTH"),
+                   QString::number(compositeMode.width()));
+        env.insert(QStringLiteral("TATER_TUBE_CRT_HEIGHT"),
+                   QString::number(compositeMode.height()));
+        qInfo("[RetroBackend] applying composite port mode: %dx%d",
+              compositeMode.width(), compositeMode.height());
+    }
+
+    m_headlessMode = detectHeadlessMode();
+    if (m_headlessMode) {
+        env.remove(QStringLiteral("DISPLAY"));
+        env.remove(QStringLiteral("WAYLAND_DISPLAY"));
+        prepareHeadlessLaunch();
+    } else {
+        env.remove(QStringLiteral("WAYLAND_DISPLAY"));
+    }
+    m_process->setProcessEnvironment(env);
+
+    const QStringList args = GamePortCatalog::launchArguments(
+        port, engine, stagedRom, userRoot, compositeMode);
+    qInfo("[RetroBackend] launching game port %s: %s %s",
+          qPrintable(port.id), qPrintable(engine), qPrintable(args.join(' ')));
+    m_process->start(engine, args);
 }
 
 void RetroBackend::stop_game()
@@ -2022,6 +2561,7 @@ void RetroBackend::onSettingChanged(const QString &moduleId, const QString &key,
     if (moduleId != QString::fromUtf8(kModuleId))
         return;
     if (key == QLatin1String("local_path")
+        || key == QLatin1String("ports_path")
         || key == QLatin1String("retronas_host")
         || key == QLatin1String("retronas_share")
         || key == QLatin1String("retronas_path")) {
@@ -2032,11 +2572,13 @@ void RetroBackend::onSettingChanged(const QString &moduleId, const QString &key,
 
 void RetroBackend::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    const QString logName = m_processLogName;
+    const QString failureMessage = m_processFailureMessage;
     QProcess *finished = m_process;
     if (finished) {
         const QByteArray remaining = finished->readAll();
         if (!remaining.isEmpty())
-            qWarning("[retroarch] %s", remaining.trimmed().constData());
+            qWarning("[%s] %s", qPrintable(logName), remaining.trimmed().constData());
         finished->deleteLater();
         m_process = nullptr;
     }
@@ -2046,9 +2588,12 @@ void RetroBackend::onProcessFinished(int exitCode, QProcess::ExitStatus exitStat
     emit gameFinished();
 
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-        qWarning("[RetroBackend] RetroArch exited with code %d", exitCode);
-        emit errorOccurred(QStringLiteral("RETROARCH PLAYBACK FAILED"));
+        qWarning("[RetroBackend] %s exited with code %d", qPrintable(logName), exitCode);
+        emit errorOccurred(failureMessage);
     }
+
+    m_processLogName = QStringLiteral("retroarch");
+    m_processFailureMessage = QStringLiteral("RETROARCH PLAYBACK FAILED");
 }
 
 void RetroBackend::onCoreInstallFinished(int exitCode, QProcess::ExitStatus exitStatus)

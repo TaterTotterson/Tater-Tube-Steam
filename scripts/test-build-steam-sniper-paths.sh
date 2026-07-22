@@ -19,6 +19,7 @@ output="$(
     STEAM_RETROARCH_BUNDLE="${repo_root}/scripts" \
     STEAM_YTDLP_BUNDLE="${repo_root}/packaging" \
     STEAM_RCLONE_BUNDLE="${external_dir}" \
+    STEAM_PORTS_BUNDLE="${repo_root}/modules/retro/ports" \
     STEAM_THIRD_PARTY_NOTICES_DIR="${repo_root}/assets" \
         "${repo_root}/scripts/build-steam-sniper.sh"
 )"
@@ -35,6 +36,7 @@ require_docker_arg "STEAM_MPV_BUNDLE=/src/assets"
 require_docker_arg "STEAM_MOONLIGHT_BUNDLE=/src/modules"
 require_docker_arg "STEAM_RETROARCH_BUNDLE=/src/scripts"
 require_docker_arg "STEAM_YTDLP_BUNDLE=/src/packaging"
+require_docker_arg "STEAM_PORTS_BUNDLE=/src/modules/retro/ports"
 require_docker_arg "STEAM_THIRD_PARTY_NOTICES_DIR=/src/assets"
 require_docker_arg "${external_dir}:${external_dir}:ro"
 require_docker_arg "STEAM_RCLONE_BUNDLE=${external_dir}"

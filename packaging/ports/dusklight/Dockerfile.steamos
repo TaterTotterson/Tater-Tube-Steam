@@ -1,0 +1,73 @@
+ARG SNIPER_BUILDER_IMAGE=tater-tube-steam-sniper-builder
+FROM ${SNIPER_BUILDER_IMAGE} AS builder
+
+ARG BUILD_JOBS=3
+
+USER root
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        gcc-14 \
+        g++-14 \
+        libasound2-dev \
+        libdbus-1-dev \
+        libdecor-0-dev \
+        libfreetype6-dev \
+        libglu1-mesa-dev \
+        libgtk-3-dev \
+        libncurses5-dev \
+        libpipewire-0.3-dev \
+        libpng-dev \
+        libpulse-dev \
+        libssl-dev \
+        libudev-dev \
+        libunwind-dev \
+        libusb-1.0-0-dev \
+        libvulkan-dev \
+        libwayland-dev \
+        libx11-xcb-dev \
+        libxcursor-dev \
+        libxi-dev \
+        libxinerama-dev \
+        libxkbcommon-dev \
+        libxrandr-dev \
+        libxss-dev \
+        nasm \
+        python3-markupsafe \
+        wayland-protocols \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/build-dusklight-port.sh /tmp/build-dusklight-port.sh
+COPY packaging/ports/dusklight/tater-tube.patch /tmp/tater-tube.patch
+
+RUN CC=gcc-14 CXX=g++-14 \
+    DUSKLIGHT_DAWN_PROVIDER=vendor \
+    DUSKLIGHT_PATCH=/tmp/tater-tube.patch \
+    DUSKLIGHT_BUILD_ROOT=/build/dusklight \
+    DUSKLIGHT_BUILD_JOBS="${BUILD_JOBS}" \
+    /tmp/build-dusklight-port.sh \
+        /opt/tater-tube-runtimes/ports/dusklight
+
+RUN appdir=/build/dusklight-appdir \
+    && port=/opt/tater-tube-runtimes/ports/dusklight \
+    && mkdir -p "${appdir}/usr/bin" \
+    && cp "${port}/dusklight-bin" "${appdir}/usr/bin/dusklight-bin" \
+    && linuxdeploy \
+        --appdir="${appdir}" \
+        --executable="${appdir}/usr/bin/dusklight-bin" \
+    && mkdir -p "${port}/lib" \
+    && cp -a "${appdir}/usr/lib/." "${port}/lib/" \
+    && cp "$(g++-14 -print-file-name=libstdc++.so.6)" "${port}/lib/" \
+    && cp "$(gcc-14 -print-file-name=libgcc_s.so.1)" "${port}/lib/" \
+    && LD_LIBRARY_PATH="${port}/lib" ldd "${port}/dusklight-bin" \
+        | tee /tmp/dusklight-ldd.txt \
+    && ! grep -q 'not found' /tmp/dusklight-ldd.txt \
+    && file "${port}/dusklight-bin"
+
+FROM scratch
+
+COPY --from=builder /opt/tater-tube-runtimes/ports \
+    /opt/tater-tube-runtimes/ports
+
+CMD ["/opt/tater-tube-runtimes/ports/dusklight/dusklight"]

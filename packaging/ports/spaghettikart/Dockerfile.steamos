@@ -1,0 +1,95 @@
+ARG SNIPER_BUILDER_IMAGE=tater-tube-steam-sniper-builder
+FROM ${SNIPER_BUILDER_IMAGE} AS builder
+
+ARG BUILD_JOBS=3
+
+USER root
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libglew-dev \
+        libogg-dev \
+        libopengl-dev \
+        libpng-dev \
+        libspdlog-dev \
+        libtinyxml2-dev \
+        libvorbis-dev \
+        libzip-dev \
+        lsb-release \
+        nlohmann-json3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bullseye's libzip package exports tool targets whose executables are absent.
+# Build the pinned upstream revision so all exported targets are complete.
+RUN curl -fL --retry 3 \
+        https://github.com/nih-at/libzip/releases/download/v1.10.1/libzip-1.10.1.tar.gz \
+        -o /tmp/libzip-1.10.1.tar.gz \
+    && echo "9669ae5dfe3ac5b3897536dc8466a874c8cf2c0e3b1fdd08d75b273884299363  /tmp/libzip-1.10.1.tar.gz" \
+        | sha256sum -c - \
+    && tar -xzf /tmp/libzip-1.10.1.tar.gz -C /tmp \
+    && cmake -S /tmp/libzip-1.10.1 -B /tmp/libzip-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DENABLE_COMMONCRYPTO=OFF \
+        -DENABLE_GNUTLS=OFF \
+        -DENABLE_MBEDTLS=OFF \
+        -DENABLE_OPENSSL=OFF \
+        -DBUILD_DOC=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_REGRESS=OFF \
+    && cmake --build /tmp/libzip-build --parallel "${BUILD_JOBS}" \
+    && cmake --install /tmp/libzip-build \
+    && rm -rf /tmp/libzip-1.10.1 /tmp/libzip-build /tmp/libzip-1.10.1.tar.gz
+
+RUN curl -fL --retry 3 \
+        https://github.com/leethomason/tinyxml2/archive/refs/tags/10.0.0.tar.gz \
+        -o /tmp/tinyxml2-10.0.0.tar.gz \
+    && echo "3bdf15128ba16686e69bce256cc468e76c7b94ff2c7f391cc5ec09e40bff3839  /tmp/tinyxml2-10.0.0.tar.gz" \
+        | sha256sum -c - \
+    && tar -xzf /tmp/tinyxml2-10.0.0.tar.gz -C /tmp \
+    && cmake -S /tmp/tinyxml2-10.0.0 -B /tmp/tinyxml2-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -Dtinyxml2_BUILD_TESTING=OFF \
+    && cmake --build /tmp/tinyxml2-build --parallel "${BUILD_JOBS}" \
+    && cmake --install /tmp/tinyxml2-build \
+    && rm -rf /tmp/tinyxml2-10.0.0 /tmp/tinyxml2-build /tmp/tinyxml2-10.0.0.tar.gz
+
+RUN curl -fL --retry 3 \
+        https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz \
+        -o /tmp/nlohmann-json-3.11.3.tar.gz \
+    && echo "0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406  /tmp/nlohmann-json-3.11.3.tar.gz" \
+        | sha256sum -c - \
+    && tar -xzf /tmp/nlohmann-json-3.11.3.tar.gz -C /tmp \
+    && cmake -S /tmp/json-3.11.3 -B /tmp/nlohmann-json-build -G Ninja \
+        -DJSON_BuildTests=OFF \
+    && cmake --install /tmp/nlohmann-json-build \
+    && rm -rf /tmp/json-3.11.3 /tmp/nlohmann-json-build /tmp/nlohmann-json-3.11.3.tar.gz
+
+COPY scripts/build-spaghettikart-port.sh /tmp/build-spaghettikart-port.sh
+COPY packaging/ports/spaghettikart/tater-tube.patch /tmp/tater-tube.patch
+
+RUN SPAGHETTIKART_PATCH=/tmp/tater-tube.patch \
+    SPAGHETTIKART_BUILD_ROOT=/build/spaghettikart \
+    SPAGHETTIKART_BUILD_JOBS="${BUILD_JOBS}" \
+    /tmp/build-spaghettikart-port.sh \
+        /opt/tater-tube-runtimes/ports/spaghettikart
+
+RUN appdir=/build/spaghettikart-appdir \
+    && port=/opt/tater-tube-runtimes/ports/spaghettikart \
+    && mkdir -p "${appdir}/usr/bin" \
+    && cp "${port}/Spaghettify" "${appdir}/usr/bin/Spaghettify" \
+    && linuxdeploy \
+        --appdir="${appdir}" \
+        --executable="${appdir}/usr/bin/Spaghettify" \
+    && mkdir -p "${port}/lib" \
+    && cp -a "${appdir}/usr/lib/." "${port}/lib/" \
+    && LD_LIBRARY_PATH="${port}/lib" ldd "${port}/Spaghettify" \
+        | tee /tmp/spaghettikart-ldd.txt \
+    && ! grep -q 'not found' /tmp/spaghettikart-ldd.txt \
+    && file "${port}/Spaghettify"
+
+FROM scratch
+
+COPY --from=builder /opt/tater-tube-runtimes/ports \
+    /opt/tater-tube-runtimes/ports
+
+CMD ["/opt/tater-tube-runtimes/ports/spaghettikart/spaghettikart"]

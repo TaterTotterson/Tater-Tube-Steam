@@ -50,6 +50,7 @@ for variable in \
     STEAM_RETROARCH_BUNDLE \
     STEAM_YTDLP_BUNDLE \
     STEAM_RCLONE_BUNDLE \
+    STEAM_PORTS_BUNDLE \
     STEAM_THIRD_PARTY_NOTICES_DIR; do
     value="${!variable:-}"
     if [ -z "${value}" ]; then

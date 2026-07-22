@@ -99,6 +99,7 @@ jobs:
           STEAM_RETROARCH_BUNDLE: ${{ github.workspace }}/out/steam-runtime/retroarch
           STEAM_YTDLP_BUNDLE: ${{ github.workspace }}/out/steam-runtime/yt-dlp
           STEAM_RCLONE_BUNDLE: ${{ github.workspace }}/out/steam-runtime/rclone
+          STEAM_PORTS_BUNDLE: ${{ github.workspace }}/out/steam-runtime/ports
           STEAM_THIRD_PARTY_NOTICES_DIR: ${{ github.workspace }}/out/steam-runtime/notices
           STEAM_REQUIRE_COMPLETE_RUNTIME: '1'
           STEAM_REQUIRE_PORTABLE_DEPOT: '1'
