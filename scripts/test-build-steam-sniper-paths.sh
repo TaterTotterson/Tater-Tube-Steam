@@ -46,4 +46,22 @@ if grep -Fq "STEAM_MPV_BUNDLE=${repo_root}/assets" <<< "${output}"; then
     exit 1
 fi
 
-echo "Steam sniper bundle path mapping OK."
+require_port_crt_patch() {
+    local port_id="$1"
+    local environment_prefix="$2"
+    local dockerfile="${repo_root}/packaging/ports/${port_id}/Dockerfile.steamos"
+
+    grep -Fq \
+        "COPY packaging/ports/${port_id}/crt-display.patch /tmp/crt-display.patch" \
+        "${dockerfile}"
+    grep -Fq \
+        "${environment_prefix}_CRT_PATCH=/tmp/crt-display.patch" \
+        "${dockerfile}"
+}
+
+require_port_crt_patch "2ship2harkinian" "TWO_SHIP"
+require_port_crt_patch "shipwright" "SHIPWRIGHT"
+require_port_crt_patch "spaghettikart" "SPAGHETTIKART"
+require_port_crt_patch "starship" "STARSHIP"
+
+echo "Steam sniper bundle paths and port patch inputs OK."

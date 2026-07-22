@@ -65,8 +65,10 @@ RUN curl -fL --retry 3 \
 
 COPY scripts/build-2ship2harkinian-port.sh /tmp/build-2ship2harkinian-port.sh
 COPY packaging/ports/2ship2harkinian/tater-tube.patch /tmp/tater-tube.patch
+COPY packaging/ports/2ship2harkinian/crt-display.patch /tmp/crt-display.patch
 
 RUN TWO_SHIP_PATCH=/tmp/tater-tube.patch \
+    TWO_SHIP_CRT_PATCH=/tmp/crt-display.patch \
     TWO_SHIP_BUILD_ROOT=/build/2ship2harkinian \
     TWO_SHIP_BUILD_JOBS="${BUILD_JOBS}" \
     /tmp/build-2ship2harkinian-port.sh \

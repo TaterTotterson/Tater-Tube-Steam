@@ -65,8 +65,10 @@ RUN curl -fL --retry 3 \
 
 COPY scripts/build-starship-port.sh /tmp/build-starship-port.sh
 COPY packaging/ports/starship/tater-tube.patch /tmp/tater-tube.patch
+COPY packaging/ports/starship/crt-display.patch /tmp/crt-display.patch
 
 RUN STARSHIP_PATCH=/tmp/tater-tube.patch \
+    STARSHIP_CRT_PATCH=/tmp/crt-display.patch \
     STARSHIP_BUILD_ROOT=/build/starship \
     STARSHIP_BUILD_JOBS="${BUILD_JOBS}" \
     /tmp/build-starship-port.sh \

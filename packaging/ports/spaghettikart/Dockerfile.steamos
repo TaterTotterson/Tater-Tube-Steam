@@ -66,8 +66,10 @@ RUN curl -fL --retry 3 \
 
 COPY scripts/build-spaghettikart-port.sh /tmp/build-spaghettikart-port.sh
 COPY packaging/ports/spaghettikart/tater-tube.patch /tmp/tater-tube.patch
+COPY packaging/ports/spaghettikart/crt-display.patch /tmp/crt-display.patch
 
 RUN SPAGHETTIKART_PATCH=/tmp/tater-tube.patch \
+    SPAGHETTIKART_CRT_PATCH=/tmp/crt-display.patch \
     SPAGHETTIKART_BUILD_ROOT=/build/spaghettikart \
     SPAGHETTIKART_BUILD_JOBS="${BUILD_JOBS}" \
     /tmp/build-spaghettikart-port.sh \

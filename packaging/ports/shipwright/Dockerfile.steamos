@@ -78,8 +78,10 @@ RUN curl -fL --retry 3 \
 
 COPY scripts/build-shipwright-port.sh /tmp/build-shipwright-port.sh
 COPY packaging/ports/shipwright/tater-tube.patch /tmp/tater-tube.patch
+COPY packaging/ports/shipwright/crt-display.patch /tmp/crt-display.patch
 
 RUN SHIPWRIGHT_PATCH=/tmp/tater-tube.patch \
+    SHIPWRIGHT_CRT_PATCH=/tmp/crt-display.patch \
     SHIPWRIGHT_BUILD_ROOT=/build/shipwright \
     SHIPWRIGHT_BUILD_JOBS="${BUILD_JOBS}" \
     /tmp/build-shipwright-port.sh \
