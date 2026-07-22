@@ -40,10 +40,12 @@ RUN apt-get update \
 
 COPY scripts/build-dusklight-port.sh /tmp/build-dusklight-port.sh
 COPY packaging/ports/dusklight/tater-tube.patch /tmp/tater-tube.patch
+COPY packaging/ports/dusklight/nod-rust-1.85.patch /tmp/nod-rust-1.85.patch
 
 RUN CC=gcc-14 CXX=g++-14 \
     DUSKLIGHT_DAWN_PROVIDER=vendor \
     DUSKLIGHT_PATCH=/tmp/tater-tube.patch \
+    DUSKLIGHT_NOD_PATCH=/tmp/nod-rust-1.85.patch \
     DUSKLIGHT_BUILD_ROOT=/build/dusklight \
     DUSKLIGHT_BUILD_JOBS="${BUILD_JOBS}" \
     /tmp/build-dusklight-port.sh \
