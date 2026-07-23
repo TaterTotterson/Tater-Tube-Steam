@@ -58,6 +58,7 @@ docker build \
 
 docker build \
     --platform linux/amd64 \
+    --build-arg "SNIPER_BUILDER_IMAGE=${SNIPER_BUILDER_IMAGE}" \
     -f "${REPO_ROOT}/packaging/ports/sm64coopdx/Dockerfile.steamos" \
     -t "${SM64_PORT_IMAGE}" \
     "${REPO_ROOT}"

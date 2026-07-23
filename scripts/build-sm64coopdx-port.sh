@@ -8,6 +8,7 @@ OUTPUT_DIR="${1:?Usage: build-sm64coopdx-port.sh OUTPUT_DIR}"
 UPSTREAM_URL="${SM64COOPDX_URL:-https://github.com/coop-deluxe/sm64coopdx.git}"
 UPSTREAM_REF="${SM64COOPDX_REF:-8cd6e5977d9f920d51ca71f2c61801d019ed79c6}"
 PATCH_FILE="${SM64COOPDX_PATCH:-${REPO_ROOT}/packaging/ports/sm64coopdx/exit-to-tater-tube.patch}"
+PLATFORM_PATCH_FILE="${SM64COOPDX_PLATFORM_PATCH:-}"
 BUILD_ROOT="${SM64COOPDX_BUILD_ROOT:-${TMPDIR:-/tmp}/tater-tube-sm64coopdx-build}"
 BUILD_JOBS="${SM64COOPDX_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
 SOURCE_DIR="${BUILD_ROOT}/source"
@@ -30,12 +31,31 @@ git -C "${SOURCE_DIR}" checkout --detach "${UPSTREAM_REF}"
 test "$(git -C "${SOURCE_DIR}" rev-parse HEAD)" = "${UPSTREAM_REF}"
 git -C "${SOURCE_DIR}" apply --check "${PATCH_FILE}"
 git -C "${SOURCE_DIR}" apply "${PATCH_FILE}"
+if [ -n "${PLATFORM_PATCH_FILE}" ]; then
+    if [ ! -f "${PLATFORM_PATCH_FILE}" ]; then
+        echo "sm64coopdx platform patch not found: ${PLATFORM_PATCH_FILE}" >&2
+        exit 1
+    fi
+    git -C "${SOURCE_DIR}" apply --check "${PLATFORM_PATCH_FILE}"
+    git -C "${SOURCE_DIR}" apply "${PLATFORM_PATCH_FILE}"
+fi
 
 BUILD_LOG="${BUILD_ROOT}/build.log"
+make_args=(
+    HANDHELD=1
+    DISCORD_SDK=0
+    EXTRA_CPP_FLAGS=-std=c++17
+    UPDATER=0
+)
+for variable in CC CXX LD EXTRA_LDFLAGS; do
+    value_variable="SM64COOPDX_${variable}"
+    value="${!value_variable:-}"
+    if [ -n "${value}" ]; then
+        make_args+=("${variable}=${value}")
+    fi
+done
 if ! make -C "${SOURCE_DIR}" -j"${BUILD_JOBS}" \
-        HANDHELD=1 \
-        DISCORD_SDK=0 \
-        UPDATER=0 >"${BUILD_LOG}" 2>&1; then
+        "${make_args[@]}" >"${BUILD_LOG}" 2>&1; then
     echo "sm64coopdx build failed; final compiler output:" >&2
     tail -n 160 "${BUILD_LOG}" >&2
     exit 1
@@ -59,7 +79,8 @@ cat > "${OUTPUT_DIR}/SOURCE.txt" <<EOF
 sm64coopdx ${UPSTREAM_REF}
 Source: ${UPSTREAM_URL}
 Tater Tube patch: exit-to-tater-tube.patch
-Build options: HANDHELD=1 DISCORD_SDK=0 UPDATER=0
+Build options: HANDHELD=1 DISCORD_SDK=0 EXTRA_CPP_FLAGS=-std=c++17 UPDATER=0
+Platform compatibility patch: ${PLATFORM_PATCH_FILE:-none}
 No ROM, extracted ROM asset, BIOS, or Nintendo-owned game data is included.
 EOF
 

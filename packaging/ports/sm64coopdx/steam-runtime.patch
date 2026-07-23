@@ -1,0 +1,8 @@
+diff --git a/Makefile b/Makefile
+index 218b77d2..6458f81d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1515,2 +1515,2 @@ else
+-	$(V)$(LD) $(PROF_FLAGS) -L $(BUILD_DIR) -o $@ $(O_FILES) $(ULTRA_O_FILES) $(GODDARD_O_FILES) $(LDFLAGS)
++	$(V)$(LD) $(PROF_FLAGS) -L $(BUILD_DIR) -o $@ $(O_FILES) $(ULTRA_O_FILES) $(GODDARD_O_FILES) $(LDFLAGS) $(EXTRA_LDFLAGS)
+ endif

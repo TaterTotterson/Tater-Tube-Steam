@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 IMAGE_NAME="${STEAM_SNIPER_BUILDER_IMAGE:-tater-tube-steam-sniper-builder}"
 SNIPER_IMAGE="${STEAM_SNIPER_IMAGE:-registry.gitlab.steamos.cloud/steamrt/sniper/sdk@sha256:2969e5a47146a6494c01d953cd818b1d62712f42f9e54c4809d7a3aa8dc276ce}"
 SOURCE_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+RUNTIME_ROOT="${STEAM_RUNTIME_ROOT:-${REPO_ROOT}/out/steam-runtime}"
 if git -C "${REPO_ROOT}" diff --quiet \
         && git -C "${REPO_ROOT}" diff --cached --quiet; then
     SOURCE_STATE=clean
@@ -17,6 +18,18 @@ fi
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker is required to build in the Steam sniper SDK." >&2
     exit 1
+fi
+
+# Use the standard fetched/built runtime directory automatically. Individual
+# variables still take precedence for development and validation work.
+if [ -d "${RUNTIME_ROOT}" ]; then
+    : "${STEAM_MPV_BUNDLE:=${RUNTIME_ROOT}/mpv}"
+    : "${STEAM_MOONLIGHT_BUNDLE:=${RUNTIME_ROOT}/moonlight-sdl}"
+    : "${STEAM_RETROARCH_BUNDLE:=${RUNTIME_ROOT}/retroarch}"
+    : "${STEAM_YTDLP_BUNDLE:=${RUNTIME_ROOT}/yt-dlp}"
+    : "${STEAM_RCLONE_BUNDLE:=${RUNTIME_ROOT}/rclone}"
+    : "${STEAM_PORTS_BUNDLE:=${RUNTIME_ROOT}/ports}"
+    : "${STEAM_THIRD_PARTY_NOTICES_DIR:=${RUNTIME_ROOT}/notices}"
 fi
 
 docker build \

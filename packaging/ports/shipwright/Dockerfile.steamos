@@ -96,12 +96,18 @@ RUN appdir=/build/shipwright-appdir \
         --executable="${appdir}/usr/bin/soh.elf" \
     && mkdir -p "${port}/lib" \
     && cp -a "${appdir}/usr/lib/." "${port}/lib/" \
+    && cp -a /usr/local/lib/libzip.so.5* "${port}/lib/" \
+    && patchelf --set-rpath '$ORIGIN/../../lib' \
+        "${port}/assets/extractor/ZAPD.out" \
     && sdl3="$(ldconfig -p | awk '$1 == "libSDL3.so.0" && /x86-64/ { print $NF; exit }')" \
     && test -n "${sdl3}" \
     && cp -L "${sdl3}" "${port}/lib/libSDL3.so.0" \
     && LD_LIBRARY_PATH="${port}/lib" ldd "${port}/soh.elf" \
         | tee /tmp/shipwright-ldd.txt \
     && ! grep -q 'not found' /tmp/shipwright-ldd.txt \
+    && LD_LIBRARY_PATH="${port}/lib" ldd "${port}/assets/extractor/ZAPD.out" \
+        | tee /tmp/shipwright-zapd-ldd.txt \
+    && ! grep -q 'not found' /tmp/shipwright-zapd-ldd.txt \
     && file "${port}/soh.elf" "${port}/assets/extractor/ZAPD.out"
 
 FROM scratch

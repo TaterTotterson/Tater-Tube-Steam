@@ -86,12 +86,18 @@ RUN appdir=/build/2ship-appdir \
         --executable="${appdir}/usr/bin/2s2h.elf" \
     && mkdir -p "${port}/lib" \
     && cp -a "${appdir}/usr/lib/." "${port}/lib/" \
+    && cp -a /usr/local/lib/libzip.so.5* "${port}/lib/" \
+    && patchelf --set-rpath '$ORIGIN/../../lib' \
+        "${port}/assets/extractor/ZAPD.out" \
     && sdl3="$(ldconfig -p | awk '$1 == "libSDL3.so.0" && /x86-64/ { print $NF; exit }')" \
     && test -n "${sdl3}" \
     && cp -L "${sdl3}" "${port}/lib/libSDL3.so.0" \
     && LD_LIBRARY_PATH="${port}/lib" ldd "${port}/2s2h.elf" \
         | tee /tmp/2ship-ldd.txt \
     && ! grep -q 'not found' /tmp/2ship-ldd.txt \
+    && LD_LIBRARY_PATH="${port}/lib" ldd "${port}/assets/extractor/ZAPD.out" \
+        | tee /tmp/2ship-zapd-ldd.txt \
+    && ! grep -q 'not found' /tmp/2ship-zapd-ldd.txt \
     && file "${port}/2s2h.elf" "${port}/assets/extractor/ZAPD.out"
 
 FROM scratch

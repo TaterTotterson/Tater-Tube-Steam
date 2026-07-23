@@ -1,6 +1,9 @@
-FROM ubuntu:22.04 AS builder
+ARG SNIPER_BUILDER_IMAGE=tater-tube-steam-sniper-builder
+FROM ${SNIPER_BUILDER_IMAGE} AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+
+USER root
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -8,17 +11,23 @@ RUN apt-get update \
         bsdextrautils \
         ca-certificates \
         git \
-        libcurl4-openssl-dev \
+        libcurl4-gnutls-dev \
         libglew-dev \
-        libsdl2-dev \
+        libsdl2-compat-dev \
         python3 \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY scripts/build-sm64coopdx-port.sh /tmp/build-sm64coopdx-port.sh
 COPY packaging/ports/sm64coopdx/exit-to-tater-tube.patch /tmp/exit-to-tater-tube.patch
+COPY packaging/ports/sm64coopdx/steam-runtime.patch /tmp/steam-runtime.patch
 
 RUN SM64COOPDX_PATCH=/tmp/exit-to-tater-tube.patch \
+    SM64COOPDX_PLATFORM_PATCH=/tmp/steam-runtime.patch \
+    SM64COOPDX_CC=gcc-14 \
+    SM64COOPDX_CXX=g++-14 \
+    SM64COOPDX_LD=g++-14 \
+    SM64COOPDX_EXTRA_LDFLAGS='-static-libstdc++ -static-libgcc -lrt' \
     SM64COOPDX_BUILD_ROOT=/build/sm64coopdx \
     /tmp/build-sm64coopdx-port.sh \
         /opt/tater-tube-runtimes/ports/sm64coopdx

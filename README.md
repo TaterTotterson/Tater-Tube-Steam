@@ -144,9 +144,11 @@ Search results return launch IDs such as `vod:movie:...`, `vod:show:...`, and `g
 ## Install
 
 The public Steam build is still in pre-release testing. Linux developers can
-create the same staged depot through Valve's Steam Linux Runtime 3.0 SDK:
+fetch the checksum-pinned runtimes and create the same staged depot through
+Valve's Steam Linux Runtime 3.0 SDK:
 
 ```bash
+./scripts/fetch-steam-runtime-bundle.sh out/steam-runtime
 ./scripts/build-steam-sniper.sh
 ```
 

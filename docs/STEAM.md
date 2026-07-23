@@ -28,7 +28,7 @@ the shared application and QML module code:
 
 ## Build
 
-The reproducible release path builds inside Valve's official Steam Linux
+The release path builds the application inside Valve's official Steam Linux
 Runtime 3.0 (sniper) SDK image. The image is digest-pinned and installs a
 digest-pinned Qt and linuxdeploy toolchain:
 
@@ -77,15 +77,26 @@ LINUXDEPLOY=/tools/linuxdeploy \
 ./scripts/build-steam-linux.sh
 ```
 
-The pinned official x86-64 rclone and yt-dlp bundles can be prepared in a
-sibling runtime directory:
+Tagged releases download the immutable archive and SHA-256 recorded in
+`packaging/steam/runtime-bundle.lock`. This prevents unchanged native engines
+and cores from being rebuilt for every application release.
+
+When an upstream runtime, port engine, core, toolchain, patch, or ABI changes,
+build and package a new bundle locally:
 
 ```bash
-./scripts/prepare-steam-static-tools.sh ../Tater-Tube-Steam-Runtime
+./scripts/build-steam-runtimes.sh out/steam-runtime
+./scripts/prepare-steam-static-tools.sh out/steam-runtime
+./scripts/package-steam-runtime-bundle.sh
 ```
 
-The script verifies release-asset SHA-256 hashes and records the versions,
-source URLs, and license notices.
+Publish the resulting archive as a new, never-overwritten GitHub Release asset,
+then update the lock to its tag, filename, and SHA-256. The fetch script verifies
+the archive before extraction:
+
+```bash
+./scripts/fetch-steam-runtime-bundle.sh out/steam-runtime
+```
 
 Build mpv, Moonlight, RetroArch, the approved x86-64 core bundle, and the
 patched native port engines:
@@ -96,8 +107,9 @@ patched native port engines:
 
 The build pins source revisions for mpv, FFmpeg, libplacebo, Moonlight,
 RetroArch, and every core. Approved cores are written to `retroarch/cores`.
-sm64coopdx is built from its pinned v1.5.1 commit in an Ubuntu 22.04 container,
-with the Tater Tube exit-menu patch, and is written to `ports/sm64coopdx`.
+sm64coopdx is built from its pinned v1.5.1 commit in the Steam Runtime 3 SDK,
+with the Tater Tube exit-menu and Steam compatibility patches, and is written
+to `ports/sm64coopdx`.
 2 Ship 2 Harkinian is built from pinned 4.0.2 source in the Steam Runtime
 builder and is written to `ports/2ship2harkinian`. Its patch automatically uses
 the ROM Game Center has validated, keeps the generated `mm.o2r` under the

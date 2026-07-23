@@ -84,13 +84,8 @@ jobs:
           sudo apt-get install -y cmake curl unzip zstd
           docker version
 
-      - name: Build bundled desktop runtimes and approved cores
-        env:
-          STEAM_RUNTIME_BUILD_JOBS: '2'
-        run: ./scripts/build-steam-runtimes.sh "${STEAM_RUNTIME_ROOT}"
-
-      - name: Fetch pinned static tools
-        run: ./scripts/prepare-steam-static-tools.sh "${STEAM_RUNTIME_ROOT}"
+      - name: Fetch pinned desktop runtime bundle
+        run: ./scripts/fetch-steam-runtime-bundle.sh "${STEAM_RUNTIME_ROOT}"
 
       - name: Build complete portable Steam depot
         env:
