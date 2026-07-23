@@ -9,6 +9,7 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -16,6 +17,7 @@
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QScreen>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -70,6 +72,96 @@ QSize activeCompositeDisplayMode()
     }
 #endif
     return {};
+}
+
+QSize activeWideDisplayMode()
+{
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return {};
+
+    const QSize size = screen->size();
+    if (size.width() < 640 || size.height() < 480
+        || size.width() * 2 <= size.height() * 3) {
+        return {};
+    }
+    return size;
+}
+
+QString managedPortConfigName(const QString &portId)
+{
+    if (portId == QLatin1String("2ship2harkinian"))
+        return QStringLiteral("2ship2harkinian.json");
+    if (portId == QLatin1String("shipwright"))
+        return QStringLiteral("shipofharkinian.json");
+    if (portId == QLatin1String("spaghettikart"))
+        return QStringLiteral("spaghettify.cfg.json");
+    if (portId == QLatin1String("starship"))
+        return QStringLiteral("starship.cfg.json");
+    return {};
+}
+
+void prepareManagedPortConfig(const QString &portId,
+                              const QString &userRoot,
+                              const QSize &wideDisplayMode)
+{
+    const QString configName = managedPortConfigName(portId);
+    if (configName.isEmpty())
+        return;
+
+    const QString configPath = QDir(userRoot).absoluteFilePath(configName);
+    QJsonObject root;
+    QFile input(configPath);
+    if (input.exists()) {
+        if (!input.open(QIODevice::ReadOnly))
+            return;
+        QJsonParseError parseError;
+        const QJsonDocument document = QJsonDocument::fromJson(input.readAll(), &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject())
+            return;
+        root = document.object();
+    }
+
+    QJsonObject window = root.value(QStringLiteral("Window")).toObject();
+    bool changed = false;
+    const QString audioBackend =
+        window.value(QStringLiteral("AudioBackend")).toString().trimmed().toLower();
+    if (audioBackend.isEmpty() || audioBackend == QLatin1String("null")) {
+        window.insert(QStringLiteral("AudioBackend"), QStringLiteral("sdl"));
+        changed = true;
+    }
+
+    if (wideDisplayMode.isValid()) {
+        QJsonObject fullscreen =
+            window.value(QStringLiteral("Fullscreen")).toObject();
+        if (!fullscreen.contains(QStringLiteral("Enabled"))) {
+            fullscreen.insert(QStringLiteral("Enabled"), true);
+            changed = true;
+        }
+        if (!fullscreen.contains(QStringLiteral("Width"))) {
+            fullscreen.insert(QStringLiteral("Width"), wideDisplayMode.width());
+            changed = true;
+        }
+        if (!fullscreen.contains(QStringLiteral("Height"))) {
+            fullscreen.insert(QStringLiteral("Height"), wideDisplayMode.height());
+            changed = true;
+        }
+        window.insert(QStringLiteral("Fullscreen"), fullscreen);
+    }
+
+    if (!changed)
+        return;
+
+    root.insert(QStringLiteral("Window"), window);
+    QDir().mkpath(userRoot);
+    QSaveFile output(configPath);
+    if (!output.open(QIODevice::WriteOnly))
+        return;
+    output.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    if (output.commit()) {
+        qInfo("[RetroBackend] updated managed port defaults: %s",
+              qPrintable(configPath));
+    }
 }
 
 QString normalizedRemotePath(QString path)
@@ -2425,6 +2517,9 @@ void RetroBackend::launchLocalPort(const QString &portId, const QString &romPath
 #endif
 
     const QSize compositeMode = activeCompositeDisplayMode();
+    const QSize wideDisplayMode =
+        compositeMode.isValid() ? QSize() : activeWideDisplayMode();
+    prepareManagedPortConfig(port.id, userRoot, wideDisplayMode);
     if (compositeMode.isValid()) {
         env.insert(QStringLiteral("TATER_TUBE_CRT_WIDTH"),
                    QString::number(compositeMode.width()));
