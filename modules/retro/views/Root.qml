@@ -104,12 +104,27 @@ FocusScope {
         return slash < 0 ? "" : value.substring(0, slash)
     }
 
-    function compareRows(left, right) {
-        var a = ((left.title || "") + "").toUpperCase()
-        var b = ((right.title || "") + "").toUpperCase()
+    function compareText(left, right) {
+        var a = ((left || "") + "").toUpperCase()
+        var b = ((right || "") + "").toUpperCase()
         if (a < b) return -1
         if (a > b) return 1
         return 0
+    }
+
+    function compareRows(left, right) {
+        return compareText(left.title, right.title)
+    }
+
+    function sortedItems(items, key) {
+        var result = []
+        var source = items || []
+        for (var i = 0; i < source.length; i++)
+            result.push(source[i])
+        result.sort(function(left, right) {
+            return compareText((left || {})[key], (right || {})[key])
+        })
+        return result
     }
 
     function buildGameRows() {
@@ -476,7 +491,7 @@ FocusScope {
 
         function onSystemsLoaded(items) {
             scanningLibrary = false
-            systems = items || []
+            systems = sortedItems(items, "label")
             if (systems.length === 0) {
                 mode = "message"
                 statusText = "NO SUPPORTED ROM FOLDERS"
@@ -489,7 +504,7 @@ FocusScope {
 
         function onGamesLoaded(items) {
             scanningLibrary = false
-            games = items || []
+            games = sortedItems(items, "title")
             currentGameFolder = ""
             buildGameRows()
             if (gameRows.length === 0) {

@@ -1,15 +1,12 @@
 {
-  "version": "v1.8.0",
-  "app_version": "1.8.0",
+  "version": "v1.8.2",
+  "app_version": "1.8.2",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
   "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube-Steam/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.8.0/Tater-Tube-Steam-v1.8.0-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.8.0.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.8.2/Tater-Tube-Steam-v1.8.2-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.8.2.tar.gz",
   "notes": [
-    "Adds a Game Center Ports library for Super Mario 64 Coop Deluxe, 2 Ship 2 Harkinian, Ship of Harkinian, SpaghettiKart, Starship, and Dusklight.",
-    "Builds and bundles the approved open-source port engines without including ROMs or copyrighted game data.",
-    "Finds and validates user-owned game files through RetroNAS, including on-demand desktop caching and a responsive Game Center loading screen.",
-    "Adds controller-friendly return-to-Tater-Tube integration while preserving native SteamOS display behavior."
+    "Sorts every Game Center system and game list alphabetically, including Ports."
   ]
 }
