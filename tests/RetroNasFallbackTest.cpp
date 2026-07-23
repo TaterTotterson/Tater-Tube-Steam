@@ -233,6 +233,6 @@ private slots:
     }
 };
 
-QTEST_MAIN(RetroNasFallbackTest)
+QTEST_GUILESS_MAIN(RetroNasFallbackTest)
 
 #include "RetroNasFallbackTest.moc"

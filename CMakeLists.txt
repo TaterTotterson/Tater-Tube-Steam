@@ -236,6 +236,7 @@ if(BUILD_TESTING AND TATER_TUBE_STEAM AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(retronas-fallback-test PRIVATE
         Qt6::Core
         Qt6::Concurrent
+        Qt6::Gui
         Qt6::Test
         ${Libdrm_LIBRARIES}
     )
