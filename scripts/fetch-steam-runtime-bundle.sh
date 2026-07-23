@@ -50,7 +50,7 @@ for required_path in \
     ports/2ship2harkinian/2s2h.elf \
     ports/shipwright/soh.elf \
     ports/spaghettikart/Spaghettify \
-    ports/starship/Starship \
+    ports/starship/starship-bin \
     ports/dusklight/dusklight-bin \
     yt-dlp/bin/yt-dlp \
     rclone/bin/rclone; do

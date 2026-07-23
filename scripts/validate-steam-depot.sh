@@ -65,7 +65,7 @@ runtime_paths=(
     "usr/share/240mp/vendor/ports/spaghettikart/spaghettikart"
     "usr/share/240mp/vendor/ports/spaghettikart/Spaghettify"
     "usr/share/240mp/vendor/ports/starship/starship"
-    "usr/share/240mp/vendor/ports/starship/Starship"
+    "usr/share/240mp/vendor/ports/starship/starship-bin"
     "usr/share/240mp/vendor/ports/dusklight/dusklight"
     "usr/share/240mp/vendor/ports/dusklight/dusklight-bin"
 )
