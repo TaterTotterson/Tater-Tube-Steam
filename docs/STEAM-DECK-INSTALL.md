@@ -1,7 +1,7 @@
 # Install Tater Tube on Steam Deck
 
-The complete Linux build can be installed as a non-Steam application without
-using the Steam Store. It includes Game Center, RetroNAS support, RetroArch,
+The complete Linux build is distributed through GitHub and installs as a
+non-Steam application. It includes Game Center, RetroNAS support, RetroArch,
 the bundled cores, PC Link, and the native game-port engines.
 
 ## Recommended installation
@@ -50,8 +50,13 @@ and attaches the included artwork to it.
 
 ## Updating
 
-Run `Install-Tater-Tube.desktop` again. The installer replaces only the
-application under:
+Open **Settings > System > Check For Updates** inside Tater Tube. When a newer
+GitHub release is available, choose **Install Update**. Tater Tube downloads and
+verifies the release, preserves user data, and restarts into the new version.
+
+Installations older than the built-in updater can run
+`Install-Tater-Tube.desktop` again once to enable it. The installer replaces
+only the application under:
 
 ```text
 ~/.local/share/tater-tube/app

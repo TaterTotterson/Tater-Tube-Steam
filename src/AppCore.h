@@ -10,6 +10,7 @@
 class QQmlContext;
 class QNetworkAccessManager;
 class QNetworkReply;
+class QProcess;
 class QTimer;
 
 struct ModuleEntry {
@@ -105,6 +106,7 @@ signals:
     void moduleErrorOccurred(const QString &moduleId, const QString &message);
     void moduleAuthStateChanged(const QString &moduleId);
     void updateCheckFinished(const QVariantMap &result);
+    void updateInstallProgress(const QString &message, const QString &detail);
     void updateInstallFinished(const QVariantMap &result);
     void bluetoothScanFinished(const QVariantMap &result);
     void bluetoothActionFinished(const QString &action, const QVariantMap &result);
@@ -126,6 +128,8 @@ private:
     void saveConfig(const QJsonObject &config) const;
     QString moduleIdForBackend(QObject *backend) const;
     QString updateManifestUrl() const;
+    QString desktopUpdateInstallerPath() const;
+    QString desktopLauncherPath() const;
     bool canInstallUpdates() const;
     QString taterServerApiUrl(const QString &path) const;
     QString taterServerToken() const;
@@ -142,6 +146,8 @@ private:
     QList<ModuleEntry> m_modules;
     QMap<QString, QObject*> m_backends;
     QNetworkAccessManager *m_updateNetwork = nullptr;
+    QProcess *m_updateInstallerProcess = nullptr;
+    QByteArray m_updateInstallerOutput;
     QTimer *m_taterRecommendationsTimer = nullptr;
     QTimer *m_taterRecommendationsRetryTimer = nullptr;
     QTimer *m_taterNarrationPollTimer = nullptr;

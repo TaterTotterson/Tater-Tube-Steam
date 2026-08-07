@@ -6,6 +6,7 @@ readonly REPOSITORY="TaterTotterson/Tater-Tube-Steam"
 readonly DEFAULT_RELEASE_ASSET_BASE="https://github.com/${REPOSITORY}/releases/latest/download"
 
 ADD_TO_STEAM="auto"
+SHOW_DIALOGS="yes"
 RELEASE_ASSET_BASE="${TATER_TUBE_RELEASE_ASSET_BASE:-${DEFAULT_RELEASE_ASSET_BASE}}"
 INSTALL_BASE="${TATER_TUBE_INSTALL_BASE:-${XDG_DATA_HOME:-${HOME}/.local/share}/tater-tube}"
 BIN_DIR="${TATER_TUBE_BIN_DIR:-${HOME}/.local/bin}"
@@ -18,7 +19,7 @@ DESKTOP_FILE="${APPLICATIONS_DIR}/com.tatertotterson.TaterTube.desktop"
 
 usage() {
     cat <<'EOF'
-Usage: install-steam-deck.sh [--add-to-steam|--no-add-to-steam]
+Usage: install-steam-deck.sh [--add-to-steam|--no-add-to-steam|--in-app-update]
 
 Installs or updates Tater Tube under the current user's home directory. The
 default install does not require sudo and preserves settings in
@@ -27,6 +28,7 @@ default install does not require sudo and preserves settings in
 Options:
   --add-to-steam     Ask Steam to add the installed launcher even on an update.
   --no-add-to-steam  Do not ask Steam to add a non-Steam shortcut.
+  --in-app-update    Update an existing installation without desktop dialogs.
   -h, --help         Show this help.
 
 Test/advanced environment variables:
@@ -46,6 +48,10 @@ while [ "$#" -gt 0 ]; do
         --no-add-to-steam)
             ADD_TO_STEAM="no"
             ;;
+        --in-app-update)
+            ADD_TO_STEAM="no"
+            SHOW_DIALOGS="no"
+            ;;
         -h|--help)
             usage
             exit 0
@@ -61,7 +67,8 @@ done
 
 die() {
     echo "ERROR: $*" >&2
-    if command -v kdialog >/dev/null 2>&1 \
+    if [ "${SHOW_DIALOGS}" = "yes" ] \
+            && command -v kdialog >/dev/null 2>&1 \
             && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
         kdialog --title "Tater Tube Installer" --error "$*" >/dev/null 2>&1 || true
     fi
@@ -281,8 +288,8 @@ fi
 rm -rf -- "${PREVIOUS_ARTWORK}"
 
 launcher_tmp="${LAUNCHER}.tmp.$$"
-printf '#!/usr/bin/env bash\nset -euo pipefail\nexec %q "$@"\n' \
-    "${APP_DIR}/launch-tater-tube.sh" > "${launcher_tmp}"
+printf '#!/usr/bin/env bash\nset -euo pipefail\nexport TATER_TUBE_LAUNCHER=%q\nexec %q "$@"\n' \
+    "${LAUNCHER}" "${APP_DIR}/launch-tater-tube.sh" > "${launcher_tmp}"
 chmod 0755 "${launcher_tmp}"
 mv -- "${launcher_tmp}" "${LAUNCHER}"
 
@@ -479,7 +486,8 @@ Return to Gaming Mode and open Library > Non-Steam. If Steam Deck buttons do not
 
 echo
 echo "${message}"
-if command -v kdialog >/dev/null 2>&1 \
+if [ "${SHOW_DIALOGS}" = "yes" ] \
+        && command -v kdialog >/dev/null 2>&1 \
         && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
     kdialog --title "Tater Tube Installer" --msgbox "${message}" >/dev/null 2>&1 || true
 fi

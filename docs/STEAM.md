@@ -35,7 +35,9 @@ the shared application and QML module code:
   cache. Referenced CUE/BIN and M3U files are fetched together. A user-selected
   local ROM folder remains available as a second fallback.
 - The Pi-only RetroArch core installer is not exposed.
-- Tater Tube's self-updater is disabled; Steam owns app updates.
+- Manual GitHub installations can update from **Settings > System > Check For
+  Updates**. The user-level updater verifies the release, preserves application
+  data, atomically replaces the portable app, and restarts Tater Tube.
 - Pi service, SSH, Bluetooth-service, and Argon fan controls are not exposed.
   Controller mapping remains available; controller pairing is handled by Steam.
 - The companion HTTP API is disabled by default. A user can opt in with
@@ -59,11 +61,11 @@ For a fast compile-only development build inside any x86_64 Linux environment:
 ./scripts/build-steam-linux.sh
 ```
 
-The staged depot is written to `out/steam/depot`. In Steamworks, set the Linux
-launch executable to:
+The staged portable application is written to `out/steam/depot`. Its Linux
+launch executable is:
 
 ```text
-./launch-tater-tube.sh
+launch-tater-tube.sh
 ```
 
 For a portable depot outside the sniper builder, set `LINUXDEPLOY` to the
@@ -137,14 +139,14 @@ file picker, keeps `oot.o2r` or `oot-mq.o2r` in writable user data, and labels
 its power action **Exit to Tater Tube**. The engine bundle includes its pinned
 source information and available submodule licenses. Shipwright does not publish
 a project-level license in its repository, so retain the confirmed upstream
-redistribution permission with the Steam release records.
+redistribution permission with the GitHub release records.
 SpaghettiKart is built from pinned 1.0.0 source and is written to
 `ports/spaghettikart`. Its patch imports Game Center's validated Mario Kart 64
 (USA) ROM without a file picker, keeps the generated `mk64.o2r` in writable user
 data, enables controller navigation, and provides **Exit to Tater Tube**. Only
 the port-owned `spaghetti.o2r` is bundled. SpaghettiKart does not publish a
 project-level license in its repository, so retain the confirmed redistribution
-permission with the Steam release records.
+permission with the GitHub release records.
 Starship is built from pinned 2.0.0 source and is written to `ports/starship`.
 Its patch imports Game Center's validated Star Fox 64 USA 1.0 or 1.1 ROM
 without a file picker, keeps the generated `sf64.o2r` in writable user data,
@@ -163,7 +165,7 @@ The RetroArch cores' corresponding-source archives, upstream license files,
 manifest, and SHA-256 inventories are written beneath `notices/retroarch-cores` and enter
 the depot with the binaries. The source packager excludes common ROM, disc,
 game-data, and firmware extensions so unrelated upstream test assets cannot
-silently enter the customer depot. Each core is compiled from that repacked
+silently enter the portable archive. Each core is compiled from that repacked
 archive rather than from the unfiltered download.
 
 Use the prepared tools in a Sniper development depot with:
@@ -258,72 +260,36 @@ depot/
             └── rclone/bin/rclone
 ```
 
-## Steamworks
+## Steam Deck library artwork
 
-Example ContentBuilder manifests live in `packaging/steam/steamworks`. Copy
-them without the `.example` suffix and replace the app and depot placeholders.
-Keep `preview` enabled until the private test branch has passed.
-
-After Steam assigns the numeric IDs, generate preview-mode manifests without
-editing the checked-in templates:
+The manual installer includes five assets from `assets/steam/library` and
+attaches them to Tater Tube's non-Steam shortcut in Gaming Mode. Rebuild and
+validate those assets with:
 
 ```bash
-STEAM_APP_ID=123456 \
-STEAM_LINUX_DEPOT_ID=123457 \
-./scripts/prepare-steamworks-manifests.sh
+./scripts/build-steam-library-artwork.sh
 ```
 
-The private manifests are written to `out/steamworks`, which is ignored by Git.
+The artwork sources and generated files remain outside the portable application
+archive. The release workflow packages only the five generated shortcut assets
+in `Tater-Tube-Steam-Artwork.tar.gz`.
 
-Required store and library artwork is under `assets/steam/store`. Rebuild and
-validate it with:
+## GitHub release gates
 
-```bash
-./scripts/build-steam-assets.sh
-```
+Before publishing a tagged GitHub release:
 
-Store screenshots are separate 1920x1080 captures from the real application;
-do not substitute generated or composited UI. Re-capture them from the staged
-depot with:
-
-```bash
-./scripts/capture-steam-screenshots.sh
-```
-
-Marketing artwork and screenshots are source/release materials and are
-explicitly excluded from the customer depot.
-
-The shipped application deliberately does not link the Steamworks SDK and does
-not use Steam DRM. Valve's ContentBuilder upload tool stays outside the depot;
-Valve documents that the SDK is required for uploading but its application
-features are optional. This also keeps the Steam binary identical in principle
-to a build distributed outside Steam.
-
-Valve separately warns that copyleft licenses such as GPL can be problematic
-when code is combined with the Steamworks SDK. Before publishing, review the
-Steam Distribution Agreement and the final dependency/license inventory with
-qualified counsel. Any future Steam Input, Rich Presence, DRM, or SDK-linked
-feature needs a new GPL compatibility review before it is merged.
-
-## Release gates
-
-Before uploading a public build:
-
-1. Build in Valve's current Linux Runtime SDK and test in Steam Deck Gaming
-   Mode plus a desktop Linux Steam client.
+1. Build in the pinned Steam Linux Runtime SDK and test in Steam Deck Gaming
+   Mode plus desktop Linux.
 2. Bundle every required shared library and QML/Qt plugin; validate the depot
    on a clean machine.
 3. Record license notices and exact source revisions for every bundled runtime.
 4. Confirm the pinned core manifest and bundled license/source inventory still
-   match the release. Free price and open source do not override core licenses.
-5. Complete the GPL/Steam Distribution Agreement rights review without assuming
-   that the app being free or open source resolves Steamworks compatibility.
-6. Test controller-only navigation, suspend/resume, display scaling, video
+   match the release.
+5. Test controller-only navigation, suspend/resume, display scaling, video
    playback, Sunshine pairing, RetroNAS mounting/reconnection, and
    launching/returning from RetroArch.
-7. Test RetroNAS in both FUSE and download-cache modes, including guest and
+6. Test RetroNAS in both FUSE and download-cache modes, including guest and
    authenticated SMB, sleep/resume, network loss, CUE/BIN games, and cache
    eviction.
-8. Review store-page wording for YouTube and Newznab features and make clear
-   that users must supply and be authorized to access their own services and
-   content.
+7. Validate the user-level installer, updater manifest, release checksums, and
+   generated What's changed notes.

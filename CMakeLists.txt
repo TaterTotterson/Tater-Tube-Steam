@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(TaterTube VERSION 1.8.3 LANGUAGES CXX)
+project(TaterTube VERSION 1.8.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -168,6 +168,11 @@ else()
             "${CMAKE_SOURCE_DIR}/scripts/ota-osc.lua"
             "${CMAKE_SOURCE_DIR}/scripts/playback-transition.lua"
             "${CMAKE_SOURCE_DIR}/scripts/vcr-osd.lua"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp/scripts"
+            COMPONENT Runtime)
+
+        install(PROGRAMS
+            "${CMAKE_SOURCE_DIR}/scripts/install-steam-deck.sh"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp/scripts"
             COMPONENT Runtime)
     else()

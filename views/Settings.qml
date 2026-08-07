@@ -760,18 +760,25 @@ FocusScope {
             ]
         } else {
             if (status === "available" && !result.canInstall)
-                updateMessage = updateMessage + " INSTALL FROM THE PI IMAGE."
+                updateMessage = updateMessage + " REINSTALL FROM GITHUB TO ENABLE BUILT-IN UPDATES."
             updateOptions = [{ label: "OK", action: "cancel" }]
         }
         updateChoiceIndex = 0
     }
 
     function handleUpdateInstallResult(result) {
-        if ((result.status || "") === "started") {
+        var status = result.status || ""
+        if (status === "started") {
             updateBusy = true
             updateMessage = result.message || "INSTALLING UPDATE. TATER TUBE WILL RESTART."
-            updateDetail = "SWITCHING TO UPDATE PROGRESS"
+            updateDetail = "KEEP TATER TUBE OPEN"
             updateOptions = []
+        } else if (status === "installed") {
+            updateBusy = !!result.restarting
+            updateMessage = result.message || "UPDATE COMPLETE."
+            updateDetail = result.restarting ? "RESTARTING" : "REOPEN TATER TUBE"
+            updateOptions = result.restarting ? [] : [{ label: "OK", action: "cancel" }]
+            updateChoiceIndex = 0
         } else {
             updateBusy = false
             updateMessage = result.message || "COULD NOT START UPDATE."
@@ -797,6 +804,12 @@ FocusScope {
         }
         function onUpdateInstallFinished(result) {
             settingsRoot.handleUpdateInstallResult(result)
+        }
+        function onUpdateInstallProgress(message, detail) {
+            updateBusy = true
+            updateMessage = message
+            updateDetail = detail
+            updateOptions = []
         }
         function onBluetoothScanFinished(result) {
             settingsRoot.finishBluetoothScan(result)
@@ -1054,7 +1067,7 @@ FocusScope {
                 if (act === "install") {
                     updateBusy = true
                     updateMessage = "STARTING UPDATE..."
-                    updateDetail = "PREPARING UPDATE CONSOLE"
+                    updateDetail = "PREPARING DOWNLOAD"
                     updateOptions = []
                     appCore.installUpdate()
                 } else {

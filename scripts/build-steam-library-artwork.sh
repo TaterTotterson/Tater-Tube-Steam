@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Rebuild Steam store/library artwork from the checked-in source artwork.
+# Rebuild the artwork used by Tater Tube's non-Steam library shortcut.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SOURCE_DIR="${REPO_ROOT}/assets/steam/store/source"
-OUTPUT_DIR="${STEAM_ASSET_OUTPUT_DIR:-${REPO_ROOT}/assets/steam/store/generated}"
+SOURCE_DIR="${REPO_ROOT}/assets/steam/library/source"
+OUTPUT_DIR="${STEAM_ASSET_OUTPUT_DIR:-${REPO_ROOT}/assets/steam/library/generated}"
 LANDSCAPE="${SOURCE_DIR}/retro-media-room-landscape.png"
 PORTRAIT="${SOURCE_DIR}/retro-media-room-portrait.png"
 BRAND="${REPO_ROOT}/assets/images/tater-tube-readme.png"
 MASCOT="${REPO_ROOT}/assets/images/mascots/game-center.png"
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
-    echo "ffmpeg is required to build the Steam artwork." >&2
+    echo "ffmpeg is required to build the Steam library artwork." >&2
     exit 1
 fi
 
@@ -69,10 +69,6 @@ render_portrait() {
         -map "[out]" -frames:v 1 "${OUTPUT_DIR}/${output}"
 }
 
-render_landscape 920 430 430 35 68 300 585 85 header-capsule.png
-render_landscape 462 174 230 14 8 140 315 15 small-capsule.png
-render_landscape 1232 706 600 48 145 430 770 135 main-capsule.png
-render_portrait 748 896 500 124 45 470 139 360 vertical-capsule.png
 render_portrait 600 900 450 75 55 430 85 390 library-capsule.png
 render_landscape 920 430 430 35 68 300 585 85 library-header.png
 
@@ -88,7 +84,7 @@ ffmpeg -hide_banner -loglevel error -y \
     -vf "crop=862:588:290:198,scale=-1:720:flags=lanczos,format=rgba" \
     -frames:v 1 "${OUTPUT_DIR}/library-logo.png"
 
-# Steam client and store icons use the exact existing Game Center mascot.
+# The non-Steam shortcut icon uses the exact existing Game Center mascot.
 ffmpeg -hide_banner -loglevel error -y \
     -i "${PORTRAIT}" -i "${MASCOT}" \
     -filter_complex \
@@ -97,9 +93,4 @@ ffmpeg -hide_banner -loglevel error -y \
      [bg][mascot]overlay=20:13:format=auto,format=rgba[out]" \
     -map "[out]" -frames:v 1 "${OUTPUT_DIR}/shortcut-icon.png"
 
-ffmpeg -hide_banner -loglevel error -y \
-    -i "${OUTPUT_DIR}/shortcut-icon.png" \
-    -vf "scale=184:184:flags=lanczos,format=yuvj420p" \
-    -q:v 2 -frames:v 1 "${OUTPUT_DIR}/app-icon.jpg"
-
-"${SCRIPT_DIR}/validate-steam-assets.sh" "${OUTPUT_DIR}"
+"${SCRIPT_DIR}/validate-steam-library-artwork.sh" "${OUTPUT_DIR}"

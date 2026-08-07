@@ -270,4 +270,4 @@ fi
 "${REPO_ROOT}/scripts/validate-steam-depot.sh" "${DEPOT_ROOT}"
 
 echo "Steam depot staged at ${DEPOT_ROOT}"
-echo "Steam launch executable: ./launch-tater-tube.sh"
+echo "SteamOS/Linux launch executable: launch-tater-tube.sh"

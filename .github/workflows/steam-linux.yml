@@ -64,11 +64,11 @@ jobs:
           test ! -e out/steam/depot/usr/share/240mp/scripts/pi-image
           test ! -e out/steam/depot/usr/share/240mp/assets/steam
 
-      - name: Rebuild and validate Steam artwork
+      - name: Rebuild and validate Steam library artwork
         run: |
           STEAM_ASSET_OUTPUT_DIR=out/steam-assets \
-            ./scripts/build-steam-assets.sh
-          ./scripts/validate-steam-assets.sh out/steam-assets
+            ./scripts/build-steam-library-artwork.sh
+          ./scripts/validate-steam-library-artwork.sh out/steam-assets
 
       - name: Upload smoke-build depot
         uses: actions/upload-artifact@v4.6.2

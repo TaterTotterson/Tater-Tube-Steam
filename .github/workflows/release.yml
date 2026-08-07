@@ -80,6 +80,7 @@ jobs:
       - name: Validate Steam Deck installer
         run: |
           bash -n scripts/install-steam-deck.sh
+          python3 -c 'compile(open("scripts/generate-steam-release-metadata.py", encoding="utf-8").read(), "scripts/generate-steam-release-metadata.py", "exec")'
           grep -Fq 'Name=Install Tater Tube' packaging/steam-deck/Install-Tater-Tube.desktop
           grep -Fq 'latest/download/install-steam-deck.sh' packaging/steam-deck/Install-Tater-Tube.desktop
           for artwork in \
@@ -88,7 +89,7 @@ jobs:
             library-hero.png \
             library-logo.png \
             shortcut-icon.png; do
-            test -f "assets/steam/store/generated/${artwork}"
+            test -f "assets/steam/library/generated/${artwork}"
           done
 
       - name: Install host packaging tools
@@ -165,15 +166,15 @@ jobs:
             "${release_dir}/install-steam-deck.sh"
           install -m 0755 packaging/steam-deck/Install-Tater-Tube.desktop \
             "${release_dir}/Install-Tater-Tube.desktop"
-          install -m 0644 assets/steam/store/generated/library-header.png \
+          install -m 0644 assets/steam/library/generated/library-header.png \
             "${release_dir}/${artwork_root}/wide-grid.png"
-          install -m 0644 assets/steam/store/generated/library-capsule.png \
+          install -m 0644 assets/steam/library/generated/library-capsule.png \
             "${release_dir}/${artwork_root}/portrait-grid.png"
-          install -m 0644 assets/steam/store/generated/library-hero.png \
+          install -m 0644 assets/steam/library/generated/library-hero.png \
             "${release_dir}/${artwork_root}/hero.png"
-          install -m 0644 assets/steam/store/generated/library-logo.png \
+          install -m 0644 assets/steam/library/generated/library-logo.png \
             "${release_dir}/${artwork_root}/logo.png"
-          install -m 0644 assets/steam/store/generated/shortcut-icon.png \
+          install -m 0644 assets/steam/library/generated/shortcut-icon.png \
             "${release_dir}/${artwork_root}/icon.png"
 
           tar \
@@ -197,13 +198,24 @@ jobs:
             -cf "${release_dir}/${archive}" \
             -C "${GITHUB_WORKSPACE}/out/steam" depot
 
+          python3 scripts/generate-steam-release-metadata.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --release-version "${RELEASE_VERSION}" \
+            --app-version "${{ steps.release.outputs.app_version }}" \
+            --archive-name "${archive}" \
+            --template update-manifest.json \
+            --manifest "${release_dir}/update-manifest.json" \
+            --notes "${release_dir}/release-notes.md" \
+            --repo-root "${GITHUB_WORKSPACE}"
+
           (
             cd "${release_dir}"
             sha256sum \
               "${archive}" \
               "${artwork_archive}" \
               install-steam-deck.sh \
-              Install-Tater-Tube.desktop > SHA256SUMS.txt
+              Install-Tater-Tube.desktop \
+              update-manifest.json > SHA256SUMS.txt
             zstd --test "${archive}"
             tar --zstd -tf "${archive}" >/dev/null
             tar -tzf "${artwork_archive}" >/dev/null
@@ -212,6 +224,8 @@ jobs:
               "${artwork_archive}" \
               install-steam-deck.sh \
               Install-Tater-Tube.desktop \
+              update-manifest.json \
+              release-notes.md \
               SHA256SUMS.txt
           )
 
@@ -232,11 +246,12 @@ jobs:
           name: Tater Tube for Steam Deck and Linux ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
-          generate_release_notes: true
           fail_on_unmatched_files: true
+          body_path: out/release/release-notes.md
           files: |
             out/release/*.tar.zst
             out/release/*.tar.gz
             out/release/*.sh
             out/release/*.desktop
+            out/release/update-manifest.json
             out/release/SHA256SUMS.txt

@@ -12,10 +12,12 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QUrl>
 #include <QVariantMap>
 #include <QDebug>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QTime>
 #include <QTimer>
 #include <QQmlContext>
@@ -23,8 +25,9 @@
 
 namespace {
 constexpr const char *kDefaultUpdateManifestUrl =
-    "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube/main/update-manifest.json";
+    "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/update-manifest.json";
 constexpr const char *kPiUpdateHelper = "/usr/local/sbin/240mp-update";
+constexpr const char *kDesktopUpdateInstaller = "scripts/install-steam-deck.sh";
 constexpr const char *kSshControlHelper = "/usr/local/sbin/240mp-ssh-control";
 constexpr const char *kBluetoothControlHelper = "/usr/local/sbin/240mp-bluetooth-control";
 constexpr const char *kArgonFanControlHelper = "/usr/local/sbin/240mp-argon-fan-control";
@@ -1313,9 +1316,23 @@ QString AppCore::updateManifestUrl() const {
     return QString::fromUtf8(kDefaultUpdateManifestUrl);
 }
 
+QString AppCore::desktopUpdateInstallerPath() const {
+    return QDir(m_appRoot).absoluteFilePath(QString::fromUtf8(kDesktopUpdateInstaller));
+}
+
+QString AppCore::desktopLauncherPath() const {
+    const QByteArray configuredLauncher = qgetenv("TATER_TUBE_LAUNCHER");
+    if (!configuredLauncher.isEmpty())
+        return QString::fromUtf8(configuredLauncher);
+
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation))
+        .absoluteFilePath(QStringLiteral(".local/bin/tater-tube"));
+}
+
 bool AppCore::canInstallUpdates() const {
 #ifdef TATER_TUBE_STEAM_BUILD
-    return false;
+    const QFileInfo installerInfo(desktopUpdateInstallerPath());
+    return installerInfo.exists() && installerInfo.isExecutable();
 #else
     if (!isAutostartSession() && qEnvironmentVariableIntValue("MP240_ALLOW_UPDATE_INSTALL") != 1)
         return false;
@@ -1329,7 +1346,7 @@ QVariantMap AppCore::getUpdateInfo() const {
     return QVariantMap{
         {"currentVersion", appVersion()},
         {"manifestUrl", updateManifestUrl()},
-        {"repo", "https://github.com/TaterTotterson/Tater-Tube"},
+        {"repo", "https://github.com/TaterTotterson/Tater-Tube-Steam"},
         {"canInstall", canInstallUpdates()}
     };
 }
@@ -1415,11 +1432,123 @@ void AppCore::installUpdate() {
     result["status"] = "error";
 
     if (!canInstallUpdates()) {
-        result["message"] = "UPDATES INSTALL FROM THE RASPBERRY PI IMAGE ONLY.";
+        result["message"] = "THE BUILT-IN UPDATER IS NOT AVAILABLE IN THIS INSTALLATION.";
         emit updateInstallFinished(result);
         return;
     }
 
+#ifdef TATER_TUBE_STEAM_BUILD
+    if (m_updateInstallerProcess) {
+        result["message"] = "AN UPDATE IS ALREADY RUNNING.";
+        emit updateInstallFinished(result);
+        return;
+    }
+
+    const QString installerPath = desktopUpdateInstallerPath();
+    const QFileInfo bashInfo(QStringLiteral("/usr/bin/bash"));
+    const QString bashPath = bashInfo.exists() ? bashInfo.absoluteFilePath()
+                                               : QStringLiteral("bash");
+    auto *process = new QProcess(this);
+    m_updateInstallerProcess = process;
+    m_updateInstallerOutput.clear();
+    process->setProgram(bashPath);
+    process->setArguments({installerPath, QStringLiteral("--in-app-update")});
+    process->setProcessChannelMode(QProcess::MergedChannels);
+
+    QProcessEnvironment updateEnvironment = QProcessEnvironment::systemEnvironment();
+    const QString launcherPath = desktopLauncherPath();
+    const QFileInfo launcherInfo(launcherPath);
+    if (launcherInfo.exists()) {
+        updateEnvironment.insert(QStringLiteral("TATER_TUBE_LAUNCHER"), launcherPath);
+        updateEnvironment.insert(QStringLiteral("TATER_TUBE_BIN_DIR"),
+                                 launcherInfo.absolutePath());
+    }
+
+    // A normal manual install lives at <install base>/app/usr/share/240mp.
+    // Preserve a custom install base when the first installer used one.
+    QDir installedAppDir(m_appRoot);
+    if (installedAppDir.cdUp() && installedAppDir.cdUp() && installedAppDir.cdUp()
+        && installedAppDir.dirName() == QStringLiteral("app")) {
+        updateEnvironment.insert(QStringLiteral("TATER_TUBE_INSTALL_BASE"),
+                                 QFileInfo(installedAppDir.absolutePath()).absolutePath());
+    }
+    process->setProcessEnvironment(updateEnvironment);
+
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, process]() {
+        const QByteArray chunk = process->readAllStandardOutput();
+        m_updateInstallerOutput.append(chunk);
+        constexpr qsizetype maxOutputBytes = 128 * 1024;
+        if (m_updateInstallerOutput.size() > maxOutputBytes)
+            m_updateInstallerOutput = m_updateInstallerOutput.right(maxOutputBytes);
+
+        if (chunk.contains("Downloading Tater-Tube-Steam-")) {
+            emit updateInstallProgress(QStringLiteral("DOWNLOADING UPDATE..."),
+                                       QStringLiteral("KEEP TATER TUBE OPEN"));
+        } else if (chunk.contains("Extracting Tater Tube")) {
+            emit updateInstallProgress(QStringLiteral("INSTALLING UPDATE..."),
+                                       QStringLiteral("VERIFYING AND UNPACKING"));
+        } else if (chunk.contains("Downloading Steam library artwork")) {
+            emit updateInstallProgress(QStringLiteral("UPDATING ARTWORK..."),
+                                       QStringLiteral("ALMOST FINISHED"));
+        }
+    });
+
+    connect(process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this,
+            [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
+        m_updateInstallerOutput.append(process->readAllStandardOutput());
+
+        QFile logFile(QDir(m_dataRoot).absoluteFilePath(QStringLiteral("update.log")));
+        if (logFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            logFile.write(m_updateInstallerOutput);
+
+        QVariantMap finished = getUpdateInfo();
+        const bool installed = exitStatus == QProcess::NormalExit && exitCode == 0;
+        finished["ok"] = installed;
+
+        m_updateInstallerProcess = nullptr;
+        process->deleteLater();
+
+        if (!installed) {
+            finished["status"] = "error";
+            finished["message"] = "UPDATE FAILED. DETAILS WERE SAVED TO UPDATE.LOG.";
+            emit updateInstallFinished(finished);
+            return;
+        }
+
+        const QString updatedLauncherPath = desktopLauncherPath();
+        const QFileInfo updatedLauncherInfo(updatedLauncherPath);
+        const bool restartStarted = updatedLauncherInfo.exists()
+            && updatedLauncherInfo.isExecutable()
+            && QProcess::startDetached(updatedLauncherPath, QStringList{},
+                                       updatedLauncherInfo.absolutePath());
+
+        finished["status"] = "installed";
+        finished["restarting"] = restartStarted;
+        finished["message"] = restartStarted
+            ? "UPDATE COMPLETE. RESTARTING TATER TUBE..."
+            : "UPDATE COMPLETE. REOPEN TATER TUBE TO USE IT.";
+        emit updateInstallFinished(finished);
+
+        if (restartStarted)
+            QTimer::singleShot(750, QCoreApplication::instance(), &QCoreApplication::quit);
+    });
+
+    process->start();
+    if (!process->waitForStarted(1500)) {
+        result["message"] = "COULD NOT START THE DESKTOP UPDATE INSTALLER.";
+        m_updateInstallerProcess = nullptr;
+        process->deleteLater();
+        emit updateInstallFinished(result);
+        return;
+    }
+
+    result["ok"] = true;
+    result["status"] = "started";
+    result["message"] = "DOWNLOADING AND INSTALLING UPDATE...";
+    emit updateInstallFinished(result);
+#else
     const QFileInfo sudoInfo("/usr/bin/sudo");
     const QString sudoPath = sudoInfo.exists() ? QStringLiteral("/usr/bin/sudo") : QStringLiteral("sudo");
     const QStringList args{QString::fromUtf8(kPiUpdateHelper), updateManifestUrl()};
@@ -1431,6 +1560,7 @@ void AppCore::installUpdate() {
         ? "INSTALLING UPDATE. TATER TUBE WILL RESTART."
         : "COULD NOT START THE UPDATE HELPER.";
     emit updateInstallFinished(result);
+#endif
 }
 
 QVariantMap AppCore::getSshInfo() const {

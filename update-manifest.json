@@ -1,12 +1,15 @@
 {
-  "version": "v1.8.2",
-  "app_version": "1.8.2",
+  "version": "v1.8.4",
+  "app_version": "1.8.4",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
-  "manifest_url": "https://raw.githubusercontent.com/TaterTotterson/Tater-Tube-Steam/main/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.8.2/Tater-Tube-Steam-v1.8.2-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.8.2.tar.gz",
+  "manifest_url": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/update-manifest.json",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.8.4/Tater-Tube-Steam-v1.8.4-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.8.4.tar.gz",
   "notes": [
-    "Sorts every Game Center system and game list alphabetically, including Ports."
+    "Adds a built-in updater for manual Steam Deck and Linux installations.",
+    "Shows update progress inside Tater Tube and automatically restarts after a successful update.",
+    "Adds a curated What's changed section and a version-correct update manifest to every tagged GitHub release.",
+    "Removes the retired Steam Store and Steamworks submission files while retaining manual Steam Deck installation and Gaming Mode artwork."
   ]
 }

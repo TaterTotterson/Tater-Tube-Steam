@@ -19,9 +19,8 @@ The original ready-to-flash Raspberry Pi edition remains available in the
 The two repositories are independent, so Steam-specific packaging work does
 not replace or overwrite the Pi project.
 
-See the [Steam Deck installation guide](docs/STEAM-DECK-INSTALL.md),
-[desktop build and packaging notes](docs/STEAM.md), and the
-[release-readiness checklist](docs/STEAM-RELEASE-CHECKLIST.md).
+See the [Steam Deck installation guide](docs/STEAM-DECK-INSTALL.md) and
+[desktop build and packaging notes](docs/STEAM.md).
 
 ## Modules
 
@@ -160,8 +159,9 @@ portable build through Valve's Steam Linux Runtime 3.0 SDK:
 ./scripts/build-steam-sniper.sh
 ```
 
-The depot is written to `out/steam/depot`. See [docs/STEAM.md](docs/STEAM.md)
-for runtime bundles, validation, and Steamworks manifests.
+The portable application is written to `out/steam/depot`. See
+[docs/STEAM.md](docs/STEAM.md) for runtime bundles, validation, packaging, and
+the built-in updater.
 
 For Raspberry Pi images, installation, GPIO/Argon support, and appliance
 updates, use the
