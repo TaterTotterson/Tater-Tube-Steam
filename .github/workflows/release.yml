@@ -1,4 +1,4 @@
-name: Steam Linux release
+name: Steam Deck and Linux release
 
 on:
   workflow_dispatch:
@@ -77,6 +77,20 @@ jobs:
       - name: Validate Steam container path mapping
         run: bash scripts/test-build-steam-sniper-paths.sh
 
+      - name: Validate Steam Deck installer
+        run: |
+          bash -n scripts/install-steam-deck.sh
+          grep -Fq 'Name=Install Tater Tube' packaging/steam-deck/Install-Tater-Tube.desktop
+          grep -Fq 'latest/download/install-steam-deck.sh' packaging/steam-deck/Install-Tater-Tube.desktop
+          for artwork in \
+            library-header.png \
+            library-capsule.png \
+            library-hero.png \
+            library-logo.png \
+            shortcut-icon.png; do
+            test -f "assets/steam/store/generated/${artwork}"
+          done
+
       - name: Install host packaging tools
         run: |
           set -euo pipefail
@@ -142,8 +156,35 @@ jobs:
           release_dir="${GITHUB_WORKSPACE}/out/release"
           release_root="Tater-Tube-Steam-${RELEASE_VERSION}-linux-x86_64"
           archive="${release_root}.tar.zst"
+          artwork_root="Tater-Tube-Steam-Artwork"
+          artwork_archive="${artwork_root}.tar.gz"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
-          mkdir -p "${release_dir}"
+          mkdir -p "${release_dir}/${artwork_root}"
+
+          install -m 0755 scripts/install-steam-deck.sh \
+            "${release_dir}/install-steam-deck.sh"
+          install -m 0755 packaging/steam-deck/Install-Tater-Tube.desktop \
+            "${release_dir}/Install-Tater-Tube.desktop"
+          install -m 0644 assets/steam/store/generated/library-header.png \
+            "${release_dir}/${artwork_root}/wide-grid.png"
+          install -m 0644 assets/steam/store/generated/library-capsule.png \
+            "${release_dir}/${artwork_root}/portrait-grid.png"
+          install -m 0644 assets/steam/store/generated/library-hero.png \
+            "${release_dir}/${artwork_root}/hero.png"
+          install -m 0644 assets/steam/store/generated/library-logo.png \
+            "${release_dir}/${artwork_root}/logo.png"
+          install -m 0644 assets/steam/store/generated/shortcut-icon.png \
+            "${release_dir}/${artwork_root}/icon.png"
+
+          tar \
+            --sort=name \
+            --mtime="@${source_date_epoch}" \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -czf "${release_dir}/${artwork_archive}" \
+            -C "${release_dir}" "${artwork_root}"
+          rm -rf "${release_dir:?}/${artwork_root}"
 
           tar \
             --sort=name \
@@ -158,10 +199,20 @@ jobs:
 
           (
             cd "${release_dir}"
-            sha256sum "${archive}" > SHA256SUMS.txt
+            sha256sum \
+              "${archive}" \
+              "${artwork_archive}" \
+              install-steam-deck.sh \
+              Install-Tater-Tube.desktop > SHA256SUMS.txt
             zstd --test "${archive}"
             tar --zstd -tf "${archive}" >/dev/null
-            ls -lh "${archive}" SHA256SUMS.txt
+            tar -tzf "${artwork_archive}" >/dev/null
+            ls -lh \
+              "${archive}" \
+              "${artwork_archive}" \
+              install-steam-deck.sh \
+              Install-Tater-Tube.desktop \
+              SHA256SUMS.txt
           )
 
       - name: Upload workflow artifact
@@ -178,11 +229,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Tater Tube Steam ${{ github.ref_name }}
+          name: Tater Tube for Steam Deck and Linux ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
             out/release/*.tar.zst
+            out/release/*.tar.gz
+            out/release/*.sh
+            out/release/*.desktop
             out/release/SHA256SUMS.txt

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install Tater Tube
+Comment=Download and install Tater Tube for Steam Deck
+Exec=bash -c "set -o pipefail; curl -fL --retry 3 --progress-bar https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/install-steam-deck.sh | bash"
+Icon=system-software-install
+Terminal=true
+Categories=Utility;
+StartupNotify=true

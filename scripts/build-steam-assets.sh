@@ -85,7 +85,7 @@ ffmpeg -hide_banner -loglevel error -y \
 # Steam overlays this transparent logo on the library hero.
 ffmpeg -hide_banner -loglevel error -y \
     -i "${BRAND}" \
-    -vf "crop=862:588:290:198,scale=1000:-1:flags=lanczos,format=rgba" \
+    -vf "crop=862:588:290:198,scale=-1:720:flags=lanczos,format=rgba" \
     -frames:v 1 "${OUTPUT_DIR}/library-logo.png"
 
 # Steam client and store icons use the exact existing Game Center mascot.

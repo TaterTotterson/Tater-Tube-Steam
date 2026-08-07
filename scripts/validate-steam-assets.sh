@@ -40,7 +40,7 @@ check_dimensions main-capsule.png 1232x706
 check_dimensions vertical-capsule.png 748x896
 check_dimensions library-capsule.png 600x900
 check_dimensions library-hero.png 3840x1240
-check_dimensions library-logo.png 1000x682
+check_dimensions library-logo.png 1056x720
 check_dimensions library-header.png 920x430
 check_dimensions shortcut-icon.png 256x256
 check_dimensions app-icon.jpg 184x184

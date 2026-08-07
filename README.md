@@ -9,18 +9,19 @@
 # Tater Tube
 
 Tater Tube is a free, open-source, retro VCR-style media frontend for Linux
-x86_64. This repository is the desktop edition being prepared for release on
-Steam. It keeps the Tater Tube, PC Link, Game Center, and RetroNAS features
-while replacing Raspberry Pi appliance controls with desktop-safe behavior.
+x86_64 and Steam Deck. This repository is the desktop edition, distributed as
+a portable GitHub release that can be added to Steam as a non-Steam
+application. It keeps Tater Tube, PC Link, Game Center, and RetroNAS while
+replacing Raspberry Pi appliance controls with desktop-safe behavior.
 
 The original ready-to-flash Raspberry Pi edition remains available in the
 [Tater Tube Pi repository](https://github.com/TaterTotterson/Tater-Tube).
 The two repositories are independent, so Steam-specific packaging work does
 not replace or overwrite the Pi project.
 
-See [Steam build and packaging](docs/STEAM.md) and the
-[release-readiness checklist](docs/STEAM-RELEASE-CHECKLIST.md). Draft text for
-the Steam partner page is in [docs/STEAM-STORE-COPY.md](docs/STEAM-STORE-COPY.md).
+See the [Steam Deck installation guide](docs/STEAM-DECK-INSTALL.md),
+[desktop build and packaging notes](docs/STEAM.md), and the
+[release-readiness checklist](docs/STEAM-RELEASE-CHECKLIST.md).
 
 ## Modules
 
@@ -141,11 +142,18 @@ POST /api/v1/library/launch       {"id": "vod:movie:ITEM_ID"}
 
 Search results return launch IDs such as `vod:movie:...`, `vod:show:...`, and `game:nes:...`.
 
-## Install
+## Install on Steam Deck
 
-The public Steam build is still in pre-release testing. Linux developers can
-fetch the checksum-pinned runtimes and create the same staged depot through
-Valve's Steam Linux Runtime 3.0 SDK:
+Switch to Desktop Mode and download
+[Install-Tater-Tube.desktop](https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/Install-Tater-Tube.desktop).
+Open it, approve the execution prompt, and leave the installer open while it
+downloads the complete release. It installs without `sudo` and asks SteamOS to
+add Tater Tube to the non-Steam library. See the
+[Steam Deck installation guide](docs/STEAM-DECK-INSTALL.md) for updates and
+manual shortcut instructions.
+
+Linux developers can fetch the checksum-pinned runtimes and create the same
+portable build through Valve's Steam Linux Runtime 3.0 SDK:
 
 ```bash
 ./scripts/fetch-steam-runtime-bundle.sh out/steam-runtime

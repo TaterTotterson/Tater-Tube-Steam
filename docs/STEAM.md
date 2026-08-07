@@ -1,8 +1,25 @@
-# Steam desktop port
+# Steam Deck and Linux desktop port
 
-The Steam release is a Linux x86_64 desktop build of the same open-source
-Tater Tube application. It is not a Raspberry Pi image and does not fork the
+The desktop release is a Linux x86_64 build of the same open-source Tater Tube
+application. It is distributed through GitHub and can be added to SteamOS as a
+non-Steam application. It is not a Raspberry Pi image and does not fork the
 product name or module names.
+
+## Steam Deck installation
+
+Tagged releases publish the portable archive plus
+`Install-Tater-Tube.desktop`, `install-steam-deck.sh`, and the Steam library
+artwork archive. The desktop launcher downloads the current installer; the
+installer verifies the application and artwork archives, installs them under
+the current user's home directory, creates a Linux desktop entry, and uses
+SteamOS's `steamos-add-to-steam` helper when available. It reads the generated
+shortcut ID from Steam's local shortcut database and installs the matching
+grid, portrait, hero, logo, and icon files without modifying the shortcut
+record itself.
+
+Re-running the installer updates the application while preserving the normal
+Tater Tube data directory. Full user instructions are in
+[`docs/STEAM-DECK-INSTALL.md`](STEAM-DECK-INSTALL.md).
 
 ## Current boundary
 
