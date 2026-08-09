@@ -29,6 +29,15 @@ for relative_path in "${required_files[@]}"; do
     fi
 done
 
+for incompatible_runtime in \
+        ports/dusklight/lib/libstdc++.so.6 \
+        ports/dusklight/lib/libgcc_s.so.1; do
+    if [ -e "${INPUT_DIR}/${incompatible_runtime}" ]; then
+        echo "Refusing to package Dusklight with an incompatible SteamOS runtime: ${incompatible_runtime}" >&2
+        exit 1
+    fi
+done
+
 if find "${INPUT_DIR}" -type f \
         \( -iname '*.z64' -o -iname '*.n64' -o -iname '*.v64' \
            -o -iname '*.ndd' -o -iname '*.u1' \

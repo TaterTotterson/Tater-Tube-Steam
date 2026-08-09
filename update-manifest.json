@@ -1,15 +1,13 @@
 {
-  "version": "v1.9.0",
-  "app_version": "1.9.0",
+  "version": "v1.9.1",
+  "app_version": "1.9.1",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
   "manifest_url": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.9.0/Tater-Tube-Steam-v1.9.0-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.9.0.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.9.1/Tater-Tube-Steam-v1.9.1-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.9.1.tar.gz",
   "notes": [
-    "Adds Nintendo 64 libraries to Game Center with ParaLLEl N64 on Raspberry Pi and Mupen64Plus-Next on Linux and SteamOS.",
-    "Uses the standard RetroNAS retronas/roms layout by default and supports manufacturer folders such as roms/nintendo/gamecube and roms/nintendo/n64 across every game system and port.",
-    "Keeps existing MiSTer-style RetroNAS folder layouts supported while improving nested ROM discovery and desktop fallback caching.",
-    "Launches Dusklight through a managed Wayland display on headless Raspberry Pi systems, fixing the window and surface creation crash."
+    "Fixes Dusklight on Steam Deck and SteamOS by allowing the system AMD Vulkan driver to load instead of an incompatible bundled C++ runtime.",
+    "Adds runtime packaging and depot checks that prevent the incompatible Dusklight libraries from returning in future releases."
   ]
 }

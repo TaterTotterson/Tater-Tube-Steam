@@ -123,6 +123,14 @@ if [ "${STRICT_RUNTIME}" = "1" ]; then
     require_file "usr/share/240mp/vendor/ports/dusklight/LICENSES/Dusklight-CC0-1.0.txt"
     require_file "usr/share/240mp/vendor/ports/dusklight/LICENSES/Aurora-MIT.txt"
 
+    for incompatible_runtime in \
+            "usr/share/240mp/vendor/ports/dusklight/lib/libstdc++.so.6" \
+            "usr/share/240mp/vendor/ports/dusklight/lib/libgcc_s.so.1"; do
+        if [ -e "${DEPOT_ROOT}/${incompatible_runtime}" ]; then
+            fail "Dusklight bundles a C++ runtime that can hide the SteamOS Vulkan driver: ${incompatible_runtime}"
+        fi
+    done
+
     if ! find "${DEPOT_ROOT}/usr/share/240mp/vendor/retroarch/cores" \
             -maxdepth 1 -type f -name '*_libretro.so' -print -quit \
             2>/dev/null | grep -q .; then
