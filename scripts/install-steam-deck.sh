@@ -2,6 +2,11 @@
 # Install or update the portable Tater Tube Linux build for one user.
 set -Eeuo pipefail
 
+# This script can be launched from the portable app, whose loader overrides
+# are intended only for Tater Tube. Keep host utilities such as curl, tar, and
+# zstd on SteamOS's native dependency set.
+unset LD_LIBRARY_PATH LD_PRELOAD
+
 readonly REPOSITORY="TaterTotterson/Tater-Tube-Steam"
 readonly DEFAULT_RELEASE_ASSET_BASE="https://github.com/${REPOSITORY}/releases/latest/download"
 

@@ -1456,6 +1456,12 @@ void AppCore::installUpdate() {
     process->setProcessChannelMode(QProcess::MergedChannels);
 
     QProcessEnvironment updateEnvironment = QProcessEnvironment::systemEnvironment();
+    // The portable launcher adds bundled libraries for Tater Tube itself.
+    // Host tools used by the installer (curl, tar, zstd) must resolve against
+    // SteamOS, otherwise a bundled library can be paired with an incompatible
+    // system dependency.
+    updateEnvironment.remove(QStringLiteral("LD_LIBRARY_PATH"));
+    updateEnvironment.remove(QStringLiteral("LD_PRELOAD"));
     const QString launcherPath = desktopLauncherPath();
     const QFileInfo launcherInfo(launcherPath);
     if (launcherInfo.exists()) {

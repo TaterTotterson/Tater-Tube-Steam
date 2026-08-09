@@ -1,13 +1,13 @@
 {
-  "version": "v1.9.2",
-  "app_version": "1.9.2",
+  "version": "v1.9.3",
+  "app_version": "1.9.3",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
   "manifest_url": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.9.2/Tater-Tube-Steam-v1.9.2-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.9.2.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.9.3/Tater-Tube-Steam-v1.9.3-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.9.3.tar.gz",
   "notes": [
-    "Enables the built-in GitHub updater in SteamOS and Linux Settings instead of displaying the old Steam update status.",
-    "Adds regression coverage that verifies Steam builds expose self-update and include an executable update installer."
+    "Fixes in-app updates on Steam Deck and SteamOS by preventing Tater Tube's portable libraries from leaking into system download and archive tools.",
+    "Sanitizes the updater environment in both the app and installer, with regression coverage for Steam loader overrides."
   ]
 }
