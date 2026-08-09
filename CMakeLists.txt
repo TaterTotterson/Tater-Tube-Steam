@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(TaterTube VERSION 1.9.1 LANGUAGES CXX)
+project(TaterTube VERSION 1.9.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -220,6 +220,23 @@ if(BUILD_TESTING)
         target_include_directories(game-port-catalog-test PRIVATE src)
         target_link_libraries(game-port-catalog-test PRIVATE Qt6::Core Qt6::Test)
         add_test(NAME game-port-catalog COMMAND game-port-catalog-test)
+
+        add_executable(steam-updater-capability-test
+            tests/SteamUpdaterCapabilityTest.cpp
+            src/AppCore.cpp
+        )
+        target_include_directories(steam-updater-capability-test PRIVATE src)
+        target_compile_definitions(steam-updater-capability-test PRIVATE
+            TATER_TUBE_STEAM_BUILD=1
+        )
+        target_link_libraries(steam-updater-capability-test PRIVATE
+            Qt6::Concurrent
+            Qt6::Core
+            Qt6::Network
+            Qt6::Qml
+            Qt6::Test
+        )
+        add_test(NAME steam-updater-capability COMMAND steam-updater-capability-test)
     endif()
 endif()
 

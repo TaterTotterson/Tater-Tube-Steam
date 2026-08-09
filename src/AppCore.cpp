@@ -646,7 +646,7 @@ QVariantMap AppCore::platformCapabilities() const
         {QStringLiteral("systemServiceControls"), !steam},
         {QStringLiteral("bluetoothServiceControls"), !steam},
         {QStringLiteral("controllerMapping"), true},
-        {QStringLiteral("selfUpdate"), !steam},
+        {QStringLiteral("selfUpdate"), true},
         {QStringLiteral("retroCoreInstaller"), !steam},
         {QStringLiteral("retroNetworkMount"), true},
         {QStringLiteral("retroNetworkMountUsesFuse"), steam},
