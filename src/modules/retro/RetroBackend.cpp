@@ -52,7 +52,7 @@ constexpr const char *kPortRomHashCacheFile = "port-rom-hashes.json";
 constexpr const char *kRetroNasVirtualPrefix = "retronas-cache:/";
 constexpr const char *kPortsSystemId = "ports";
 constexpr const char *kRemotePortSystemPrefix = "port:";
-constexpr int kGameCacheVersion = 5;
+constexpr int kGameCacheVersion = 6;
 constexpr qsizetype kMaximumGamePortOutputBytes = 64 * 1024;
 
 void appendGamePortOutput(QByteArray *output, const QByteArray &chunk)
@@ -77,6 +77,11 @@ QString gamePortFailureMessage(const QString &portId, const QByteArray &output,
         if (lower.contains("dvd image from command line failed validation")) {
             return QStringLiteral(
                 "DUSKLIGHT DOES NOT SUPPORT THIS GAME OR DISC REGION");
+        }
+        if (lower.contains("failed to create surface descriptor")
+            || lower.contains("error creating window")) {
+            return QStringLiteral(
+                "DUSKLIGHT COULD NOT START THE PI DISPLAY RUNTIME. RUN TATER TUBE UPDATE");
         }
     }
 
@@ -441,7 +446,7 @@ QString RetroBackend::gamesRoot() const
         return localPath;
 
     const QString remotePath = normalizedRemotePath(setting(QStringLiteral("retronas_path"),
-                                                           QStringLiteral("games")));
+                                                           QStringLiteral("roms")));
     if (remotePath.isEmpty())
         return mountPoint();
     return QDir(mountPoint()).absoluteFilePath(remotePath);
@@ -515,9 +520,9 @@ void RetroBackend::setDesktopRetroNasCacheMode(bool enabled) const
 QString RetroBackend::desktopRetroNasRemoteRoot() const
 {
     const QString share = setting(QStringLiteral("retronas_share"),
-                                  QStringLiteral("mister"));
+                                  QStringLiteral("retronas"));
     const QString remotePath = normalizedRemotePath(
-        setting(QStringLiteral("retronas_path"), QStringLiteral("games")));
+        setting(QStringLiteral("retronas_path"), QStringLiteral("roms")));
     QString root = QStringLiteral("tater-tube-retronas:") + share;
     if (!remotePath.isEmpty())
         root += QLatin1Char('/') + remotePath;
@@ -529,9 +534,9 @@ QString RetroBackend::desktopRetroNasDownloadRoot() const
     const QByteArray sourceKey = QStringLiteral("%1\n%2\n%3")
                                      .arg(setting(QStringLiteral("retronas_host")),
                                           setting(QStringLiteral("retronas_share"),
-                                                  QStringLiteral("mister")),
+                                                  QStringLiteral("retronas")),
                                           setting(QStringLiteral("retronas_path"),
-                                                  QStringLiteral("games")))
+                                                  QStringLiteral("roms")))
                                      .toUtf8();
     const QString connectionId = QString::fromLatin1(
         QCryptographicHash::hash(sourceKey, QCryptographicHash::Sha256).toHex().left(16));
@@ -632,24 +637,16 @@ bool RetroBackend::buildDesktopRetroNasCatalog(QString *errorOut) const
                  QStringLiteral("Size")).toDouble(-1))}
         });
 
-        const int slash = relativePath.indexOf(QLatin1Char('/'));
-        if (slash <= 0)
-            continue;
-        const QString topFolder = relativePath.left(slash);
-        const QString withinSystem = relativePath.mid(slash + 1);
-        const QFileInfo remoteInfo(withinSystem);
-        if (remoteInfo.fileName().startsWith(QLatin1Char('.')))
-            continue;
-
         for (const SystemDef &def : definitions) {
-            bool folderMatches = false;
-            for (const QString &folder : def.folders) {
-                if (topFolder.compare(folder, Qt::CaseInsensitive) == 0) {
-                    folderMatches = true;
-                    break;
-                }
+            QString matchedFolder;
+            QString withinSystem;
+            if (!GamePortCatalog::splitLibraryPath(
+                    def.folders, relativePath, &matchedFolder, &withinSystem)) {
+                continue;
             }
-            if (!folderMatches || !def.extensions.contains(
+            const QFileInfo remoteInfo(withinSystem);
+            if (remoteInfo.fileName().startsWith(QLatin1Char('.'))
+                || !def.extensions.contains(
                     remoteInfo.suffix(), Qt::CaseInsensitive)) {
                 continue;
             }
@@ -665,7 +662,7 @@ bool RetroBackend::buildDesktopRetroNasCatalog(QString *errorOut) const
                 : remoteInfo.path();
             game[QStringLiteral("folder")] = folder;
             gamesBySystem[def.id].append(game);
-            systemFolders[def.id] = topFolder;
+            systemFolders[def.id] = matchedFolder;
             break;
         }
     }
@@ -890,6 +887,11 @@ QList<RetroBackend::SystemDef> RetroBackend::systemDefinitions() const
          {"nes", "fds", "zip", "7z"},
          {"nestopia_libretro.so", "fceumm_libretro.so", "quicknes_libretro.so"},
          "nestopia"},
+        {"n64", "Nintendo 64",
+         {"N64", "Nintendo64", "Nintendo 64"},
+         {"n64", "v64", "z64", "ndd", "bin", "u1", "zip", "7z"},
+         {"mupen64plus_next_libretro.so", "parallel_n64_libretro.so"},
+         "mupen64plus-next"},
         {"sg1000", "SG-1000",
          {"SG1000", "SG-1000", "Sega SG-1000"},
          {"sg", "zip", "7z"},
@@ -1059,13 +1061,8 @@ QString RetroBackend::corePath(const SystemDef &def,
 
 QString RetroBackend::systemDirectory(const SystemDef &def) const
 {
-    const QDir rootDir(gamesRoot());
-    for (const QString &folder : def.folders) {
-        const QString candidate = rootDir.absoluteFilePath(folder);
-        if (QFileInfo(candidate).isDir())
-            return candidate;
-    }
-    return QString();
+    return GamePortCatalog::findLibraryFolders(def.folders, gamesRoot())
+        .value(0);
 }
 
 int RetroBackend::gameCount(const SystemDef &def, const QString &dirPath, int limit) const
@@ -1592,8 +1589,8 @@ QVariantMap RetroBackend::get_setup_status()
 {
     QVariantMap status;
     status["host"] = setting(QStringLiteral("retronas_host"));
-    status["share"] = setting(QStringLiteral("retronas_share"), QStringLiteral("mister"));
-    status["remotePath"] = setting(QStringLiteral("retronas_path"), QStringLiteral("games"));
+    status["share"] = setting(QStringLiteral("retronas_share"), QStringLiteral("retronas"));
+    status["remotePath"] = setting(QStringLiteral("retronas_path"), QStringLiteral("roms"));
     status["username"] = setting(QStringLiteral("retronas_username"));
     status["localPath"] = setting(QStringLiteral("local_path"));
     status["mountPoint"] = mountPoint();
@@ -1648,7 +1645,7 @@ void RetroBackend::mount_retronas(const QString &host,
 #if defined(TATER_TUBE_STEAM_BUILD) && defined(Q_OS_LINUX)
     const QString cleanHost = host.trimmed();
     const QString cleanShare = share.trimmed().isEmpty()
-        ? QStringLiteral("mister")
+        ? QStringLiteral("retronas")
         : share.trimmed();
     const QString cleanRemotePath = normalizedRemotePath(remotePath);
     const QString cleanUsername = username.trimmed().isEmpty()
@@ -1841,7 +1838,7 @@ void RetroBackend::mount_retronas(const QString &host,
 #else
     Q_UNUSED(remotePath)
     const QString cleanHost = host.trimmed();
-    const QString cleanShare = share.trimmed().isEmpty() ? QStringLiteral("mister") : share.trimmed();
+    const QString cleanShare = share.trimmed().isEmpty() ? QStringLiteral("retronas") : share.trimmed();
     if (cleanHost.isEmpty()) {
         emit mountFinished(false, QStringLiteral("ENTER RETRONAS ADDRESS"));
         return;
@@ -2482,6 +2479,11 @@ void RetroBackend::launchLocalPort(const QString &portId, const QString &romPath
         emit errorOccurred(QStringLiteral("PORT ENGINE NOT INSTALLED. SET PORT ENGINES PATH IN GAME CENTER SETTINGS"));
         return;
     }
+
+    const bool headlessMode = detectHeadlessMode();
+    QString launchProgram = engine;
+    const bool useWaylandCompositor = port.id == QLatin1String("dusklight")
+        && headlessMode;
     if (romPath.trimmed().isEmpty()) {
         emit errorOccurred(QStringLiteral("SUPPORTED ORIGINAL ROM NOT FOUND. REFRESH THE GAME LIST AFTER ADDING IT"));
         return;
@@ -2495,6 +2497,16 @@ void RetroBackend::launchLocalPort(const QString &portId, const QString &romPath
     if (!allowedRom) {
         emit errorOccurred(QStringLiteral("PORT ROM PATH IS OUTSIDE THE GAME LIBRARY"));
         return;
+    }
+
+    if (useWaylandCompositor) {
+        launchProgram = QStandardPaths::findExecutable(
+            QStringLiteral("cage"), executableSearchPaths());
+        if (launchProgram.isEmpty()) {
+            emit errorOccurred(QStringLiteral(
+                "DUSKLIGHT DISPLAY RUNTIME IS NOT INSTALLED. RUN TATER TUBE UPDATE"));
+            return;
+        }
     }
 
     QString stagedRom;
@@ -2563,21 +2575,27 @@ void RetroBackend::launchLocalPort(const QString &portId, const QString &romPath
               compositeMode.width(), compositeMode.height());
     }
 
-    m_headlessMode = detectHeadlessMode();
+    m_headlessMode = headlessMode;
     if (m_headlessMode) {
         env.remove(QStringLiteral("DISPLAY"));
         env.remove(QStringLiteral("WAYLAND_DISPLAY"));
+        if (useWaylandCompositor)
+            env.insert(QStringLiteral("SDL_VIDEODRIVER"), QStringLiteral("wayland"));
         prepareHeadlessLaunch();
     } else {
         env.remove(QStringLiteral("WAYLAND_DISPLAY"));
     }
     m_process->setProcessEnvironment(env);
 
-    const QStringList args = GamePortCatalog::launchArguments(
+    QStringList args = GamePortCatalog::launchArguments(
         port, engine, stagedRom, userRoot, compositeMode);
+    if (useWaylandCompositor) {
+        args.prepend(engine);
+        args.prepend(QStringLiteral("--"));
+    }
     qInfo("[RetroBackend] launching game port %s: %s %s",
-          qPrintable(port.id), qPrintable(engine), qPrintable(args.join(' ')));
-    m_process->start(engine, args);
+          qPrintable(port.id), qPrintable(launchProgram), qPrintable(args.join(' ')));
+    m_process->start(launchProgram, args);
 }
 
 void RetroBackend::stop_game()

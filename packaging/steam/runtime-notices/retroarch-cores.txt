@@ -42,6 +42,9 @@ o2em_libretro.so                Artistic-1.0
 vecx_libretro.so                GPL-3.0
 fceumm_libretro.so              GPL-2.0
 nestopia_libretro.so            GPL-2.0
+mupen64plus_next_libretro.so    GPL-2.0
+  The required opcodes.md instruction table is retained as opcodes.inc in the
+  corresponding-source archive so the .md ROM-extension filter stays active.
 gearsystem_libretro.so          GPL-3.0
 gambatte_libretro.so            GPL-2.0
 mgba_libretro.so                MPL-2.0

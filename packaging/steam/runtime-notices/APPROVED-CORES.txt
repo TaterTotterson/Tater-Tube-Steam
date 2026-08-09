@@ -14,6 +14,7 @@ mednafen_supergrafx_libretro.so
 mednafen_vb_libretro.so
 mednafen_wswan_libretro.so
 mgba_libretro.so
+mupen64plus_next_libretro.so
 nestopia_libretro.so
 o2em_libretro.so
 pcsx_rearmed_libretro.so

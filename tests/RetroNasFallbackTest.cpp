@@ -46,8 +46,8 @@ private slots:
 
         const QJsonObject retroConfig{
             {"retronas_host", "retronas.local"},
-            {"retronas_share", "mister"},
-            {"retronas_path", "games"},
+            {"retronas_share", "retronas"},
+            {"retronas_path", "roms"},
             {"retronas_username", "guest"}
         };
         const QJsonObject config{
@@ -62,7 +62,7 @@ private slots:
                 "#!/bin/sh\n"
                 "case \"$1\" in\n"
                 "  obscure) printf 'protected-password\\n' ;;\n"
-                "  lsjson) printf '[{\"Path\":\"NES/Test Game.nes\"}]\\n' ;;\n"
+                "  lsjson) printf '[{\"Path\":\"nintendo/nes/files/Test Game.nes\"}]\\n' ;;\n"
                 "  mount) printf 'FUSE unavailable in test\\n' >&2; exit 1 ;;\n"
                 "  *) printf 'unexpected rclone command\\n' >&2; exit 2 ;;\n"
                 "esac\n"),
@@ -74,7 +74,7 @@ private slots:
 
         RetroBackend backend(appRoot, dataRoot);
         QSignalSpy mountSpy(&backend, &RetroBackend::mountFinished);
-        backend.mount_retronas("retronas.local", "mister", "games", "guest", "");
+        backend.mount_retronas("retronas.local", "retronas", "roms", "guest", "");
 
         QCOMPARE(mountSpy.size(), 1);
         const QList<QVariant> mountResult = mountSpy.takeFirst();

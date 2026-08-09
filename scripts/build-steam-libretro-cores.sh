@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MANIFEST="${STEAM_CORE_MANIFEST:-${REPO_ROOT}/packaging/steam/core-manifest.tsv}"
-GROUP="${1:-all}"
+SELECTOR="${1:-all}"
 OUTPUT_ROOT="${2:-/opt/tater-tube-runtimes}"
 BUILD_ROOT="${STEAM_CORE_BUILD_ROOT:-/build/libretro-cores}"
 BUILD_JOBS="${STEAM_RUNTIME_BUILD_JOBS:-${BUILD_JOBS:-4}}"
@@ -21,12 +21,13 @@ SOURCE_EXCLUDES=(
     '*.com' '*.cue' '*.dcm' '*.dmg' '*.dsk' '*.dylib' '*.exe' '*.fds'
     '*.fig' '*.gb' '*.gba' '*.gbc' '*.gen' '*.gg' '*.img' '*.int'
     '*.ipk3' '*.iso' '*.iwad' '*.lmp' '*.lnx' '*.m3u' '*.md' '*.mdf'
-    '*.min' '*.mvc' '*.mx1' '*.mx2' '*.neo' '*.nes' '*.ngc' '*.ngp'
-    '*.ngpc' '*.npc' '*.o' '*.o2' '*.pak' '*.pbp' '*.pc2' '*.pce'
+    '*.min' '*.mvc' '*.mx1' '*.mx2' '*.n64' '*.ndd' '*.neo' '*.nes'
+    '*.ngc' '*.ngp' '*.ngpc' '*.npc' '*.o' '*.o2' '*.pak' '*.pbp'
+    '*.pc2' '*.pce'
     '*.pk3' '*.pwad' '*.ri' '*.rom' '*.sc' '*.sf' '*.sfc' '*.sg'
-    '*.sgb' '*.sgx' '*.smc' '*.smd' '*.sms' '*.so' '*.toc' '*.unf'
-    '*.unif' '*.vb' '*.vec' '*.wad' '*.ws' '*.wsc' '*.xfd' '*.xex'
-    '*.zip'
+    '*.sgb' '*.sgx' '*.smc' '*.smd' '*.sms' '*.so' '*.toc' '*.u1'
+    '*.unf' '*.unif' '*.v64' '*.vb' '*.vec' '*.wad' '*.ws' '*.wsc'
+    '*.xfd' '*.xex' '*.z64' '*.zip'
 )
 
 if [ ! -f "${MANIFEST}" ]; then
@@ -92,9 +93,41 @@ preserve_markdown_license_files() {
     )
 }
 
+prepare_required_source_files() {
+    local source_dir="$1"
+    local core_id="$2"
+
+    case "${core_id}" in
+        mupen64plus-next)
+            # Mupen uses .md for a generated C instruction table, while .md is
+            # also a Mega Drive ROM extension filtered from shipped sources.
+            # Preserve the build input under an unambiguous source suffix.
+            local opcode_source="${source_dir}/mupen64plus-core/src/device/r4300/opcodes.md"
+            local opcode_include="${source_dir}/mupen64plus-core/src/device/r4300/opcodes.inc"
+            local opcode_root="${source_dir}/mupen64plus-core/src/device/r4300"
+            local include_file
+            if [ ! -f "${opcode_source}" ]; then
+                echo "Mupen64Plus-Next instruction table source is missing." >&2
+                exit 1
+            fi
+            cmake -E copy "${opcode_source}" "${opcode_include}"
+            while IFS= read -r include_file; do
+                sed -i.bak 's/"opcodes[.]md"/"opcodes.inc"/g' "${include_file}"
+                cmake -E rm -f "${include_file}.bak"
+            done < <(grep -RIl '"opcodes[.]md"' "${opcode_root}")
+            if grep -RIl '"opcodes[.]md"' "${opcode_root}" | grep -q . \
+                    || ! grep -RIl '"opcodes.inc"' "${opcode_root}" | grep -q .; then
+                echo "Could not prepare the Mupen64Plus-Next instruction table." >&2
+                exit 1
+            fi
+            ;;
+    esac
+}
+
 package_corresponding_source() {
     local source_dir="$1"
     local source_archive="$2"
+    local core_id="$3"
     local temporary_archive="${source_archive}.tmp"
     local -a exclude_args=()
     local pattern prohibited
@@ -103,6 +136,7 @@ package_corresponding_source() {
         exclude_args+=(--exclude="${pattern}")
     done
 
+    prepare_required_source_files "${source_dir}" "${core_id}"
     preserve_markdown_license_files "${source_dir}"
     tar --create --gzip --file "${temporary_archive}" \
         --directory "${source_dir}" \
@@ -113,7 +147,7 @@ package_corresponding_source() {
 
     prohibited="$(
         tar -tzf "${source_archive}" \
-            | grep -Ei '\.(7z|32x|a|a26|a52|a78|atr|atx|bin|car|cas|cbn|ccd|cdf|chd|col|com|cue|dcm|dmg|dsk|dylib|exe|fds|fig|gb|gba|gbc|gen|gg|img|int|ipk3|iso|iwad|lmp|lnx|m3u|md|mdf|min|mvc|mx1|mx2|neo|nes|ngc|ngp|ngpc|npc|o|o2|pak|pbp|pc2|pce|pk3|pwad|ri|rom|sc|sf|sfc|sg|sgb|sgx|smc|smd|sms|so|toc|unf|unif|vb|vec|wad|ws|wsc|xfd|xex|zip)$' \
+            | grep -Ei '\.(7z|32x|a|a26|a52|a78|atr|atx|bin|car|cas|cbn|ccd|cdf|chd|col|com|cue|dcm|dmg|dsk|dylib|exe|fds|fig|gb|gba|gbc|gen|gg|img|int|ipk3|iso|iwad|lmp|lnx|m3u|md|mdf|min|mvc|mx1|mx2|n64|ndd|neo|nes|ngc|ngp|ngpc|npc|o|o2|pak|pbp|pc2|pce|pk3|pwad|ri|rom|sc|sf|sfc|sg|sgb|sgx|smc|smd|sms|so|toc|u1|unf|unif|v64|vb|vec|wad|ws|wsc|xfd|xex|z64|zip)$' \
             | sed -n '1,20p' || true
     )"
     if [ -n "${prohibited}" ]; then
@@ -178,7 +212,7 @@ build_core() {
             mkdir -p "${source_dir}"
             tar -xzf "${source_archive}" -C "${source_dir}" --strip-components=1
             copy_core_support_files "${source_dir}" "${core_id}"
-            package_corresponding_source "${source_dir}" "${source_archive}"
+            package_corresponding_source "${source_dir}" "${source_archive}" "${core_id}"
             cmake -E remove_directory "${source_dir}"
             touch "${source_marker}"
         fi
@@ -197,7 +231,7 @@ build_core() {
         mkdir -p "${source_dir}"
         tar -xzf "${upstream_archive}" -C "${source_dir}" --strip-components=1
         copy_core_support_files "${source_dir}" "${core_id}"
-        package_corresponding_source "${source_dir}" "${source_archive}"
+        package_corresponding_source "${source_dir}" "${source_archive}" "${core_id}"
         touch "${source_marker}"
         cmake -E remove_directory "${source_dir}"
         mkdir -p "${source_dir}"
@@ -257,7 +291,9 @@ while IFS='|' read -r group core_id core_file repository revision license \
     case "${group}" in
         ''|\#*) continue ;;
     esac
-    if [ "${GROUP}" != "all" ] && [ "${group}" != "${GROUP}" ]; then
+    if [ "${SELECTOR}" != "all" ] \
+            && [ "${group}" != "${SELECTOR}" ] \
+            && [ "${core_id}" != "${SELECTOR}" ]; then
         continue
     fi
     matched=$((matched + 1))
@@ -266,7 +302,7 @@ while IFS='|' read -r group core_id core_file repository revision license \
 done < "${MANIFEST}"
 
 if [ "${matched}" -eq 0 ]; then
-    echo "No core manifest entries matched group: ${GROUP}" >&2
+    echo "No core manifest entries matched group or core: ${SELECTOR}" >&2
     exit 1
 fi
 
@@ -291,4 +327,4 @@ fi
         | xargs -0 sha256sum
 ) > "${NOTICE_ROOT}/SUPPORT-SHA256SUMS.txt"
 
-echo "Built ${matched} ${GROUP} core(s) into ${CORE_ROOT}"
+echo "Built ${matched} ${SELECTOR} core(s) into ${CORE_ROOT}"

@@ -1,9 +1,11 @@
 build-essential
 bluez
 bluetooth
+cage
 ca-certificates
 cifs-utils
 cmake
+seatd
 curl
 libdrm-dev
 libqt6concurrent6

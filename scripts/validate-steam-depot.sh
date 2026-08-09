@@ -216,7 +216,7 @@ if [ "${STRICT_RUNTIME}" = "1" ]; then
             while IFS= read -r source_archive; do
                 prohibited_source_entries="$(
                     tar -tzf "${source_archive}" 2>/dev/null \
-                        | grep -Ei '\.(7z|32x|a|a26|a52|a78|atr|atx|bin|car|cas|cbn|ccd|cdf|chd|col|com|cue|dcm|dmg|dsk|dylib|exe|fds|fig|gb|gba|gbc|gen|gg|img|int|ipk3|iso|iwad|lmp|lnx|m3u|md|mdf|min|mvc|mx1|mx2|neo|nes|ngc|ngp|ngpc|npc|o|o2|pak|pbp|pc2|pce|pk3|pwad|ri|rom|sc|sf|sfc|sg|sgb|sgx|smc|smd|sms|so|toc|unf|unif|vb|vec|wad|ws|wsc|xfd|xex|zip)$' \
+                        | grep -Ei '\.(7z|32x|a|a26|a52|a78|atr|atx|bin|car|cas|cbn|ccd|cdf|chd|col|com|cue|dcm|dmg|dsk|dylib|exe|fds|fig|gb|gba|gbc|gen|gg|img|int|ipk3|iso|iwad|lmp|lnx|m3u|md|mdf|min|mvc|mx1|mx2|n64|ndd|neo|nes|ngc|ngp|ngpc|npc|o|o2|pak|pbp|pc2|pce|pk3|pwad|ri|rom|sc|sf|sfc|sg|sgb|sgx|smc|smd|sms|so|toc|u1|unf|unif|v64|vb|vec|wad|ws|wsc|xfd|xex|z64|zip)$' \
                         | sed -n '1,20p' || true
                 )"
                 if [ -n "${prohibited_source_entries}" ]; then
@@ -354,7 +354,8 @@ if [ "${STEAM_ALLOW_CONTENT_FILES:-0}" != "1" ]; then
            -o -iname '*.a26' -o -iname '*.a52' -o -iname '*.a78' \
            -o -iname '*.cue' -o -iname '*.chd' -o -iname '*.iso' \
            -o -iname '*.rom' -o -iname '*.z64' -o -iname '*.n64' \
-           -o -iname '*.v64' -o -iname '*.wad' -o -iname '*.m3u' \) -print)
+           -o -iname '*.v64' -o -iname '*.ndd' -o -iname '*.u1' \
+           -o -iname '*.wad' -o -iname '*.m3u' \) -print)
 fi
 
 if [ "${failures}" -ne 0 ]; then
