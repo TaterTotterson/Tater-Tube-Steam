@@ -116,9 +116,12 @@ private slots:
         writeFile(QDir(dataRoot).absoluteFilePath("config.json"),
                   QJsonDocument(config).toJson());
 
-        writeFile(QDir(gamesRoot).absoluteFilePath("Genesis/Test.md"), "game");
-        writeFile(QDir(gamesRoot).absoluteFilePath("SNES/Test.sfc"), "game");
-        writeFile(QDir(gamesRoot).absoluteFilePath("SegaCD/Test.cue"), "game");
+        writeFile(QDir(gamesRoot).absoluteFilePath("Sega/Genesis/Test.md"),
+                  "game");
+        writeFile(QDir(gamesRoot).absoluteFilePath("Nintendo/SNES/Test.sfc"),
+                  "game");
+        writeFile(QDir(gamesRoot).absoluteFilePath("Sega/SegaCD/Test.cue"),
+                  "game");
 
         const QString coreRoot = QDir(appRoot).absoluteFilePath(
             "vendor/retroarch/cores");
@@ -175,7 +178,7 @@ private slots:
         const QString appRoot = QDir(temporary.path()).absoluteFilePath("app");
         const QString dataRoot = QDir(temporary.path()).absoluteFilePath("data");
         const QString gamesRoot = QDir(temporary.path()).absoluteFilePath("games");
-        const QString neoRoot = QDir(gamesRoot).absoluteFilePath("NeoGeo");
+        const QString neoRoot = QDir(gamesRoot).absoluteFilePath("SNK/NeoGeo");
 
         const QJsonObject config{
             {"modules",

@@ -995,7 +995,7 @@ QList<RetroBackend::SystemDef> RetroBackend::systemDefinitions() const
           "mame2003_libretro.so", "mame2000_libretro.so"},
          "mame"},
         {"psx", "PlayStation",
-         {"PSX", "PS1", "PlayStation", "Playstation"},
+         {"PSX", "PS1", "PlayStation", "Playstation", "PlayStation1"},
          {"cue", "chd", "pbp", "m3u"},
          {"pcsx_rearmed_libretro.so", "mednafen_psx_hw_libretro.so",
           "mednafen_psx_libretro.so", "beetle_psx_hw_libretro.so",
@@ -1444,10 +1444,11 @@ bool RetroBackend::savePortRomHashCache(
 
 bool RetroBackend::gameCacheIsCurrent(const QVariantMap &cache) const
 {
+    // Port manifests are intentionally not an automatic invalidation trigger.
+    // App updates therefore keep the completed catalog; first use, library
+    // setup changes, core installation, or an explicit refresh rebuild it.
     return cache.value(QStringLiteral("version")).toInt() == kGameCacheVersion
-        && cache.value(QStringLiteral("gamesRoot")).toString() == gameCacheRootKey()
-        && cache.value(QStringLiteral("portManifestKey")).toString()
-            == gamePortManifestKey();
+        && cache.value(QStringLiteral("gamesRoot")).toString() == gameCacheRootKey();
 }
 
 QVariantMap RetroBackend::loadGameCache() const
@@ -1486,6 +1487,8 @@ bool RetroBackend::saveGameCache(const QVariantMap &cache) const
 
 QVariantMap RetroBackend::buildGameCache() const
 {
+    GamePortCatalog::refreshLibraryFolderIndex(gamesRoot());
+
     QVariantMap cache;
     cache[QStringLiteral("version")] = kGameCacheVersion;
     cache[QStringLiteral("createdAt")] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
@@ -1602,6 +1605,7 @@ QVariantMap RetroBackend::get_setup_status()
         || (desktopRetroNasCacheMode() && !loadGameCache().isEmpty());
     status["retroarchAvailable"] = !retroarchPath().isEmpty();
     const QVariantMap existingCache = loadGameCache();
+    status["gameCacheAvailable"] = !existingCache.isEmpty();
     const QVariantList portGames = existingCache.value(QStringLiteral("games"))
         .toMap().value(QString::fromUtf8(kPortsSystemId)).toList();
     bool portsAvailable = !portGames.isEmpty();
@@ -1796,7 +1800,9 @@ void RetroBackend::mount_retronas(const QString &host,
 
     if (ready) {
         setDesktopRetroNasCacheMode(false);
-        clearGameCache();
+        // A successful automatic reconnect to the same share does not change
+        // the library. Settings changes and the explicit refresh action
+        // already invalidate or replace the catalog when required.
         emit authStateChanged();
         emit mountFinished(true, QStringLiteral("RETRONAS READY"));
         return;
@@ -1827,8 +1833,6 @@ void RetroBackend::mount_retronas(const QString &host,
     Q_UNUSED(username)
     Q_UNUSED(password)
     const bool ready = QDir(gamesRoot()).exists();
-    if (ready)
-        clearGameCache();
     emit mountFinished(ready,
                        ready
                            ? QStringLiteral("LOCAL ROM PATH READY")
@@ -1853,8 +1857,6 @@ void RetroBackend::mount_retronas(const QString &host,
 
 #ifndef Q_OS_LINUX
     const bool ready = QDir(gamesRoot()).exists();
-    if (ready)
-        clearGameCache();
     emit mountFinished(ready,
                        ready
                            ? QStringLiteral("LOCAL ROM PATH READY")
@@ -1900,8 +1902,8 @@ void RetroBackend::mount_retronas(const QString &host,
 
     const QString output = QString::fromUtf8(process.readAll()).trimmed();
     const bool ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
-    if (ok)
-        clearGameCache();
+    // Preserve the completed catalog across an automatic remount. Connection
+    // setting changes clear it through onSettingChanged().
     emit authStateChanged();
     emit mountFinished(ok, ok
         ? QStringLiteral("RETRONAS READY")
@@ -1942,7 +1944,9 @@ void RetroBackend::refresh_game_cache()
         return;
     }
 #endif
-    clearGameCache();
+    // Keep the last complete catalog available until its replacement is
+    // written atomically. An interrupted refresh or reboot must not force the
+    // next launch to start another full network scan.
     startGameCacheBuild();
 }
 
@@ -2052,6 +2056,14 @@ QString RetroBackend::writeRetroarchConfig()
             writeMapped(QStringLiteral("r2"), QStringLiteral("r2"));
             writeMapped(QStringLiteral("l3"), QStringLiteral("l3"));
             writeMapped(QStringLiteral("r3"), QStringLiteral("r3"));
+            writeMapped(QStringLiteral("l_x_minus"), QStringLiteral("l_x_minus"));
+            writeMapped(QStringLiteral("l_x_plus"), QStringLiteral("l_x_plus"));
+            writeMapped(QStringLiteral("l_y_minus"), QStringLiteral("l_y_minus"));
+            writeMapped(QStringLiteral("l_y_plus"), QStringLiteral("l_y_plus"));
+            writeMapped(QStringLiteral("r_x_minus"), QStringLiteral("r_x_minus"));
+            writeMapped(QStringLiteral("r_x_plus"), QStringLiteral("r_x_plus"));
+            writeMapped(QStringLiteral("r_y_minus"), QStringLiteral("r_y_minus"));
+            writeMapped(QStringLiteral("r_y_plus"), QStringLiteral("r_y_plus"));
         }
     }
 
@@ -2559,7 +2571,39 @@ void RetroBackend::launchLocalPort(const QString &portId, const QString &romPath
     // Native ports must not inherit the portable app's private library stack.
     // Mixing those libraries with SteamOS system libraries can break otherwise
     // compatible engines (for example, libcurl paired with the wrong libssh2).
-    env.insert(QStringLiteral("LD_LIBRARY_PATH"), QFileInfo(engine).absolutePath());
+    const QString engineDirectory = QFileInfo(engine).absolutePath();
+    QString portLibraryPath = engineDirectory;
+#ifdef TATER_TUBE_STEAM_BUILD
+    // The Steam sm64coopdx engine is a bare executable rather than a wrapper
+    // with a private lib/ directory. It is linked against libcurl-gnutls and
+    // SDL from the portable depot, so hiding the launcher's library path makes
+    // it exit with code 127 on clean SteamOS/Bazzite installations. Keep the
+    // engine directory first, then expose only this port to the packaged
+    // runtime directories and any launcher-provided fallbacks.
+    if (port.id == QLatin1String("sm64coopdx")) {
+        QStringList libraryPaths{engineDirectory};
+        const QString packagedLibraryDirectory = QDir(
+            QCoreApplication::applicationDirPath()).absoluteFilePath(
+                QStringLiteral("../lib"));
+        const QString packagedPrivateLibraryDirectory = QDir(
+            packagedLibraryDirectory).absoluteFilePath(
+                QStringLiteral("tater-tube"));
+        for (const QString &path : {packagedLibraryDirectory,
+                                    packagedPrivateLibraryDirectory}) {
+            if (QDir(path).exists() && !libraryPaths.contains(path))
+                libraryPaths.append(path);
+        }
+        const QStringList inheritedPaths = env.value(
+            QStringLiteral("LD_LIBRARY_PATH")).split(
+                QLatin1Char(':'), Qt::SkipEmptyParts);
+        for (const QString &path : inheritedPaths) {
+            if (!libraryPaths.contains(path))
+                libraryPaths.append(path);
+        }
+        portLibraryPath = libraryPaths.join(QLatin1Char(':'));
+    }
+#endif
+    env.insert(QStringLiteral("LD_LIBRARY_PATH"), portLibraryPath);
 #endif
 
     const QSize compositeMode = activeCompositeDisplayMode();

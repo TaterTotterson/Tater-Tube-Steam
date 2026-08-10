@@ -46,6 +46,9 @@ for required_path in \
     mpv/bin/mpv \
     moonlight-sdl/bin/moonlight \
     retroarch/bin/retroarch \
+    retroarch/cores/mupen64plus_next_libretro.so \
+    notices/retroarch-cores/CORE-MANIFEST.tsv \
+    notices/retroarch-cores/CORE-SHA256SUMS.txt \
     ports/sm64coopdx/sm64coopdx \
     ports/2ship2harkinian/2s2h.elf \
     ports/shipwright/soh.elf \

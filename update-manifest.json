@@ -1,13 +1,16 @@
 {
-  "version": "v1.9.3",
-  "app_version": "1.9.3",
+  "version": "v1.9.4",
+  "app_version": "1.9.4",
   "channel": "main",
   "repo": "https://github.com/TaterTotterson/Tater-Tube-Steam",
   "manifest_url": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/latest/download/update-manifest.json",
-  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.9.3/Tater-Tube-Steam-v1.9.3-linux-x86_64.tar.zst",
-  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.9.3.tar.gz",
+  "binary_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/releases/download/v1.9.4/Tater-Tube-Steam-v1.9.4-linux-x86_64.tar.zst",
+  "source_archive": "https://github.com/TaterTotterson/Tater-Tube-Steam/archive/refs/tags/v1.9.4.tar.gz",
   "notes": [
-    "Fixes in-app updates on Steam Deck and SteamOS by preventing Tater Tube's portable libraries from leaking into system download and archive tools.",
-    "Sanitizes the updater environment in both the app and installer, with regression coverage for Steam loader overrides."
+    "Tape Deck now discovers Video on Demand and Tater Tube Server music automatically, combines both library lists when available, and removes the manual provider setting.",
+    "Game Center now indexes the main RetroNAS manufacturer/system layout once per refresh and preserves its completed catalog across boots, reconnects, and app updates.",
+    "Adds working Nintendo 64 support with the pinned Mupen64Plus-Next core.",
+    "Adds complete left- and right-stick RetroPad mappings, including right-stick N64 C-button control and safe migration of legacy Steam Deck controller maps.",
+    "Fixes sm64coopdx runtime-library discovery on clean SteamOS and Bazzite installations and improves the cached-library loading screen."
   ]
 }

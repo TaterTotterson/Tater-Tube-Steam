@@ -10,7 +10,7 @@ standard|o2em|o2em_libretro.so|https://github.com/libretro/libretro-o2em.git|e03
 standard|vecx|vecx_libretro.so|https://github.com/libretro/libretro-vecx.git|8f671cc9d737f2890c3ce19e177e2984dcae121f|GPL-3.0|.|Makefile.libretro|
 standard|fceumm|fceumm_libretro.so|https://github.com/libretro/libretro-fceumm.git|afe65ef1b4328c0bf2df05fb47a6b31a45bccf47|GPL-2.0|.|Makefile.libretro|
 standard|nestopia|nestopia_libretro.so|https://github.com/libretro/nestopia.git|b0fd87dd07e3c52903435d302b04e5e97796f127|GPL-2.0|libretro|Makefile|
-standard|mupen64plus-next|mupen64plus_next_libretro.so|https://github.com/libretro/mupen64plus-libretro-nx.git|f275caf4b2bfa1e6d1c51636746ea793f3d80320|GPL-2.0|.|Makefile|
+standard|mupen64plus-next|mupen64plus_next_libretro.so|https://github.com/libretro/mupen64plus-libretro-nx.git|f275caf4b2bfa1e6d1c51636746ea793f3d80320|GPL-2.0|.|Makefile|GIT_VERSION=f275caf
 standard|gearsystem|gearsystem_libretro.so|https://github.com/drhelius/Gearsystem.git|9509f2f832c8d996687ec525366657c8a1a86b13|GPL-3.0|platforms/libretro|Makefile|
 standard|gambatte|gambatte_libretro.so|https://github.com/libretro/gambatte-libretro.git|9b3b5e3cc18ec92f460d37dd551eaf90c55bfcea|GPL-2.0|.|Makefile|
 standard|mgba|mgba_libretro.so|https://github.com/libretro/mgba.git|6dce57eef127dc4cc292644f38196e0e7c58590c|MPL-2.0|.|Makefile.libretro|

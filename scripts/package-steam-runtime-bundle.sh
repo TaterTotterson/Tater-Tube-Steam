@@ -20,6 +20,8 @@ required_files=(
     yt-dlp/bin/yt-dlp
     rclone/bin/rclone
     notices/APPROVED-CORES.txt
+    notices/retroarch-cores/CORE-MANIFEST.tsv
+    notices/retroarch-cores/CORE-SHA256SUMS.txt
 )
 
 for relative_path in "${required_files[@]}"; do
@@ -28,6 +30,24 @@ for relative_path in "${required_files[@]}"; do
         exit 1
     fi
 done
+
+if ! cmp -s "${INPUT_DIR}/notices/APPROVED-CORES.txt" \
+        "${REPO_ROOT}/packaging/steam/runtime-notices/APPROVED-CORES.txt"; then
+    echo "Runtime bundle core inventory is stale; rebuild the Steam runtimes from the current source tree." >&2
+    exit 1
+fi
+if ! cmp -s "${INPUT_DIR}/notices/retroarch-cores/CORE-MANIFEST.tsv" \
+        "${REPO_ROOT}/packaging/steam/core-manifest.tsv"; then
+    echo "Runtime bundle core manifest is stale; rebuild the Steam runtimes from the current source tree." >&2
+    exit 1
+fi
+while IFS= read -r core_name; do
+    [ -n "${core_name}" ] || continue
+    if [ ! -f "${INPUT_DIR}/retroarch/cores/${core_name}" ]; then
+        echo "Runtime bundle is missing required core: ${core_name}" >&2
+        exit 1
+    fi
+done < "${REPO_ROOT}/packaging/steam/runtime-notices/APPROVED-CORES.txt"
 
 for incompatible_runtime in \
         ports/dusklight/lib/libstdc++.so.6 \
