@@ -30,6 +30,7 @@ FocusScope {
     property bool scanningLibrary: false
     property int loadingFrame: 0
     property int scanMessageIndex: 0
+    property var pendingGameActivity: ({})
     readonly property var scanMessages: [
         "CHECKING RETRONAS...",
         "READING GAME FOLDERS...",
@@ -325,6 +326,20 @@ FocusScope {
         mode = "loading"
         scanningLibrary = false
         gameSessionActive = true
+        var activityMetadata = {
+            action: "launched",
+            module_id: moduleId,
+            system_id: row.portId ? "ports" : selectedSystemId,
+            system_name: row.portId ? "Ports" : selectedSystemTitle
+        }
+        if (row.portId)
+            activityMetadata.port_id = row.portId
+        pendingGameActivity = {
+            media_type: row.portId ? "game_port" : "game",
+            media_id: row.portId || (selectedSystemId + ":" + title),
+            title: title,
+            metadata: activityMetadata
+        }
         if (row.portId)
             retroBackend.launch_port(row.portId, row.romPath || "")
         else
@@ -523,6 +538,12 @@ FocusScope {
             scanningLibrary = false
             statusText = "PLAYING " + (title || "GAME")
             mode = "playing"
+            var activity = pendingGameActivity || ({})
+            appCore.recordTaterActivity(
+                        "game_center", activity.media_type || "game",
+                        activity.media_id || "", activity.title || title || "GAME",
+                        activity.metadata || ({ action: "launched", module_id: moduleId }))
+            pendingGameActivity = ({})
         }
 
         function onGameFinished() {
@@ -532,6 +553,7 @@ FocusScope {
         }
 
         function onErrorOccurred(message) {
+            pendingGameActivity = ({})
             gameSessionActive = false
             scanningLibrary = false
             mode = "message"
