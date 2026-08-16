@@ -52,7 +52,7 @@ constexpr const char *kPortRomHashCacheFile = "port-rom-hashes.json";
 constexpr const char *kRetroNasVirtualPrefix = "retronas-cache:/";
 constexpr const char *kPortsSystemId = "ports";
 constexpr const char *kRemotePortSystemPrefix = "port:";
-constexpr int kGameCacheVersion = 6;
+constexpr int kGameCacheVersion = 7;
 constexpr qsizetype kMaximumGamePortOutputBytes = 64 * 1024;
 
 void appendGamePortOutput(QByteArray *output, const QByteArray &chunk)
