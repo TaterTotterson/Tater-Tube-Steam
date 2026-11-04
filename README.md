@@ -176,3 +176,7 @@ You are free to use, study, and modify this code. If you distribute a modified v
 ## Credits
 
 Tater Tube started as a fork of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP). This desktop edition focuses on The Tube, Emby/Jellyfin and Plex playback, HDHomeRun OTA, Public Access playlists, Tape Deck, RetroNAS games, and PC Link. Raspberry Pi appliance and Argon hardware support remain in the separate Pi repository.
+
+## Trademarks
+
+The Tater name and logo are governed by the [Tater Trademark Policy](TRADEMARKS.md).
